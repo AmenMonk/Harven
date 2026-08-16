@@ -1,0 +1,38 @@
+<!-- Harven AI - Agent 控制面板（P5） -->
+<div id="tab-agent" class="tab-panel" style="display:none;">
+    <h3 data-i18n="web.agent.heading_1">🤖 系统 Agent</h3>
+    <div style="margin:10px 0;color:#999;font-size:12px;">Agent 可以执行系统操作（文件浏览、代码执行、进程管理）</div>
+    <div id="agentStatus" style="padding:8px;background:#2a2a3a;border-radius:6px;color:#ccc;margin:8px 0;"></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="btn-sm" onclick="agentAction('system_info')" style="font-size:12px;" data-i18n="web.agent.button_1">🖥️ 系统信息</button>
+        <button class="btn-sm" onclick="agentListDir()" style="font-size:12px;" data-i18n="web.agent.button_2">📂 查看目录</button>
+        <button class="btn-sm" onclick="agentAction('process_list')" style="font-size:12px;" data-i18n="web.agent.button_3">📊 进程列表</button>
+        <button class="btn-sm" onclick="agentInputCode()" style="font-size:12px;" data-i18n="web.agent.button_4">🐍 执行代码</button>
+    </div>
+    <div id="agentResult" style="margin-top:10px;max-height:250px;overflow:auto;background:#1a1a2e;color:#0f0;padding:10px;border-radius:6px;font-size:11px;font-family:monospace;white-space:pre-wrap;display:none;"></div>
+</div>
+<script>
+window.agentAction = async function(action, params) {
+    const resEl = document.getElementById('agentResult');
+    resEl.style.display = 'block';
+    resEl.textContent = '⏳ 执行中...';
+    try {
+        const r = await fetch('/api/agent/execute', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({action, params: params || {}, approved: true})
+        });
+        const d = await r.json();
+        resEl.textContent = d.success ? d.result : ('❌ ' + (d.error || '未知错误'));
+    } catch(e) { resEl.textContent = '❌ 网络错误: ' + e.message; }
+};
+window.agentListDir = function() {
+    const path = prompt('输入目录路径（留空=当前目录）:', '.');
+    if (path !== null) agentAction('list_dir', {path});
+};
+window.agentInputCode = function() {
+    const code = prompt('输入 Python 代码:', 'print("Hello from Agent!")');
+    if (code !== null) agentAction('run_python', {code});
+};
+document.getElementById('agentStatus').innerHTML = '<span style="color:#0f0;">●</span> Agent 就绪';
+</script>

@@ -1,0 +1,8 @@
+﻿python.exe : H:\HarvenAI\.venv\Scripts\python.exe: can't open file 'H:\\HarvenAI\\app.py': [Errno 2] No such file or di
+rectory
+所在位置 行:1 字符: 27
++ ... ocation H:\HarvenAI; & ".venv\Scripts\python.exe" app.py 2>&1 | Out-F ...
++                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (H:\HarvenAI\.ve...le or directory:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 

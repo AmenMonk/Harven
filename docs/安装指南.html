@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Harven AI 安装指南 v2.0</title><style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; background: #0d1117; color: #c9d1d9; line-height: 1.7; }
+.container { max-width: 900px; margin: 0 auto; padding: 40px 24px; }
+h1 { font-size: 28px; font-weight: 700; color: #f0f6fc; margin: 32px 0 16px; padding-bottom: 12px; border-bottom: 1px solid #30363d; }
+h2 { font-size: 22px; font-weight: 600; color: #f0f6fc; margin: 28px 0 12px; padding-bottom: 8px; border-bottom: 1px solid #21262d; }
+h3 { font-size: 18px; font-weight: 600; color: #e6edf3; margin: 24px 0 8px; }
+h4 { font-size: 15px; font-weight: 600; color: #e6edf3; margin: 20px 0 6px; }
+p { margin: 8px 0; }
+ul, ol { margin: 8px 0 8px 24px; }
+li { margin: 4px 0; }
+code { background: #21262d; color: #f0883e; padding: 2px 6px; border-radius: 4px; font-size: 13px; font-family: 'SF Mono', Consolas, monospace; }
+pre { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; overflow-x: auto; margin: 12px 0; }
+pre code { background: none; color: #c9d1d9; padding: 0; }
+table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+th { background: #21262d; color: #f0f6fc; padding: 8px 12px; text-align: left; border: 1px solid #30363d; }
+td { padding: 8px 12px; border: 1px solid #30363d; }
+tr:nth-child(even) td { background: #161b22; }
+blockquote { border-left: 4px solid #58a6ff; background: #1f6feb11; padding: 12px 16px; margin: 12px 0; border-radius: 0 6px 6px 0; }
+a { color: #58a6ff; }
+hr { border: none; border-top: 1px solid #30363d; margin: 24px 0; }
+strong { color: #f0f6fc; }
+.nav { position: fixed; top: 0; left: 0; right: 0; background: #161b22; border-bottom: 1px solid #30363d; padding: 12px 24px; z-index: 100; }
+.nav a { color: #58a6ff; text-decoration: none; font-size: 14px; }
+.container { margin-top: 60px; }
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: #0d1117; }
+::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+</style></head><body>
+<div class="nav"><a href="index.html">← 返回文档中心</a></div>
+<div class="container"><h1 id="harven-ai-v20">Harven AI 安装详解 v2.0</h1>
+<blockquote>
+<p>更新日期：2026-08-09 | 适用版本：哈文 v0.3.0+</p>
+</blockquote>
+<hr />
+<h2 id="_1">一、系统要求</h2>
+<h3 id="11">1.1 最低配置</h3>
+<table>
+<thead>
+<tr>
+<th>项目</th>
+<th>最低</th>
+<th>推荐</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>操作系统</td>
+<td>Windows 10 64位</td>
+<td>Windows 11</td>
+</tr>
+<tr>
+<td>Python</td>
+<td>3.12</td>
+<td>3.13+</td>
+</tr>
+<tr>
+<td>内存</td>
+<td>8GB</td>
+<td>32GB</td>
+</tr>
+<tr>
+<td>磁盘</td>
+<td>5GB（不含模型）</td>
+<td>50GB（含模型）</td>
+</tr>
+<tr>
+<td>GPU</td>
+<td>不需要（用外脑API）</td>
+<td>RTX 3060 12GB+</td>
+</tr>
+</tbody>
+</table>
+<h3 id="12">1.2 可选组件</h3>
+<table>
+<thead>
+<tr>
+<th>组件</th>
+<th>用途</th>
+<th>是否必须</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Ollama</td>
+<td>本地模型推理</td>
+<td>推荐（免费模型）</td>
+</tr>
+<tr>
+<td>外脑API Key</td>
+<td>DeepSeek/GLM等</td>
+<td>至少1个</td>
+</tr>
+<tr>
+<td>CUDA</td>
+<td>GPU加速</td>
+<td>有GPU时需要</td>
+</tr>
+<tr>
+<td>FFmpeg</td>
+<td>音视频合成</td>
+<td>可选</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="_2">二、安装步骤</h2>
+<h3 id="21">2.1 一键安装（推荐）</h3>
+<div class="codehilite"><pre><span></span><code><span class="c1"># Windows</span>
+<span class="m">1</span>.<span class="w"> </span>下载哈文安装包
+<span class="m">2</span>.<span class="w"> </span>解压到任意目录（如<span class="w"> </span>H:<span class="se">\H</span>arvenAI）
+<span class="m">3</span>.<span class="w"> </span>双击「一键安装启动.bat」
+<span class="m">4</span>.<span class="w"> </span>等待安装完成（自动创建虚拟环境+安装依赖）
+<span class="m">5</span>.<span class="w"> </span>首次启动会要求设置管理员密码
+</code></pre></div>
+
+<h3 id="22">2.2 手动安装</h3>
+<h4 id="step-1python">Step 1：安装Python</h4>
+<div class="codehilite"><pre><span></span><code><span class="c1"># 下载 Python 3.12+</span>
+<span class="c1"># https://www.python.org/downloads/</span>
+<span class="c1"># 安装时勾选 &quot;Add Python to PATH&quot;</span>
+</code></pre></div>
+
+<h4 id="step-2ollama">Step 2：安装Ollama（可选，推荐）</h4>
+<div class="codehilite"><pre><span></span><code><span class="c1"># 下载 Ollama</span>
+<span class="c1"># https://ollama.ai</span>
+<span class="c1"># 安装后拉取模型：</span>
+ollama<span class="w"> </span>pull<span class="w"> </span>qwen2.5:14b
+</code></pre></div>
+
+<h4 id="step-3">Step 3：克隆仓库</h4>
+<div class="codehilite"><pre><span></span><code>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/YOUR_USERNAME/HarvenAI.git
+<span class="nb">cd</span><span class="w"> </span>HarvenAI
+</code></pre></div>
+
+<h4 id="step-4">Step 4：创建虚拟环境</h4>
+<div class="codehilite"><pre><span></span><code>python<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>.venv
+.venv<span class="se">\S</span>cripts<span class="se">\a</span>ctivate
+</code></pre></div>
+
+<h4 id="step-5">Step 5：安装依赖</h4>
+<div class="codehilite"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>requirements.txt
+</code></pre></div>
+
+<h4 id="step-6">Step 6：配置</h4>
+<div class="codehilite"><pre><span></span><code><span class="c1"># 复制配置模板</span>
+copy<span class="w"> </span>config.example.yaml<span class="w"> </span>config.yaml
+
+<span class="c1"># 编辑 config.yaml，填入你的API Key：</span>
+<span class="c1"># model_keys:</span>
+<span class="c1">#   deepseek: &quot;sk-xxxxx&quot;     # DeepSeek API Key</span>
+<span class="c1">#   zhipu: &quot;xxxxx&quot;           # 智谱GLM API Key</span>
+<span class="c1"># ollama:</span>
+<span class="c1">#   default_model: &quot;qwen2.5:14b&quot;</span>
+<span class="c1"># collab_mode: &quot;off&quot;</span>
+<span class="c1"># port: 7000</span>
+</code></pre></div>
+
+<h4 id="step-7">Step 7：启动</h4>
+<div class="codehilite"><pre><span></span><code>python<span class="w"> </span>web_app.py
+</code></pre></div>
+
+<p>或双击<code>启动HarvenAI.bat</code>。</p>
+<hr />
+<h2 id="api-key">三、获取API Key</h2>
+<h3 id="31-1">3.1 外脑模型（至少选1个）</h3>
+<table>
+<thead>
+<tr>
+<th>提供商</th>
+<th>注册地址</th>
+<th>免费额度</th>
+<th>推荐</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DeepSeek</td>
+<td>platform.deepseek.com</td>
+<td>有</td>
+<td>⭐⭐⭐</td>
+</tr>
+<tr>
+<td>智谱GLM</td>
+<td>open.bigmodel.cn</td>
+<td>有</td>
+<td>⭐⭐⭐</td>
+</tr>
+<tr>
+<td>豆包</td>
+<td>volcengine.com</td>
+<td>有</td>
+<td>⭐⭐</td>
+</tr>
+<tr>
+<td>通义千问</td>
+<td>dashscope.aliyun.com</td>
+<td>有</td>
+<td>⭐⭐</td>
+</tr>
+<tr>
+<td>Kimi</td>
+<td>platform.moonshot.cn</td>
+<td>有</td>
+<td>⭐⭐</td>
+</tr>
+<tr>
+<td>零一万物</td>
+<td>platform.lingyiwanwu.com</td>
+<td>有</td>
+<td>⭐</td>
+</tr>
+<tr>
+<td>百川</td>
+<td>platform.baichuan-ai.com</td>
+<td>有</td>
+<td>⭐</td>
+</tr>
+<tr>
+<td>阶跃星辰</td>
+<td>platform.stepfun.com</td>
+<td>有</td>
+<td>⭐</td>
+</tr>
+</tbody>
+</table>
+<h3 id="32">3.2 配置多个外脑</h3>
+<div class="codehilite"><pre><span></span><code><span class="c1"># config.yaml</span>
+<span class="nt">model_keys</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">deepseek</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;sk-xxxxx&quot;</span>
+<span class="w">  </span><span class="nt">zhipu</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;xxxxx&quot;</span>
+<span class="w">  </span><span class="nt">doubao</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;xxxxx&quot;</span>
+</code></pre></div>
+
+<p>配置后可在哈文顶部栏下拉切换外脑。</p>
+<hr />
+<h2 id="_3">四、功能配置</h2>
+<h3 id="41">4.1 查询模式</h3>
+<table>
+<thead>
+<tr>
+<th>模式</th>
+<th>说明</th>
+<th>需要</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>🏠 本地模式</td>
+<td>本地模型+知识库</td>
+<td>Ollama</td>
+</tr>
+<tr>
+<td>🤖 外脑模式</td>
+<td>外部模型+知识库</td>
+<td>API Key</td>
+</tr>
+</tbody>
+</table>
+<h3 id="42">4.2 协作模式</h3>
+<table>
+<thead>
+<tr>
+<th>模式</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>🚫 关闭</td>
+<td>纯对话，安全</td>
+</tr>
+<tr>
+<td>☁️ 智能协作</td>
+<td>Skill编排+外脑+垂直模型</td>
+</tr>
+<tr>
+<td>🏠 本地协作</td>
+<td>Skill编排+本地模型+垂直模型</td>
+</tr>
+</tbody>
+</table>
+<h3 id="43">4.3 垂直模型（可选）</h3>
+<table>
+<thead>
+<tr>
+<th>模型</th>
+<th>用途</th>
+<th>安装方式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>MusicGen</td>
+<td>生成音乐</td>
+<td>垂直面板安装</td>
+</tr>
+<tr>
+<td>Bark</td>
+<td>文字转语音</td>
+<td>垂直面板安装</td>
+</tr>
+<tr>
+<td>Stable Diffusion</td>
+<td>生成图片</td>
+<td>垂直面板安装</td>
+</tr>
+<tr>
+<td>华佗</td>
+<td>医疗问答</td>
+<td><code>ollama create huatuo -f Modelfile</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="skill">五、Skill系统</h2>
+<h3 id="51-skill10">5.1 内置Skill（10个）</h3>
+<table>
+<thead>
+<tr>
+<th>Skill</th>
+<th>触发词</th>
+<th>功能</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>记账助手</td>
+<td>记一笔/记账.*元</td>
+<td>收支管理</td>
+</tr>
+<tr>
+<td>代码审计</td>
+<td>代码审计/代码健康</td>
+<td>代码检测</td>
+</tr>
+<tr>
+<td>财务月结</td>
+<td>财务月结/月度报告</td>
+<td>生成报告</td>
+</tr>
+<tr>
+<td>健康追踪</td>
+<td>记录运动/健康追踪</td>
+<td>健康记录</td>
+</tr>
+<tr>
+<td>音乐生成</td>
+<td>生成音乐/写首歌</td>
+<td>MusicGen</td>
+</tr>
+<tr>
+<td>歌曲制作</td>
+<td>写一首歌/歌曲制作</td>
+<td>多模型编排</td>
+</tr>
+<tr>
+<td>数据分析</td>
+<td>数据分析/统计图表</td>
+<td>分析建议</td>
+</tr>
+<tr>
+<td>Python专家</td>
+<td>Python代码/python问题</td>
+<td>编程建议</td>
+</tr>
+<tr>
+<td>技术写作</td>
+<td>技术文档/写文档</td>
+<td>写作建议</td>
+</tr>
+<tr>
+<td>工作流提取</td>
+<td>提取流程/工作流</td>
+<td>流程分析</td>
+</tr>
+</tbody>
+</table>
+<h3 id="52-skill">5.2 自定义Skill</h3>
+<ol>
+<li>创建目录：<code>data/skills/你的skill名/</code></li>
+<li>写<code>SKILL.md</code>（含trigger触发词）</li>
+<li>写<code>scripts/main.py</code>（可执行脚本）</li>
+<li>可用<code>_helpers.py</code>的函数</li>
+</ol>
+<hr />
+<h2 id="_4">六、面板系统</h2>
+<h3 id="61">6.1 创建面板</h3>
+<p>设置→我的面板→"+"→创建面板：
+- 5种模板（记账/健身/待办/库存/空白）
+- 7种字段类型（文本/数字/日期/下拉/多行文本/时间/图片）
+- 图标选择、统计图表、卡片视图</p>
+<h3 id="62">6.2 记账面板</h3>
+<ul>
+<li>汇总卡片（总收入/支出/净收支）</li>
+<li>分类柱状图</li>
+<li>收支明细表格</li>
+<li>卡片视图切换</li>
+</ul>
+<hr />
+<h2 id="_5">七、高级功能</h2>
+<h3 id="71">7.1 设置→高级功能</h3>
+<table>
+<thead>
+<tr>
+<th>功能</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>触发词管理</td>
+<td>可视化编辑所有Skill的触发词</td>
+</tr>
+<tr>
+<td>定时任务</td>
+<td>添加/删除定时执行Skill</td>
+</tr>
+<tr>
+<td>Obsidian同步</td>
+<td>输入vault路径→同步.md到知识库</td>
+</tr>
+<tr>
+<td>AI生成Skill</td>
+<td>输入描述→AI生成Python脚本</td>
+</tr>
+<tr>
+<td>AirLLM状态</td>
+<td>显示安装状态（低显存跑大模型）</td>
+</tr>
+<tr>
+<td>硬件信息</td>
+<td>GPU型号+显存</td>
+</tr>
+</tbody>
+</table>
+<h3 id="72">7.2 设置→流程编辑器</h3>
+<p>可视化创建多模型协作流程：
+- 8种模型可选（通用/MusicGen/Bark/SD/华佗/FFmpeg/SQLite/写文件）
+- 步骤排序（上移/下移）
+- 预览生成的Python代码
+- 保存为Skill</p>
+<hr />
+<h2 id="_6">八、常见问题</h2>
+<h3 id="q">Q: 启动后白屏</h3>
+<ul>
+<li>检查Python版本是否3.12+</li>
+<li>检查.venv是否创建成功</li>
+<li>检查依赖是否安装完整</li>
+</ul>
+<h3 id="q_1">Q: 外脑无响应</h3>
+<ul>
+<li>检查API Key是否正确</li>
+<li>检查网络是否通畅</li>
+<li>尝试切换其他外脑</li>
+</ul>
+<h3 id="q_2">Q: 本地模型加载失败</h3>
+<ul>
+<li>检查Ollama是否运行：<code>ollama list</code></li>
+<li>检查显存是否足够</li>
+<li>尝试更小模型：<code>ollama pull qwen2.5:7b</code></li>
+</ul>
+<h3 id="q-skill">Q: Skill执行失败</h3>
+<ul>
+<li>检查协作模式是否开启（垂直Skill需要ON）</li>
+<li>检查沙箱是否阻止了必要模块</li>
+<li>查看日志：<code>logs/</code>目录</li>
+</ul>
+<h3 id="q_3">Q: 面板不显示新功能</h3>
+<ul>
+<li>按Ctrl+Shift+R强制刷新浏览器</li>
+<li>完全关闭哈文窗口重新打开</li>
+<li>检查panel.js是否最新版本</li>
+</ul>
+<hr />
+<h2 id="_7">九、文件结构</h2>
+<div class="codehilite"><pre><span></span><code>HarvenAI/
+├── web_app.py              # Flask主应用
+├── config.yaml             # 配置文件（不上传GitHub）
+├── config.example.yaml     # 配置模板
+├── .gitignore              # Git忽略
+├── README.md               # 项目说明
+├── CONTRIBUTING.md         # 贡献指南
+├── requirements.txt        # Python依赖
+├── 启动HarvenAI.bat         # 启动脚本
+├── src/
+│   ├── core/
+│   │   ├── engine.py       # 对话引擎
+│   │   ├── scripts_runner.py # Skill沙箱
+│   │   ├── panel_manager.py  # 面板管理
+│   │   ├── task_scheduler.py # 定时调度
+│   │   ├── airllm_integration.py # AirLLM
+│   │   ├── knowledge_base.py # 知识库
+│   │   └── vertical_api.py   # 垂直模型API
+│   ├── models/
+│   │   └── database.py      # 数据库
+│   └── ui/
+│       └── main_window.py   # 桌面窗口
+├── data/
+│   ├── skills/              # Skill目录（10个）
+│   │   ├── _helpers.py      # Skill辅助函数
+│   │   ├── accounting/      # 记账
+│   │   ├── code_audit/      # 代码审计
+│   │   ├── finance_report/  # 财务月结
+│   │   ├── health_tracker/  # 健康追踪
+│   │   ├── music-gen/       # 音乐生成
+│   │   ├── song_production/ # 歌曲制作（多模型编排）
+│   │   └── ...
+│   ├── panels/              # 面板目录
+│   ├── sqlite/              # 数据库文件
+│   ├── media/               # 生成的音频/图片
+│   ├── reports/             # 生成的报告
+│   └── scheduler.json       # 定时任务
+├── templates/               # HTML模板
+│   └── includes/
+│       ├── tab-流程编辑器.html
+│       ├── tab-高级功能.html
+│       └── ...
+├── static/                  # 静态资源
+│   └── js/modules/
+│       ├── app-conversation.js
+│       ├── app-panels.js
+│       └── ...
+└── docs/                    # 文档
+    └── HarvenAI_技术详解_v7.md
+</code></pre></div>
+
+<hr />
+<h2 id="_8">十、更新日志</h2>
+<h3 id="v202026-08-09">v2.0（2026-08-09）</h3>
+<ul>
+<li>全面更新：Skill系统/面板系统/流程编辑器/高级功能</li>
+<li>新增10个Skill（6脚本+4提示词）</li>
+<li>新增7种面板字段类型</li>
+<li>新增流程编辑器</li>
+<li>新增多外脑切换</li>
+<li>新增定时任务</li>
+<li>新增AirLLM集成</li>
+<li>新增GitHub开源准备</li>
+</ul>
+<h3 id="v12">v1.2</h3>
+<ul>
+<li>基础安装说明</li>
+</ul></div>
+</body></html>

@@ -1,0 +1,520 @@
+<!-- ★ 2026-07-08: HarvenHub 社区市场 Tab -->
+<div class="tab-panel" id="tab-harvenhub" style="display:none;">
+    <div class="hub-container">
+        <!-- 顶部搜索栏 -->
+        <div class="hub-header">
+            <h2 data-i18n="web.hub.title">🏪 HarvenHub 社区市场</h2>
+            <div class="hub-search-bar">
+                <input type="text" id="hubSearchInput" data-i18n-ph="web.hub.search_ph" placeholder="搜索 Skill/Agent/知识包/Bundle..." class="hub-search-input">
+                <button onclick="hubSearch()" class="hub-search-btn" data-i18n="web.hub.btn_search">🔍 搜索</button>
+            </div>
+        </div>
+
+        <!-- 统计栏 -->
+        <div class="hub-stats" id="hubStats">
+            <span class="hub-stat"><span data-i18n="web.hub.stat_items">📦 内容:</span> <b id="hubStatItems">0</b></span>
+            <span class="hub-stat"><span data-i18n="web.hub.stat_downloads">⬇️ 下载:</span> <b id="hubStatDownloads">0</b></span>
+            <span class="hub-stat"><span data-i18n="web.hub.stat_users">👥 用户:</span> <b id="hubStatUsers">0</b></span>
+            <span class="hub-stat"><span data-i18n="web.hub.stat_requests">📢 需求:</span> <b id="hubStatRequests">0</b></span>
+        </div>
+
+        <!-- 分类筛选 -->
+        <div class="hub-filters">
+            <div class="hub-filter-group">
+                <label data-i18n="web.hub.label_type">类型:</label>
+                <select id="hubFilterType" onchange="hubLoadList()">
+                    <option value="" data-i18n="web.hub.opt_all">全部</option>
+                    <option value="skill">⚡ Skill</option>
+                    <option value="agent">🤖 Agent</option>
+                    <option value="knowledge">📚 知识包</option>
+                    <option value="bundle">📦 Bundle</option>
+                    <option value="template">📋 模板</option>
+                    <option value="model_link">🧠 模型</option>
+                    <option value="tool">🔧 工具</option>
+                </select>
+            </div>
+            <div class="hub-filter-group">
+                <label data-i18n="web.hub.label_category">分类:</label>
+                <select id="hubFilterCategory" onchange="hubLoadList()">
+                    <option value="" data-i18n="web.hub.opt_all">全部</option>
+                    <option value="family">🏠 家庭</option>
+                    <option value="enterprise">🏢 企业</option>
+                    <option value="factory">🏭 工厂</option>
+                    <option value="school">🏫 学校</option>
+                    <option value="medical">🏥 医疗</option>
+                    <option value="restaurant">🍽️ 餐饮</option>
+                    <option value="agriculture">🌾 农业</option>
+                    <option value="ecommerce">🛒 电商</option>
+                    <option value="tool">🔧 工具</option>
+                    <option value="other">📦 其他</option>
+                </select>
+            </div>
+            <div class="hub-filter-group">
+                <label data-i18n="web.hub.label_sort">排序:</label>
+                <select id="hubSort" onchange="hubLoadList()">
+                    <option value="latest" data-i18n="web.hub.sort_latest">最新</option>
+                    <option value="popular" data-i18n="web.hub.sort_popular">最热</option>
+                    <option value="rating" data-i18n="web.hub.sort_rating">评分</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- 内容列表 -->
+        <div class="hub-list" id="hubList">
+            <div class="hub-loading" data-i18n="web.hub.loading">加载中...</div>
+        </div>
+
+        <!-- 需求区 -->
+        <div class="hub-requests-section">
+            <h3 data-i18n="web.hub.requests_title">📢 用户需求</h3>
+            <div id="hubRequests">
+                <div class="hub-loading" data-i18n="web.hub.loading">加载中...</div>
+            </div>
+            <button onclick="hubShowRequestForm()" class="hub-btn" data-i18n="web.hub.btn_post_request">+ 发布需求</button>
+        </div>
+    </div>
+
+    <!-- 详情弹窗 -->
+    <div class="hub-modal" id="hubDetailModal" style="display:none;">
+        <div class="hub-modal-content">
+            <div class="hub-modal-header">
+                <h3 id="hubDetailName"></h3>
+                <button onclick="hubCloseDetail()" class="hub-close">×</button>
+            </div>
+            <div class="hub-modal-body" id="hubDetailBody"></div>
+        </div>
+    </div>
+
+    <!-- 上传弹窗 -->
+    <div class="hub-modal" id="hubUploadModal" style="display:none;">
+        <div class="hub-modal-content">
+            <div class="hub-modal-header">
+                <h3 data-i18n="web.hub.upload_title">📤 上传到 HarvenHub</h3>
+                <button onclick="hubCloseUpload()" class="hub-close">×</button>
+            </div>
+            <div class="hub-modal-body">
+                <div class="hub-upload-form">
+                    <label data-i18n="web.hub.label_name">名称:</label>
+                    <input type="text" id="hubUploadName" class="hub-input">
+
+                    <label>类型:</label>
+                    <select id="hubUploadType" class="hub-input">
+                        <option value="skill">⚡ Skill</option>
+                        <option value="agent">🤖 Agent</option>
+                        <option value="knowledge">📚 知识包</option>
+                        <option value="bundle">📦 Bundle</option>
+                        <option value="template">📋 模板</option>
+                        <option value="model_link">🧠 模型链接</option>
+                        <option value="tool">🔧 工具</option>
+                    </select>
+
+                    <label>分类:</label>
+                    <select id="hubUploadCategory" class="hub-input">
+                        <option value="family">🏠 家庭</option>
+                        <option value="enterprise">🏢 企业</option>
+                        <option value="factory">🏭 工厂</option>
+                        <option value="school">🏫 学校</option>
+                        <option value="medical">🏥 医疗</option>
+                        <option value="restaurant">🍽️ 餐饮</option>
+                        <option value="agriculture">🌾 农业</option>
+                        <option value="ecommerce">🛒 电商</option>
+                        <option value="tool">🔧 工具</option>
+                        <option value="other">📦 其他</option>
+                    </select>
+
+                    <label>描述:</label>
+                    <textarea id="hubUploadDesc" class="hub-input" rows="3"></textarea>
+
+                    <label>标签（逗号分隔）:</label>
+                    <input type="text" id="hubUploadTags" class="hub-input" placeholder="翻译,工具">
+
+                    <!-- ★ 2026-08-17: 跨平台支持 — 平台多选 -->
+                    <label>支持平台（多选）:</label>
+                    <div style="display:flex;gap:12px;padding:6px 0;">
+                        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-weight:normal;">
+                            <input type="checkbox" id="hubPlatformWindows" value="windows" checked> Windows
+                        </label>
+                        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-weight:normal;">
+                            <input type="checkbox" id="hubPlatformLinux" value="linux" checked> Linux
+                        </label>
+                        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-weight:normal;">
+                            <input type="checkbox" id="hubPlatformMacos" value="macos" checked> macOS
+                        </label>
+                    </div>
+                    <div style="font-size:11px;color:var(--text-secondary);margin-bottom:8px;">
+                        勾选此 Skill 支持的平台。用户在不适配的平台上下载时会收到提示。
+                    </div>
+
+                    <label>选择文件:</label>
+                    <input type="file" id="hubUploadFile" class="hub-input">
+
+                    <div id="hubUploadStatus" class="hub-upload-status"></div>
+
+                    <button onclick="hubDoUpload()" class="hub-btn hub-btn-primary">📤 上传</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.hub-container { padding: 20px; max-width: 900px; margin: 0 auto; }
+.hub-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+.hub-header h2 { margin: 0; }
+.hub-search-bar { display: flex; gap: 8px; }
+.hub-search-input { padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; width: 300px; }
+.hub-search-btn { padding: 8px 16px; background: #4f46e5; color: white; border: none; border-radius: 6px; cursor: pointer; }
+.hub-stats { display: flex; gap: 20px; padding: 10px 0; border-bottom: 1px solid #eee; margin-bottom: 15px; }
+.hub-stat { font-size: 14px; }
+.hub-filters { display: flex; gap: 15px; margin-bottom: 15px; flex-wrap: wrap; }
+.hub-filter-group { display: flex; align-items: center; gap: 5px; }
+.hub-filter-group select { padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; }
+.hub-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 15px; }
+.hub-card { border: 1px solid #e0e0e0; border-radius: 10px; padding: 15px; cursor: pointer; transition: box-shadow 0.2s; }
+.hub-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+.hub-card-title { font-weight: bold; font-size: 16px; margin-bottom: 8px; }
+.hub-card-desc { font-size: 13px; color: #666; margin-bottom: 8px; height: 40px; overflow: hidden; }
+.hub-card-meta { display: flex; justify-content: space-between; font-size: 12px; color: #999; }
+.hub-card-rating { color: #f5a623; }
+.hub-loading { text-align: center; padding: 40px; color: #999; }
+.hub-empty { text-align: center; padding: 40px; color: #999; }
+.hub-requests-section { margin-top: 30px; }
+.hub-request-item { border-left: 3px solid #4f46e5; padding: 10px 15px; margin-bottom: 8px; background: #f9f9f9; border-radius: 0 6px 6px 0; }
+.hub-request-title { font-weight: bold; }
+.hub-request-desc { font-size: 13px; color: #666; }
+.hub-btn { padding: 8px 16px; background: #4f46e5; color: white; border: none; border-radius: 6px; cursor: pointer; }
+.hub-btn-primary { width: 100%; margin-top: 10px; }
+.hub-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; display: flex; align-items: center; justify-content: center; }
+.hub-modal-content { background: white; border-radius: 10px; width: 500px; max-height: 80vh; overflow-y: auto; }
+.hub-modal-header { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; border-bottom: 1px solid #eee; }
+.hub-modal-body { padding: 20px; }
+.hub-close { background: none; border: none; font-size: 24px; cursor: pointer; }
+.hub-upload-form { display: flex; flex-direction: column; gap: 8px; }
+.hub-input { padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; }
+.hub-upload-status { margin-top: 10px; }
+</style>
+
+<script>
+// ★ 2026-08-09: HarvenHub Tab 完整JS实现
+// 之前只有HTML没有JS，导致页面卡在"加载中..."
+
+var HUB_API = '/api/harvenhub-cloud';
+var _hubAllItems = []; // 缓存所有内容
+
+// 类型图标
+var HUB_TYPE_ICONS = {
+    'skill': '⚡', 'agent': '🤖', 'knowledge': '📚', 'bundle': '📦',
+    'template': '📋', 'model_link': '🧠', 'tool': '🔧', 'other': '📦'
+};
+
+// 类型名称
+var HUB_TYPE_NAMES = {
+    'skill': 'Skill', 'agent': 'Agent', 'knowledge': '知识包', 'bundle': 'Bundle',
+    'template': '模板', 'model_link': '模型', 'tool': '工具', 'other': '其他'
+};
+
+// 分类名称
+var HUB_CAT_NAMES = {
+    'family': '家庭', 'enterprise': '企业', 'factory': '工厂', 'school': '学校',
+    'medical': '医疗', 'restaurant': '餐饮', 'agriculture': '农业', 'ecommerce': '电商',
+    'tool': '工具', 'other': '其他'
+};
+
+// 加载列表
+function hubLoadList() {
+    var listEl = document.getElementById('hubList');
+    if (listEl) listEl.innerHTML = '<div class="hub-loading">加载中...</div>';
+
+    var itemType = document.getElementById('hubFilterType') ? document.getElementById('hubFilterType').value : '';
+    var category = document.getElementById('hubFilterCategory') ? document.getElementById('hubFilterCategory').value : '';
+    var sort = document.getElementById('hubSort') ? document.getElementById('hubSort').value : 'latest';
+
+    var url = HUB_API + '/browse?limit=100';
+    if (itemType) url += '&type=' + itemType;
+    if (sort === 'popular') url += '&sort=popular';
+    else if (sort === 'rating') url += '&sort=rating';
+
+    fetch(url)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var items = data.items || [];
+            _hubAllItems = items;
+
+            // 客户端分类过滤
+            if (category) {
+                items = items.filter(function(i) { return i.category === category; });
+            }
+
+            // 客户端排序
+            if (sort === 'popular') {
+                items.sort(function(a, b) { return (b.download_count||0) - (a.download_count||0); });
+            } else if (sort === 'rating') {
+                items.sort(function(a, b) { return (b.rating||0) - (a.rating||0); });
+            }
+
+            hubRenderList(items);
+            hubLoadStats();
+        })
+        .catch(function(err) {
+            if (listEl) listEl.innerHTML = '<div class="hub-empty">加载失败: ' + err.message + '<br><button onclick="hubLoadList()" class="hub-btn">重试</button></div>';
+        });
+}
+
+// 渲染列表
+function hubRenderList(items) {
+    var listEl = document.getElementById('hubList');
+    if (!listEl) return;
+
+    if (!items || items.length === 0) {
+        listEl.innerHTML = '<div class="hub-empty">暂无内容</div>';
+        return;
+    }
+
+    var html = '';
+    items.forEach(function(item) {
+        var icon = HUB_TYPE_ICONS[item.item_type || item.type] || '📦';
+        var typeName = HUB_TYPE_NAMES[item.item_type || item.type] || '其他';
+        var catName = HUB_CAT_NAMES[item.category] || '';
+        var rating = item.rating || 0;
+        var stars = '';
+        for (var i = 0; i < 5; i++) {
+            stars += i < Math.round(rating) ? '★' : '☆';
+        }
+
+        html += '<div class="hub-card" onclick="hubShowDetail(\'' + item.id + '\')">';
+        html += '<div class="hub-card-title">' + icon + ' ' + (item.name || '未命名') + '</div>';
+        html += '<div class="hub-card-desc">' + (item.description || '暂无描述').substring(0, 80) + '</div>';
+        html += '<div class="hub-card-meta">';
+        html += '<span>' + typeName + (catName ? ' · ' + catName : '') + '</span>';
+        html += '<span class="hub-card-rating">' + stars + ' · ⬇️' + (item.download_count || 0) + '</span>';
+        html += '</div>';
+        html += '</div>';
+    });
+
+    listEl.innerHTML = html;
+}
+
+// 搜索
+function hubSearch() {
+    var query = document.getElementById('hubSearchInput').value.trim().toLowerCase();
+    if (!query) {
+        hubRenderList(_hubAllItems);
+        return;
+    }
+    var filtered = _hubAllItems.filter(function(item) {
+        var name = (item.name || '').toLowerCase();
+        var desc = (item.description || '').toLowerCase();
+        return name.includes(query) || desc.includes(query);
+    });
+    hubRenderList(filtered);
+}
+
+// 显示详情
+function hubShowDetail(itemId) {
+    var modal = document.getElementById('hubDetailModal');
+    var nameEl = document.getElementById('hubDetailName');
+    var bodyEl = document.getElementById('hubDetailBody');
+
+    var item = _hubAllItems.find(function(i) { return i.id == itemId; });
+    if (!item) return;
+
+    var icon = HUB_TYPE_ICONS[item.item_type || item.type] || '📦';
+    var typeName = HUB_TYPE_NAMES[item.item_type || item.type] || '其他';
+    var catName = HUB_CAT_NAMES[item.category] || '未分类';
+
+    if (nameEl) nameEl.innerHTML = icon + ' ' + (item.name || '未命名');
+
+    var html = '';
+    html += '<p><b>类型:</b> ' + typeName + '</p>';
+    html += '<p><b>分类:</b> ' + catName + '</p>';
+    html += '<p><b>评分:</b> ' + '★'.repeat(Math.round(item.rating || 0)) + '☆'.repeat(5 - Math.round(item.rating || 0)) + ' (' + (item.rating || 0).toFixed(1) + ')</p>';
+    html += '<p><b>下载:</b> ' + (item.download_count || 0) + ' 次</p>';
+    html += '<p><b>作者:</b> ' + (item.author || '匿名') + '</p>';
+    html += '<p><b>上传:</b> ' + (item.created_at || '') + '</p>';
+    if (item.tags) {
+        var tags = typeof item.tags === 'string' ? JSON.parse(item.tags) : item.tags;
+        if (tags && tags.length) {
+            html += '<p><b>标签:</b> ' + tags.map(function(t) { return '#' + t; }).join(' ') + '</p>';
+        }
+    }
+    // ★ 2026-08-17: 显示平台兼容性
+    var itemPlatforms = item.platforms;
+    if (typeof itemPlatforms === 'string') {
+        try { itemPlatforms = JSON.parse(itemPlatforms); } catch(e) { itemPlatforms = [itemPlatforms]; }
+    }
+    if (itemPlatforms && itemPlatforms.length && itemPlatforms.indexOf('all') === -1) {
+        var platformIcons = {'windows': '🪟 Windows', 'linux': '🐧 Linux', 'macos': '🍎 macOS'};
+        var platformHtml = itemPlatforms.map(function(p) {
+            return platformIcons[p] || p;
+        }).join(' / ');
+        html += '<p><b>支持平台:</b> ' + platformHtml + '</p>';
+        // 检测当前平台兼容性
+        var currentPlatform = 'windows';  // 哈文运行在服务端，默认 windows
+        if (itemPlatforms.indexOf(currentPlatform) === -1) {
+            html += '<div style="background:rgba(245,158,11,0.1);border:1px solid #f59e0b;padding:8px;border-radius:6px;margin:8px 0;font-size:12px;color:#f59e0b;">⚠️ 此 Skill 标注的平台不包含当前系统，下载后可能无法正常运行</div>';
+        }
+    } else {
+        html += '<p><b>支持平台:</b> 全平台</p>';
+    }
+    html += '<hr>';
+    html += '<p><b>描述:</b></p>';
+    html += '<p>' + (item.description || '暂无描述') + '</p>';
+    html += '<hr>';
+    html += '<button onclick="hubDownloadItem(\'' + item.id + '\')" class="hub-btn hub-btn-primary" style="width:100%;margin-top:10px;">📥 下载</button>';
+
+    if (bodyEl) bodyEl.innerHTML = html;
+    if (modal) modal.style.display = 'flex';
+}
+
+function hubCloseDetail() {
+    var modal = document.getElementById('hubDetailModal');
+    if (modal) modal.style.display = 'none';
+}
+
+// 下载（★ 2026-08-17: 加平台兼容性检测）
+function hubDownloadItem(itemId) {
+    // 先获取 item 详情检查平台
+    fetch(HUB_API + '/item/' + itemId)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var item = data.item || data;
+            var platforms = item.platforms;
+            if (typeof platforms === 'string') {
+                try { platforms = JSON.parse(platforms); } catch(e) { platforms = [platforms]; }
+            }
+            // 平台不匹配时弹确认
+            if (platforms && platforms.length && platforms.indexOf('all') === -1) {
+                var currentPlatform = 'windows';
+                if (platforms.indexOf(currentPlatform) === -1) {
+                    var platformNames = {'windows': 'Windows', 'linux': 'Linux', 'macos': 'macOS'};
+                    var supported = platforms.map(function(p) { return platformNames[p] || p; }).join(' / ');
+                    if (!confirm('⚠️ 此 Skill 仅支持 ' + supported + ' 平台。\n你当前的平台可能不兼容。\n\n是否仍要下载？')) {
+                        return;
+                    }
+                }
+            }
+            // 确认下载
+            return fetch(HUB_API + '/download/' + itemId, { method: 'POST' });
+        })
+        .then(function(r) { if (!r) return null; return r.json(); })
+        .then(function(data) {
+            if (!data) return;
+            if (data.success) {
+                alert('✅ 下载成功！\n文件已保存到: ' + (data.saved_path || 'data/downloads/'));
+            } else {
+                alert('❌ 下载失败: ' + (data.error || '未知错误'));
+            }
+        })
+        .catch(function(err) {
+            alert('❌ 下载失败: ' + err.message);
+        });
+}
+
+// 加载统计
+function hubLoadStats() {
+    fetch(HUB_API + '/browse?limit=200')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var items = data.items || [];
+            var totalDl = 0;
+            items.forEach(function(i) { totalDl += (i.download_count || 0); });
+            var el1 = document.getElementById('hubStatItems');
+            var el2 = document.getElementById('hubStatDownloads');
+            if (el1) el1.textContent = items.length;
+            if (el2) el2.textContent = totalDl;
+        })
+        .catch(function() {});
+}
+
+// 加载需求
+function hubLoadRequests() {
+    var reqEl = document.getElementById('hubRequests');
+    if (!reqEl) return;
+    // 云端需求暂时用本地数据
+    reqEl.innerHTML = '<div class="hub-empty">暂无需求</div>';
+}
+
+// 上传
+function hubShowUpload() {
+    var modal = document.getElementById('hubUploadModal');
+    if (modal) modal.style.display = 'flex';
+}
+
+function hubCloseUpload() {
+    var modal = document.getElementById('hubUploadModal');
+    if (modal) modal.style.display = 'none';
+}
+
+function hubDoUpload() {
+    var name = document.getElementById('hubUploadName').value.trim();
+    var type = document.getElementById('hubUploadType').value;
+    var category = document.getElementById('hubUploadCategory').value;
+    var desc = document.getElementById('hubUploadDesc').value.trim();
+    var tags = document.getElementById('hubUploadTags').value.trim();
+    var fileInput = document.getElementById('hubUploadFile');
+    var statusEl = document.getElementById('hubUploadStatus');
+
+    if (!name) { if (statusEl) statusEl.innerHTML = '<span style="color:red;">请输入名称</span>'; return; }
+
+    // ★ 2026-08-17: 收集平台多选
+    var platforms = [];
+    ['hubPlatformWindows', 'hubPlatformLinux', 'hubPlatformMacos'].forEach(function(id) {
+        var cb = document.getElementById(id);
+        if (cb && cb.checked) platforms.push(cb.value);
+    });
+    if (platforms.length === 0) platforms = ['all'];
+
+    if (statusEl) statusEl.innerHTML = '<span style="color:#4f46e5;">上传中...</span>';
+
+    var formData = new FormData();
+    formData.append('name', name);
+    formData.append('type', type);
+    formData.append('category', category);
+    formData.append('description', desc);
+    formData.append('tags', tags);
+    formData.append('platforms', JSON.stringify(platforms));  // ★ 传平台信息
+    if (fileInput.files[0]) {
+        formData.append('file', fileInput.files[0]);
+    }
+
+    fetch(HUB_API + '/upload', { method: 'POST', body: formData })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success) {
+                if (statusEl) statusEl.innerHTML = '<span style="color:green;">✅ 上传成功！等待审核</span>';
+                setTimeout(function() {
+                    hubCloseUpload();
+                    hubLoadList();
+                }, 2000);
+            } else {
+                if (statusEl) statusEl.innerHTML = '<span style="color:red;">❌ ' + (data.error || '上传失败') + '</span>';
+            }
+        })
+        .catch(function(err) {
+            if (statusEl) statusEl.innerHTML = '<span style="color:red;">❌ ' + err.message + '</span>';
+        });
+}
+
+// 发布需求
+function hubShowRequestForm() {
+    var title = prompt('请输入需求标题:');
+    if (!title) return;
+    var desc = prompt('请输入需求描述:');
+    // TODO: 调API提交需求
+    alert('📢 需求"' + title + '"已记录，感谢反馈！');
+}
+
+// 初始化：当Tab被切换到HarvenHub时加载
+window.hubInit = function() {
+    hubLoadList();
+    hubLoadRequests();
+};
+
+// 自动加载（页面加载后延迟执行）
+setTimeout(function() {
+    if (document.getElementById('tab-harvenhub')) {
+        hubLoadList();
+        hubLoadRequests();
+    }
+}, 2000);
+</script>

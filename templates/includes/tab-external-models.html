@@ -1,0 +1,151 @@
+<!-- 非Ollama模型安装器（搜索优先，零推荐） -->
+<div class="tab-panel" id="tab-external-models" style="display:none;">
+    <div class="settings-grid">
+        <div style="background:linear-gradient(135deg,#1a1a3e,#2d2d5e);border-radius:12px;padding:16px;margin-bottom:12px;border:1px solid #f59e0b;">
+            <div style="font-weight:600;color:#f59e0b;margin-bottom:8px;">📦 通用模型安装器</div>
+            <div style="font-size:12px;color:#94a3b8;line-height:1.6;">
+                安装本地模型扩展哈文能力。根据你的电脑配置和个人需求自行选择：<br>
+                🎵 音乐 · 🗣️ 语音 · 🖼️ 图像 · 🎬 视频 · 🤖 多模态 · 🔬 嵌入<br>
+                安装后自动注册，对话中即可使用。
+            </div>
+        </div>
+
+        <!-- 硬件信息（仅作参考，不做推荐） -->
+        <div id="modelHwInfo" style="padding:8px 12px;background:#1e293b;border-radius:8px;margin-bottom:12px;font-size:11px;color:#94a3b8;">
+            ⏳ 检测硬件配置...
+        </div>
+
+        <!-- 搜索栏 -->
+        <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;">
+            <input id="modelSearchQ" type="text" data-i18n-ph="web.externalmodels.placeholder_1" placeholder="🔍 搜索模型（如：音乐、图像、whisper...）"
+                   style="flex:1;padding:8px 12px;background:#1a1a2e;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:12px;"
+                   onkeydown="if(event.key==='Enter')searchModels();">
+            <select id="modelSearchCat" style="padding:8px 10px;background:#1a1a2e;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:12px;">
+                <option value="all" data-i18n="web.externalmodels.option_1">全部类别</option>
+                <option value="music" data-i18n="web.externalmodels.option_2">🎵 音乐</option>
+                <option value="speech" data-i18n="web.externalmodels.option_3">🗣️ 语音</option>
+                <option value="image" data-i18n="web.externalmodels.option_4">🖼️ 图像</option>
+                <option value="video" data-i18n="web.externalmodels.option_5">🎬 视频</option>
+                <option value="multimodal" data-i18n="web.externalmodels.option_6">🤖 多模态</option>
+                <option value="embedding" data-i18n="web.externalmodels.option_7">🔬 嵌入</option>
+                <option value="llm" data-i18n="web.externalmodels.option_8">💬 大语言</option>
+            </select>
+            <button onclick="searchModels()" class="btn-sm btn-primary" style="font-size:11px;padding:6px 14px;white-space:nowrap;" data-i18n="web.externalmodels.button_1">🔍 搜索</button>
+        </div>
+
+        <!-- 结果区域 -->
+        <div id="modelSearchResults" style="font-size:12px;color:#64748b;text-align:center;padding:20px 0;">
+            输入关键词或选择类别，点击搜索查找可安装的模型
+        </div>
+
+        <!-- 提示 -->
+        <div id="modelSearchTip" style="display:none;margin-top:12px;padding:10px;background:#1a1a2e;border-radius:8px;font-size:12px;color:#94a3b8;">
+            💡 <b>脚本型模型</b>（如 ACE-Step/MusicGen）：安装后需启动自有服务（端口8001/7860），<br>不会出现在Ollama模型列表。在对话中输入相关触发词即可自动调用。
+        </div>
+    </div>
+</div>
+
+<script>
+// ═══ 硬件检测（页面加载时）═══
+(async function(){
+    try {
+        var r = await fetch('/api/models/installer/hardware');
+        var hw = await r.json();
+        var gpu = hw.gpu_name !== '未知' ? hw.gpu_name + ' ' + hw.vram_gb + 'GB' : '未检测到GPU';
+        var html = '💻 你的配置：RAM ' + hw.ram_gb + 'GB';
+        if (hw.vram_gb > 0) {
+            html += ' | GPU ' + gpu;
+        } else {
+            html += ' | GPU 未检测到（可安装仅需CPU的模型）';
+        }
+        html += ' <span style="color:#64748b;" data-i18n="web.externalmodels.span_1">— 按需搜索安装，不自动推荐</span>';
+        document.getElementById('modelHwInfo').innerHTML = html;
+    } catch(e) {
+        document.getElementById('modelHwInfo').innerHTML = '⚠️ 硬件检测失败，可正常搜索安装模型';
+    }
+})();
+
+// ═══ 搜索模型 ═══
+async function searchModels() {
+    var q = document.getElementById('modelSearchQ').value.trim();
+    var cat = document.getElementById('modelSearchCat').value;
+    var results = document.getElementById('modelSearchResults');
+    var tip = document.getElementById('modelSearchTip');
+    
+    results.innerHTML = '<span style="color:#f59e0b;" data-i18n="web.externalmodels.span_2">⏳ 搜索中...</span>';
+    tip.style.display = 'none';
+    
+    try {
+        var params = new URLSearchParams();
+        if (q) params.set('q', q);
+        if (cat !== 'all') params.set('category', cat);
+        var url = '/api/models/installer/search?' + params.toString();
+        var r = await fetch(url);
+        var data = await r.json();
+        var models = data.models || [];
+        
+        if (models.length === 0) {
+            results.innerHTML = '<div style="color:#64748b;padding:20px;">😕 未找到匹配的模型<br><span style="font-size:11px;" data-i18n="web.externalmodels.span_3">尝试其他关键词或浏览全部类别</span></div>';
+            return;
+        }
+        
+        var html = '<div style="color:#94a3b8;margin-bottom:8px;font-size:11px;">找到 ' + models.length + ' 个模型</div>';
+        
+        for (var i = 0; i < models.length; i++) {
+            var m = models[i];
+            var catColor = {'音乐':'#f59e0b','语音':'#06b6d4','图像':'#8b5cf6','视频':'#ec4899','多模态':'#10b981','嵌入':'#6366f1','llm':'#3b82f6'};
+            var cc = catColor[m.category] || '#94a3b8';
+            
+            var btn;
+            if (m.installed) {
+                btn = '<span style="color:#22c55e;font-size:11px;" data-i18n="web.externalmodels.span_4">✅ 已安装</span>';
+            } else if (m.install && m.install.type === 'ollama') {
+                btn = '<span style="color:#64748b;font-size:10px;" data-i18n="web.externalmodels.span_5">通过 Ollama 安装</span>';
+            } else {
+                btn = '<button class="btn-sm btn-primary" style="font-size:10px;padding:2px 8px;" onclick="installExternalModel(\'' + m.id + '\')" data-i18n="web.externalmodels.button_2">📥 安装</button>';
+            }
+            
+            var licenseHtml = m.license ? '<span style="color:#64748b;font-size:10px;">' + m.license + '</span>' : '';
+            var sizeHtml = m.model_size ? '~' + m.model_size : '未知大小';
+            var reqHtml = m.requirements ? 'RAM≥' + (m.requirements.ram || '?') + ' GPU' + (m.requirements.gpu || '?') : '';
+            
+            html += '<div style="padding:10px 12px;background:#1a1a2e;border-left:3px solid ' + cc + ';border-radius:0 8px 8px 0;margin:6px 0;display:flex;justify-content:space-between;align-items:center;">' +
+                '<div>' +
+                    '<b>' + m.name + '</b> ' +
+                    '<span style="color:' + cc + ';font-size:10px;">· ' + m.category + '</span><br>' +
+                    '<span style="color:#888;font-size:10px;">' + sizeHtml + ' | ' + reqHtml + ' | ' + licenseHtml + '</span>' +
+                '</div>' +
+                btn +
+            '</div>';
+        }
+        
+        results.innerHTML = html;
+        
+        // 显示脚本型模型提示（如果有安装器来源的模型）
+        var hasInstaller = models.some(function(m){ return m.source === 'installer'; });
+        tip.style.display = hasInstaller ? 'block' : 'none';
+        
+    } catch(e) {
+        results.innerHTML = '<span style="color:#ef4444;" data-i18n="web.externalmodels.span_6">搜索失败: ' + e.message + '</span>';
+    }
+}
+
+// ═══ 安装模型（保持不变）═══
+window.installExternalModel = async function(modelId) {
+    var results = document.getElementById('modelSearchResults');
+    results.innerHTML += '<div id="installProgress" style="color:#f59e0b;padding:8px;">⏳ 正在安装 ' + modelId + '...（首次较慢，请耐心等待）</div>';
+    try {
+        var r = await fetch('/api/models/installer/install/' + modelId, {method:'POST'});
+        var d = await r.json();
+        var progress = document.getElementById('installProgress');
+        if (d.success) {
+            progress.innerHTML = '<span style="color:#22c55e;">✅ ' + d.message + '</span><br><span style="font-size:10px;color:#888;">' + d.next_step + '</span>';
+        } else {
+            progress.innerHTML = '<span style="color:#ef4444;">❌ ' + d.message + '</span>';
+        }
+        setTimeout(function(){ searchModels(); }, 3000);
+    } catch(e) {
+        document.getElementById('installProgress').innerHTML = '<span style="color:#ef4444;" data-i18n="web.externalmodels.span_7">网络错误: ' + e.message + '</span>';
+    }
+};
+</script>

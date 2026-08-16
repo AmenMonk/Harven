@@ -1,0 +1,143 @@
+<!-- Tab: 基本信息 -->
+                <div class="tab-panel active" id="tab-basic">
+                    <div class="settings-grid">
+                        <div class="setting-group">
+                            <label data-i18n="web.basic.nickname_label">你的昵称</label>
+                            <input type="text" id="setNickname" data-i18n-ph="web.basic.nickname_ph" placeholder="AI会这样称呼你">
+                            <div class="setting-desc" data-i18n="web.basic.nickname_desc">AI在对话中会用这个昵称称呼你</div>
+                        </div>
+                        <div class="setting-group">
+                            <label data-i18n="web.basic.ai_name_label">AI 名称</label>
+                            <input type="text" id="setAiName" value="Harven AI" data-i18n-ph="web.basic.ai_name_ph" placeholder="给AI起个名字">
+                            <div class="setting-desc" data-i18n="web.basic.ai_name_desc">自定义AI的自我介绍名称</div>
+                        </div>
+
+        <!-- ===== 联网搜索（2026-07-06 双路：SearXNG优先 + Bing内置） ===== -->
+        <div class="setting-section-title" style="margin-top:20px;" data-i18n="web.basic.web_search_title">🌐 联网搜索</div>
+        <div class="setting-group" style="background:var(--bg-secondary);padding:16px;border-radius:8px;border:1px solid var(--border);">
+            <div style="font-size:13px;line-height:1.8;">
+                <p data-i18n="web.basic.web_search_p1">✅ <strong>Bing 搜索已内置</strong>，无需安装 Docker / API Key，开箱即用。</p>
+                <p data-i18n="web.basic.web_search_p2">✅ <strong>SearXNG 可选增强</strong>：用户自建SearXNG后（需自行用Docker部署），在下方填写URL，哈文优先使用SearXNG聚合搜索。哈文不安装SearXNG，只负责调用。</p>
+                <p data-i18n="web.basic.web_search_p3">在对话中说「搜一下今天天气」「最新新闻」等，哈文会自动联网搜索。</p>
+            </div>
+            <div style="margin-top:12px;">
+                <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;" data-i18n="web.basic.searxng_label">SearXNG URL（可选，留空则用Bing内置）</label>
+                <input type="text" id="setSearxngUrl" data-i18n-ph="web.basic.searxng_ph" placeholder="http://localhost:8080/" style="width:100%;box-sizing:border-box;padding:8px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:13px;">
+                <div class="setting-desc" style="margin-top:4px;font-size:11px;" data-i18n="web.basic.searxng_desc">
+                    自建SearXNG（需自行用Docker部署）可获得更精准的搜索结果（聚合多引擎+可抓取网页原文）。哈文不负责安装SearXNG，只负责调用。未填写时使用Bing内置搜索。
+                </div>
+            </div>
+            <div id="searchSkillStatus" style="margin-top:12px;font-size:12px;">
+                <span style="color:#22c55e;" id="searchEngineStatus" data-i18n="web.basic.searxng_status_bing">✅ Bing 搜索已就绪（内置）</span>
+            </div>
+        </div>
+
+        <!-- ===== 主语言 ===== -->
+        <div class="setting-section-title" style="margin-top:20px" data-i18n="web.basic.lang_title">🌍 语言</div>
+        <div class="setting-group">
+            <label data-i18n="web.basic.main_lang_label">主语言</label>
+            <select id="setMainLang">
+                                <option value="zh-CN">中文（简体）</option>
+                                <option value="zh-TW">中文（繁體）</option>
+                                <option value="en">English</option>
+                                <option value="es">Español</option>
+                                <option value="fr">Français</option>
+                                <option value="de">Deutsch</option>
+                                <option value="pt">Português</option>
+                                <option value="ru">Русский</option>
+                        <option value="ja">日本語</option>
+                        <option value="ko">한국어</option>
+                        <option value="ar">العربية</option>
+                        <option value="hi">हिन्दी</option>
+                        <option value="th">ไทย</option>
+                        <option value="vi">Tiếng Việt</option>
+                        <option value="id">Bahasa Indonesia</option>
+                        <option value="it">Italiano</option>
+                        <option value="nl">Nederlands</option>
+                        <option value="pl">Polski</option>
+                        <option value="tr">Türkçe</option>
+                        <option value="uk">Українська</option>
+                            </select>
+                        </div>
+                    </div>
+<script>
+// ═══ 联网搜索状态（2026-07-06 双路：SearXNG优先 + Bing内置） =====
+// ★ 2026-07-20: 加SearXNG连通性检测，三态显示：
+//   有URL且连通 → ✅ SearXNG 已启用
+//   有URL但不通 → ⚠️ 已配置但服务未响应，当前使用Bing
+//   无URL       → ✅ Bing 搜索已就绪（内置）
+
+// 检测SearXNG连通性并更新状态显示
+function checkSearxngStatus(url) {
+    var status = document.getElementById('searchEngineStatus');
+    if (!url) {
+        if (status) {
+            status.textContent = (window.HarvenI18n && HarvenI18n.t('web.basic.searxng_status_bing')) || '✅ Bing 搜索已就绪（内置）';
+            status.style.color = '#22c55e';
+        }
+        return;
+    }
+    // 先显示"检测中"
+    if (status) {
+        status.textContent = (window.HarvenI18n && HarvenI18n.t('web.basic.searxng_status_checking')) || '⏳ 正在检测 SearXNG 服务...';
+        status.style.color = '#f59e0b';
+    }
+    fetch('/api/settings/searxng-test', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({url: url})
+    }).then(function(r){ return r.json(); }).then(function(d) {
+        if (!status) return;
+        if (d.reachable) {
+            status.textContent = '✅ SearXNG 已启用（' + url + '，' + (d.results_count||0) + '条结果已验证）';
+            status.style.color = '#22c55e';
+        } else {
+            status.textContent = '⚠️ SearXNG 已配置（' + url + '）但服务未响应：' + (d.error||'未知') + '，当前使用Bing';
+            status.style.color = '#f59e0b';
+        }
+    }).catch(function(e) {
+        if (!status) return;
+        status.textContent = '⚠️ SearXNG 已配置（' + url + '）但检测失败，当前使用Bing';
+        status.style.color = '#f59e0b';
+    });
+}
+
+// 加载SearXNG URL配置
+document.addEventListener('DOMContentLoaded', function() {
+    fetch('/api/settings/search').then(r => r.json()).then(function(cfg) {
+        var url = cfg.searxng_url || '';
+        var input = document.getElementById('setSearxngUrl');
+        if (input && url) input.value = url;
+        checkSearxngStatus(url);
+    }).catch(function(e) {});
+});
+
+// 保存SearXNG URL
+function saveSearchSettings() {
+    var url = document.getElementById('setSearxngUrl') ? document.getElementById('setSearxngUrl').value.trim() : '';
+    fetch('/api/settings/search', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            search_provider: url ? 'searxng' : 'bing',
+            searxng_url: url,
+            web_search_enabled: true
+        })
+    }).then(function(r) { return r.json(); }).then(function(d) {
+        if (d.success) {
+            if (typeof toast === 'function') toast('搜索设置已保存');
+            // ★ 保存后立即检测连通性
+            checkSearxngStatus(url);
+        }
+    }).catch(function(e) {
+        if (typeof toast === 'function') toast('保存失败: ' + e.message);
+    });
+}
+window.saveSearchSettings = saveSearchSettings;
+// ★ 2026-08-16: 监听语言切换，重新检测状态文案
+document.addEventListener('harven:langchange', function() {
+    var url = document.getElementById('setSearxngUrl') ? document.getElementById('setSearxngUrl').value.trim() : '';
+    checkSearxngStatus(url);
+});
+</script>
+                </div>

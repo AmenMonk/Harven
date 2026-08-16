@@ -1,0 +1,2868 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Harven AI 技术详解 v7.0</title><style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; background: #0d1117; color: #c9d1d9; line-height: 1.7; }
+.container { max-width: 900px; margin: 0 auto; padding: 40px 24px; }
+h1 { font-size: 28px; font-weight: 700; color: #f0f6fc; margin: 32px 0 16px; padding-bottom: 12px; border-bottom: 1px solid #30363d; }
+h2 { font-size: 22px; font-weight: 600; color: #f0f6fc; margin: 28px 0 12px; padding-bottom: 8px; border-bottom: 1px solid #21262d; }
+h3 { font-size: 18px; font-weight: 600; color: #e6edf3; margin: 24px 0 8px; }
+h4 { font-size: 15px; font-weight: 600; color: #e6edf3; margin: 20px 0 6px; }
+p { margin: 8px 0; }
+ul, ol { margin: 8px 0 8px 24px; }
+li { margin: 4px 0; }
+code { background: #21262d; color: #f0883e; padding: 2px 6px; border-radius: 4px; font-size: 13px; font-family: 'SF Mono', Consolas, monospace; }
+pre { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; overflow-x: auto; margin: 12px 0; }
+pre code { background: none; color: #c9d1d9; padding: 0; }
+table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+th { background: #21262d; color: #f0f6fc; padding: 8px 12px; text-align: left; border: 1px solid #30363d; }
+td { padding: 8px 12px; border: 1px solid #30363d; }
+tr:nth-child(even) td { background: #161b22; }
+blockquote { border-left: 4px solid #58a6ff; background: #1f6feb11; padding: 12px 16px; margin: 12px 0; border-radius: 0 6px 6px 0; }
+a { color: #58a6ff; }
+hr { border: none; border-top: 1px solid #30363d; margin: 24px 0; }
+strong { color: #f0f6fc; }
+.nav { position: fixed; top: 0; left: 0; right: 0; background: #161b22; border-bottom: 1px solid #30363d; padding: 12px 24px; z-index: 100; }
+.nav a { color: #58a6ff; text-decoration: none; font-size: 14px; }
+.container { margin-top: 60px; }
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: #0d1117; }
+::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+</style></head><body>
+<div class="nav"><a href="index.html">← 返回文档中心</a></div>
+<div class="container"><h1 id="harven-ai-v63">Harven AI 哈文 技术详解 v6.3</h1>
+<blockquote>
+<p>版本：v6.3 | 更新日期：2026-08-03 | 适用版本：哈文 v0.2.1+
+作者：AmenMonk | 许可证：Apache 2.0</p>
+</blockquote>
+<hr />
+<h2 id="_1">目录</h2>
+<ul>
+<li><a href="#第一部分项目概述">第一部分：项目概述</a></li>
+<li><a href="#第二部分架构设计">第二部分：架构设计</a></li>
+<li><a href="#第三部分核心功能详解29项">第三部分：核心功能详解（29项）</a></li>
+<li><a href="#第四部分设置面板8个tab">第四部分：设置面板（8个Tab）</a></li>
+<li><a href="#第五部分安装部署">第五部分：安装部署</a></li>
+<li><a href="#第六部分开发者指南">第六部分：开发者指南</a></li>
+<li><a href="#第七部分能力边界">第七部分：能力边界</a></li>
+</ul>
+<hr />
+<h2 id="_2">第一部分：项目概述</h2>
+<h3 id="11">1.1 产品定位</h3>
+<p><strong>Harven AI（哈文）</strong> 是一个纯本地运行的私有AI平台。</p>
+<table>
+<thead>
+<tr>
+<th>定位</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>产品名</td>
+<td>Harven AI（哈文）</td>
+</tr>
+<tr>
+<td>中文名</td>
+<td>哈文</td>
+</tr>
+<tr>
+<td>定位</td>
+<td>纯本地运行私有AI平台</td>
+</tr>
+<tr>
+<td>价格</td>
+<td><strong>永久免费，不做付费会员</strong></td>
+</tr>
+<tr>
+<td>数据主权</td>
+<td>所有数据存储在用户本地，不外传</td>
+</tr>
+<tr>
+<td>目标用户</td>
+<td>注重隐私的中产高知家庭 + 小微个体户</td>
+</tr>
+</tbody>
+</table>
+<h3 id="12">1.2 核心差异化</h3>
+<table>
+<thead>
+<tr>
+<th>差异化</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>全能一体化</td>
+<td>模型+知识库+操作电脑+垂直模型+设备管理，一个平台全搞定</td>
+</tr>
+<tr>
+<td>数据主权在用户</td>
+<td>纯本地，不依赖云端</td>
+</tr>
+<tr>
+<td>全生活场景</td>
+<td>不只管智能家居，是家庭财务+菜谱+学习+提醒</td>
+</tr>
+<tr>
+<td>普通人可用</td>
+<td>对话驱动，不需要编程</td>
+</tr>
+</tbody>
+</table>
+<h3 id="13">1.3 技术栈</h3>
+<table>
+<thead>
+<tr>
+<th>层级</th>
+<th>技术</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Web框架</td>
+<td>Flask 3.1.3</td>
+<td>Python Web服务</td>
+</tr>
+<tr>
+<td>AI推理</td>
+<td>Ollama / 外部API</td>
+<td>本地模型+外部模型</td>
+</tr>
+<tr>
+<td>向量检索</td>
+<td>FAISS 1.14.2</td>
+<td>知识库语义搜索</td>
+</tr>
+<tr>
+<td>数据库</td>
+<td>SQLite</td>
+<td>所有数据本地存储</td>
+</tr>
+<tr>
+<td>桌面UI</td>
+<td>PySide6 6.11.1（LGPL）</td>
+<td>桌面版界面</td>
+</tr>
+<tr>
+<td>AI SDK</td>
+<td>openai 2.41.0</td>
+<td>兼容SDK连接Ollama/云端</td>
+</tr>
+<tr>
+<td>模型下载</td>
+<td>modelscope 1.37.1</td>
+<td>ModelScope模型下载</td>
+</tr>
+<tr>
+<td>多模型</td>
+<td>litellm 1.88.0</td>
+<td>多模型统一接口</td>
+</tr>
+<tr>
+<td>浏览器</td>
+<td>playwright 1.58.0</td>
+<td>浏览器自动化</td>
+</tr>
+<tr>
+<td>PDF解析</td>
+<td>pypdf 6.13.0 + pdfplumber</td>
+<td>PDF文字+表格提取</td>
+</tr>
+<tr>
+<td>语音</td>
+<td>faster-whisper 1.2.1</td>
+<td>本地语音转写</td>
+</tr>
+</tbody>
+</table>
+<h3 id="14">1.4 目标硬件</h3>
+<p>哈文是给大众用的，支持各种配置：</p>
+<table>
+<thead>
+<tr>
+<th>配置</th>
+<th>哈文怎么适配</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>24GB显存（4090）</td>
+<td>硬件检测→推荐跑32B模型（70B需40GB+显存）</td>
+</tr>
+<tr>
+<td>12GB显存（4070）</td>
+<td>硬件检测→推荐跑14B模型</td>
+</tr>
+<tr>
+<td>8GB显存（3060）</td>
+<td>硬件检测→推荐跑7B模型</td>
+</tr>
+<tr>
+<td>没有独立显卡</td>
+<td>硬件检测→推荐CPU跑或外脑模式</td>
+</tr>
+<tr>
+<td>不想用本地模型</td>
+<td>外脑模式→用云端模型（不占显存）</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="_3">第二部分：架构设计</h2>
+<h3 id="21">2.1 整体架构图</h3>
+<div class="codehilite"><pre><span></span><code><span class="err">用户浏览器</span>
+<span class="w">    </span><span class="err">↓</span><span class="w"> </span><span class="n">HTTP</span>
+<span class="n">Flask</span><span class="w"> </span><span class="n">Web服务</span><span class="err">（</span><span class="n">web_app</span><span class="o">.</span><span class="n">py</span><span class="err">）</span>
+<span class="w">    </span><span class="err">↓</span>
+<span class="err">对话引擎（</span><span class="n">engine</span><span class="o">.</span><span class="n">py</span><span class="err">）</span>
+<span class="w">    </span><span class="err">├──</span><span class="w"> </span><span class="err">查询模式选择（本地</span><span class="o">/</span><span class="err">外脑）</span>
+<span class="w">    </span><span class="err">├──</span><span class="w"> </span><span class="err">知识库搜索（</span><span class="n">knowledge_base</span><span class="o">.</span><span class="n">py</span><span class="err">）</span>
+<span class="w">    </span><span class="err">├──</span><span class="w"> </span><span class="n">Skills注入</span><span class="err">（</span><span class="n">skill_manager</span><span class="o">.</span><span class="n">py</span><span class="err">）</span>
+<span class="w">    </span><span class="err">├──</span><span class="w"> </span><span class="err">用户画像</span><span class="o">+</span><span class="err">习惯注入</span>
+<span class="w">    </span><span class="err">├──</span><span class="w"> </span><span class="err">模型调用（</span><span class="n">MultiModelManager</span><span class="err">）</span>
+<span class="w">    </span><span class="err">├──</span><span class="w"> </span><span class="err">工具执行（</span><span class="n">tool_executor</span><span class="o">.</span><span class="n">py</span><span class="err">）</span>
+<span class="w">    </span><span class="err">└──</span><span class="w"> </span><span class="err">记忆系统（</span><span class="n">memory</span><span class="o">.</span><span class="n">py</span><span class="err">）</span>
+<span class="w">        </span><span class="err">↓</span>
+<span class="w">    </span><span class="err">模型输出</span>
+<span class="w">        </span><span class="err">↓</span>
+<span class="w">    </span><span class="n">tool_executor提取代码块</span><span class="err">→执行→返回结果</span>
+</code></pre></div>
+
+<h3 id="22">2.2 两种查询模式</h3>
+<p>两种查询模式共享同一套能力：<strong>知识库 + Skills + 用户画像 + 习惯 + 诚实</strong></p>
+<table>
+<thead>
+<tr>
+<th>模式</th>
+<th>通用模型</th>
+<th>知识库</th>
+<th>Skills</th>
+<th>画像</th>
+<th>习惯</th>
+<th>垂直模型</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>🏠本地模式</td>
+<td>本地通用模型（Ollama是备选）</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+<td>独立调用</td>
+</tr>
+<tr>
+<td>🤖外脑模式</td>
+<td>外部模型（DeepSeek/GLM/豆包等）</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+<td>独立调用</td>
+</tr>
+</tbody>
+</table>
+<p><strong>区别：只是通用推理模型不同（本地 vs 外部），其他能力完全一样。</strong></p>
+<h3 id="23">2.3 协作模式（独立开关）</h3>
+<p>协作模式是独立开关，与查询模式配合使用：</p>
+<table>
+<thead>
+<tr>
+<th>协作模式</th>
+<th>流程</th>
+<th>知识库</th>
+<th>Skills</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>☁️云地协作</td>
+<td>外脑分析→调垂直参数→给建议→本地垂直模型执行</td>
+<td>❌不加</td>
+<td>❌不加</td>
+</tr>
+<tr>
+<td>🏠本地双模</td>
+<td>本地通用模型调度→调垂直参数→给建议→垂直模型执行</td>
+<td>❌不加</td>
+<td>❌不加</td>
+</tr>
+</tbody>
+</table>
+<p><strong>协作模式只调参数+给建议，不加知识库和Skills（会干扰调参数）。</strong></p>
+<p><strong>协作模式开启时，互联网搜索自动关闭（避免冲突）。</strong></p>
+<h3 id="24">2.4 垂直模型</h3>
+<p>垂直模型独立调用，不经过知识库/Skills/画像/习惯：</p>
+<div class="codehilite"><pre><span></span><code>用户说&quot;做一首音乐&quot;
+    ↓
+通用模型理解需求 → 调出MusicGen参数（description=音乐, duration=10s）
+    ↓
+垂直模型执行：MusicGen接收参数 → 生成音乐 → 返回
+不经过知识库/Skills/画像/习惯
+</code></pre></div>
+
+<h3 id="25">2.5 代码执行机制</h3>
+<div class="codehilite"><pre><span></span><code><span class="err">模型生成</span><span class="w"> </span><span class="err">```</span><span class="n">python</span><span class="w"> </span><span class="err">代码块</span>
+<span class="w">    </span><span class="err">↓</span>
+<span class="n">tool_executor</span><span class="o">.</span><span class="n">py</span><span class="w"> </span><span class="err">提取代码块</span>
+<span class="w">    </span><span class="err">↓</span>
+<span class="err">安全检查（黑名单</span><span class="o">+</span><span class="err">危险模块）</span>
+<span class="w">    </span><span class="err">↓</span>
+<span class="err">拦截检查（越权调用</span><span class="o">+</span><span class="err">搜索代码）</span>
+<span class="w">    </span><span class="err">↓</span>
+<span class="err">写入临时文件</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="err">用</span><span class="o">.</span><span class="n">venv的python执行</span>
+<span class="w">    </span><span class="err">↓</span>
+<span class="err">返回</span><span class="w"> </span><span class="n">stdout</span><span class="o">/</span><span class="n">stderr</span><span class="w"> </span><span class="err">结果</span>
+<span class="w">    </span><span class="err">↓</span>
+<span class="err">结果注入对话上下文</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="err">模型看到结果继续回答</span>
+</code></pre></div>
+
+<p><strong>关键：用 <code>.venv\Scripts\python.exe</code> 执行（modelscope/openai等库装在.venv里）。</strong></p>
+<p><strong>★ v6.0 新增机制：</strong></p>
+<ol>
+<li>
+<p><strong>工具执行后二次推理</strong>：代码执行完毕后，引擎自动发起第二次模型调用，让模型看到执行结果并继续解读（不再"说完就停"）</p>
+</li>
+<li>
+<p><strong>stderr 智能过滤</strong>：自动过滤 Triton/xformers 等无害警告，只保留真正的错误信息。成功时 stderr 截断到 500 字符，失败时保留 3000 字符</p>
+</li>
+<li>
+<p><strong>代码块格式强制</strong>（★ v6.2修订）：FC未启用时，系统提示词强制模型使用 <code>```python</code> 代码块格式；<strong>FC启用时，改为强制调用FC工具（不写代码）</strong>——两者互斥，按FC状态自动切换</p>
+</li>
+<li>
+<p><strong>联网意图不阻断</strong>（★ v6.2修订）：分类器误判为搜索请求时不再 <code>return</code> 阻断流程；<strong>FC启用时走<code>web_search</code>工具，FC未启用时走内置Bing搜索</strong>——按FC状态选择路径</p>
+</li>
+<li>
+<p><strong>目录结构注入</strong>：系统提示词包含完整项目目录结构（web_app.py/data/sqlite/data/skills等），模型不再猜测路径</p>
+</li>
+<li>
+<p><strong>代码审计 Skill</strong>：<code>data/skills/code_audit/</code> 可执行技能，说"检测废代码"自动触发，系统性扫描9类问题（废import/断链路由/废工具/静默吞错/超时/截断等），直接格式化输出报告（不经过模型解读，避免跑偏）</p>
+</li>
+<li>
+<p><strong>Skill 触发词自动执行</strong>（★ v6.2修订）：引擎检测用户消息匹配 Skill 触发词时自动执行脚本。<strong>FC启用时优先走FC的<code>execute_skill</code>工具；FC未启用或模型不调FC时走触发词自动执行</strong>——FC路径优先，触发词兜底</p>
+</li>
+<li>
+<p><strong>记忆系统方案C</strong>：只在用户说"记住/我喜欢/我叫"等关键词时才做 AI 提取（不是每轮都提）；用引擎当前模型（DeepSeek/ModelScope/Ollama）提取，不硬编码 Ollama；L0 原始对话始终保存</p>
+</li>
+<li>
+<p><strong>iframe sandbox</strong>：<code>allow-scripts allow-forms allow-modals</code>（allow-modals 让 confirm() 对话框正常工作）</p>
+</li>
+</ol>
+<h3 id="26">2.6 三层安全防护</h3>
+<table>
+<thead>
+<tr>
+<th>层级</th>
+<th>功能</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>第一层</td>
+<td>文件扫描</td>
+<td>5层检查：扩展名/大小/Magic Bytes/内容模式/杀毒扫描</td>
+</tr>
+<tr>
+<td>第二层</td>
+<td>代码沙箱</td>
+<td>Docker容器隔离（优先）/ 子进程隔离（降级），拦截越权调用+联网搜索代码</td>
+</tr>
+<tr>
+<td>第三层</td>
+<td>注入审查</td>
+<td>上传文档时LLM复核内容，防止提示注入</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="29">第三部分：核心功能详解（29项）</h2>
+<h3 id="31">3.1 本地知识库（三层架构）</h3>
+<p>存储和查询用户上传的文档。</p>
+<p><strong>三层架构：</strong></p>
+<div class="codehilite"><pre><span></span><code>文档层：上传txt/md/csv/pdf/docx/xlsx/pptx → 存储到data/knowledge/
+向量层：自动向量化 → FAISS索引 → 语义搜索
+注入层：对话时自动搜索相关内容 → 注入回答
+</code></pre></div>
+
+<p><strong>使用方式：</strong>
+- 点📚知识库按钮 → 拖拽文件或粘贴文本
+- 对话时自动搜索知识库，注入相关内容辅助回答</p>
+<h3 id="32">3.2 代码执行</h3>
+<p>编写Python代码→系统自动运行→返回结果。</p>
+<p><strong>这是操控电脑的核心方式。</strong></p>
+<p><strong>能做什么：</strong>
+- 执行Python代码（```python代码块自动执行）
+- 读写文件（open/os.listdir）
+- 安装Python包（subprocess.run(['pip','install','包名'])）
+- 运行系统命令（subprocess.run()）
+- 打开文件（os.startfile()）
+- 下载文件（urllib.request.urlretrieve()）
+- 安装模型（ollama pull / modelscope / huggingface / git clone）</p>
+<p><strong>不能做什么：</strong>
+- rm -rf / del /S / format / shutdown / reboot（危险命令）
+- ctypes / winreg / win32api / win32com（危险模块）
+- 超时120秒的代码会被终止（下载类5分钟）
+- 不要自己写requests搜索网页（系统有内置Bing搜索）</p>
+<p><strong>执行环境：</strong> 用 <code>.venv\Scripts\python.exe</code> 执行（预装了所有依赖）</p>
+<h3 id="33">3.3 文件管理</h3>
+<p>通过Python代码读写本地文件、列出目录。</p>
+<div class="codehilite"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="c1"># 列出D盘文件</span>
+<span class="n">files</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">listdir</span><span class="p">(</span><span class="s1">&#39;D:</span><span class="se">\\</span><span class="s1">&#39;</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">files</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+</code></pre></div>
+
+<h3 id="34">3.4 任务自动化（软件安装）</h3>
+<p>帮用户下载和安装软件/模型。</p>
+<p><strong>五种安装方式：</strong>
+- pip安装：<code>subprocess.run(['pip', 'install', '包名'], timeout=120)</code>
+- HuggingFace：<code>from huggingface_hub import snapshot_download; snapshot_download('模型名')</code>
+- ModelScope：<code>from modelscope import snapshot_download; snapshot_download('模型名')</code>
+- Ollama：<code>subprocess.run(['ollama', 'pull', '模型名'], timeout=300)</code>
+- GitHub：<code>subprocess.run(['git', 'clone', 'URL'], timeout=120)</code></p>
+<h3 id="35">3.5 专项培养</h3>
+<p>给对话设定专职角色。</p>
+<table>
+<thead>
+<tr>
+<th>角色</th>
+<th>效果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>翻译助手</td>
+<td>发什么都翻译</td>
+</tr>
+<tr>
+<td>代码审查员</td>
+<td>审查代码质量</td>
+</tr>
+<tr>
+<td>周报生成器</td>
+<td>自动生成周报</td>
+</tr>
+</tbody>
+</table>
+<p><strong>创建方式：</strong> 点🤖专项按钮新建，或对话里说"创建翻译助手"</p>
+<h3 id="36">3.6 监控中心</h3>
+<p>自动追踪关注话题的最新动态。</p>
+<p><strong>RSS源（6个）：</strong> 36氪 / IT之家 / 开源中国 / InfoQ / Solidot / 少数派</p>
+<p><strong>使用：</strong> 添加主题+关键词（如"AI动态"+关键词"AI,GPT,大模型"）→ 系统定时抓取匹配新闻</p>
+<h3 id="37">3.7 垂直模型</h3>
+<p>多种专业垂直模型的统称（已内置6种+支持动态扩展）。</p>
+<table>
+<thead>
+<tr>
+<th>模型</th>
+<th>图标</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>音乐生成</td>
+<td>🎵</td>
+<td>MusicGen / ACE-Step</td>
+</tr>
+<tr>
+<td>图片生成</td>
+<td>🎨</td>
+<td>Stable Diffusion</td>
+</tr>
+<tr>
+<td>语音合成</td>
+<td>🔊</td>
+<td>Coqui TTS</td>
+</tr>
+<tr>
+<td>代码生成</td>
+<td>💻</td>
+<td>代码辅助</td>
+</tr>
+<tr>
+<td>数据分析</td>
+<td>📊</td>
+<td>数据处理</td>
+</tr>
+<tr>
+<td>文档翻译</td>
+<td>🌐</td>
+<td>多语言翻译</td>
+</tr>
+</tbody>
+</table>
+<p><strong>使用：</strong> 点🎨垂直按钮选择模型 → 填参数 → 执行</p>
+<p><strong>★ 垂直模型独立调用，不经过知识库/Skills/画像/习惯。</strong></p>
+<h3 id="38">3.8 图片识别</h3>
+<p>查看和分析用户上传的图片。</p>
+<ul>
+<li>视觉模型：minicpm-v:8b</li>
+<li>上传图片→系统自动分析→返回描述</li>
+<li>不支持视觉时提示"请切换到minicpm-v:8b或外脑模式"</li>
+</ul>
+<h3 id="39">3.9 联网搜索</h3>
+<p>Bing内置+SearXNG可选增强。</p>
+<table>
+<thead>
+<tr>
+<th>触发方式</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>点🌐互联网按钮</td>
+<td>手动开启</td>
+</tr>
+<tr>
+<td>关键词触发</td>
+<td>消息含"搜索/天气/新闻/股价/上证/指数"等</td>
+</tr>
+<tr>
+<td>SearXNG可选</td>
+<td>用户自建后填写URL，优先使用SearXNG聚合搜索</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>事实查询（天气/股价）直接展示搜索结果卡片</li>
+<li>知识查询经模型整合回答</li>
+<li>协作模式开启时自动关闭（避免冲突）</li>
+</ul>
+<h3 id="310">3.10 模型安装</h3>
+<p>对话驱动安装各种模型。</p>
+<p><strong>用户说"帮我装MusicGen/装华佗模型/装个qwen模型"→哈文直接生成代码块执行。</strong></p>
+<p><strong>预装的库（不需要再安装）：</strong>
+modelscope / openai / flask / faiss / requests / beautifulsoup4 / faster-whisper / pillow / pypdf / playwright / apscheduler / litellm</p>
+<h3 id="311">3.11 通用模型管理</h3>
+<p>Ollama管理本地通用模型。</p>
+<ul>
+<li>🏠本地模式用的通用模型通过Ollama管理（ollama pull qwen2.5等）</li>
+<li>Ollama是备选引擎，不是唯一方式</li>
+<li>用户可在设置→模型管理→本地模型中下载GGUF模型文件</li>
+</ul>
+<h3 id="312">3.12 查询模式</h3>
+<p>两种模式可选（共享知识库+Skills+画像+习惯）。</p>
+<table>
+<thead>
+<tr>
+<th>模式</th>
+<th>模型</th>
+<th>数据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>🏠本地模式</td>
+<td>本地通用模型（Ollama是备选）</td>
+<td>不外传</td>
+</tr>
+<tr>
+<td>🤖外脑模式</td>
+<td>外部模型（DeepSeek/GLM/豆包等）</td>
+<td>远程推理</td>
+</tr>
+</tbody>
+</table>
+<p><strong>区别：只是通用推理模型不同，其他能力完全一样。</strong></p>
+<h3 id="313">3.13 协作模式（独立开关）</h3>
+<table>
+<thead>
+<tr>
+<th>模式</th>
+<th>流程</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>☁️云地协作</td>
+<td>外脑分析→调垂直参数→给建议→本地垂直模型执行</td>
+</tr>
+<tr>
+<td>🏠本地双模</td>
+<td>本地通用模型调度→调垂直参数→给建议→垂直模型执行</td>
+</tr>
+</tbody>
+</table>
+<p><strong>协作模式只调参数+给建议，不加知识库和Skills（会干扰调参数）。</strong></p>
+<h3 id="314">3.14 硬件检测</h3>
+<p>检测电脑配置，推荐合适模型。</p>
+<ul>
+<li>检测CPU/GPU/内存</li>
+<li>21个模型数据库</li>
+<li>同步API+前端动画进度条</li>
+</ul>
+<h3 id="315">3.15 多模型管理</h3>
+<p>配置多个外部模型API。</p>
+<p><strong>支持28家厂商：</strong>
+- 国内：元宝/百川/智谱/零一/阶跃/MiniMax/文心/星火/天工/硅基流动
+- 国际：OpenAI/Claude/Gemini/Grok/Groq/Perplexity/Mistral/Together/OpenRouter/HuggingFace等</p>
+<h3 id="316">3.16 插件管理</h3>
+<p>安装/管理扩展插件（设置→🧩插件管理）。</p>
+<h3 id="317-skills">3.17 Skills系统</h3>
+<p><strong>★ v6.0 中级可执行脚本系统</strong>（2026-07-14 升级）：</p>
+<p>Skills 从纯提示词升级为<strong>可执行脚本技能</strong>，支持实际运行代码。</p>
+<table>
+<thead>
+<tr>
+<th>创建方式</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>手动创建</td>
+<td>设置→🧩插件管理→创建Skill</td>
+</tr>
+<tr>
+<td>AI自动生成</td>
+<td>设置→🧩插件管理→Skill Builder</td>
+</tr>
+<tr>
+<td>对话创建</td>
+<td>说"帮我创建翻译技能"→自动生成</td>
+</tr>
+<tr>
+<td>上传ZIP</td>
+<td><code>POST /api/skills/scripts</code> 上传完整技能包</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Skill 目录格式（可执行脚本版）：</strong></p>
+<div class="codehilite"><pre><span></span><code>data/skills/&lt;name&gt;/
+├── SKILL.md          ← 技能描述 + 触发词
+└── scripts/
+    └── main.py       ← 可执行脚本（AST沙箱 + subprocess执行）
+</code></pre></div>
+
+<p><strong>脚本执行引擎</strong>（<code>src/core/scripts_runner.py</code>）：
+- AST 沙箱：静态分析拦截危险调用
+- subprocess 隔离执行
+- 禁用的模块：subprocess/socket/ctypes（防止越权）
+- 新增端点：<code>/api/skills/scripts</code>（列表/运行/信息/上传ZIP）</p>
+<p><strong>示例 — 记账助手</strong>（<code>data/skills/accounting/</code>）：
+- <code>add</code>: 记一笔账 → SQLite 写入
+- <code>query</code>: 查账 → SQLite 查询
+- <code>summary</code>: 月度汇总 → 统计计算
+- <code>delete</code>: 删除记录</p>
+<p><strong>Skill 触发词自动执行</strong>：引擎检测用户消息匹配 Skill 触发词时自动执行脚本，不依赖 FC（Function Calling），所有模式共享。</p>
+<p><strong>原理（旧版兼容）：</strong> 用户消息含触发词→自动注入Skill的prompt→模型按规则执行</p>
+<h3 id="318-agent">3.18 Agent智能体</h3>
+<p>专项子角色（比Skill更完整）。</p>
+<table>
+<thead>
+<tr>
+<th>类型</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>预置Agent</td>
+<td>代码审查员/数据分析师/coder等（4个内置）</td>
+</tr>
+<tr>
+<td>自定义Agent</td>
+<td>设置→🧩插件管理→🧩Agent（注册中心，填写ID/名称/角色/提示词/模型偏好/触发词）</td>
+</tr>
+<tr>
+<td>Agent工坊</td>
+<td>设置→🧩插件管理→🏭工坊（创建Agent包，含Skill+模板+知识包组合）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>关系：</strong> Agent包含多个Skill，Skill是Agent的工具
+<strong>区别：</strong> Skill是"工具"（翻译工具），Agent是"工人"（翻译员带工具）
+<strong>路径：</strong> Agent注册中心和工坊都已从独立主标签移至插件管理子导航（2026-07-20重构）</p>
+<h3 id="319">3.19 安全防护（三层）</h3>
+<table>
+<thead>
+<tr>
+<th>层级</th>
+<th>功能</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>文件扫描</td>
+<td>5层检查</td>
+<td>扩展名/大小/Magic Bytes/内容模式/杀毒扫描</td>
+</tr>
+<tr>
+<td>代码沙箱</td>
+<td>隔离执行</td>
+<td>Docker容器隔离（优先）/ 子进程隔离（降级）</td>
+</tr>
+<tr>
+<td>注入审查</td>
+<td>LLM复核</td>
+<td>上传文档时LLM复核内容，防止提示注入</td>
+</tr>
+</tbody>
+</table>
+<h3 id="320">3.20 杀毒扫描</h3>
+<p>可挂载第三方杀毒软件（ClamAV）。</p>
+<ul>
+<li>配置：设置→安全隐私→第三方杀毒软件路径</li>
+<li>未装杀毒时跳过，前4层文件扫描仍生效</li>
+</ul>
+<h3 id="321">3.21 设备管理</h3>
+<p>IoT设备驱动控制。</p>
+<p><strong>驱动类型：</strong> MQTT / HTTP / WebSocket / AI临时生成驱动</p>
+<h3 id="322">3.22 手机联动</h3>
+<p>手机扫码连接哈文，远程对话。</p>
+<ul>
+<li>配置：设置→关于→📱手机+公网</li>
+</ul>
+<h3 id="323-im">3.23 IM连接</h3>
+<p>企业微信/钉钉/飞书接入。</p>
+<ul>
+<li>配置：设置→关于→📡渠道接入</li>
+</ul>
+<h3 id="324">3.24 数据保险箱</h3>
+<p>备份/恢复所有数据。</p>
+<ul>
+<li>配置：设置→💾数据</li>
+</ul>
+<h3 id="325">3.25 品牌定制</h3>
+<p>自定义名称/图标/外观。</p>
+<ul>
+<li>配置：设置→🎨外观定制</li>
+</ul>
+<h3 id="326">3.26 受控进化</h3>
+<p>用户说"帮我加功能/改代码/优化XX"→生成修改提案→用户审批→应用。</p>
+<p><strong>能改：</strong> skills/（技能脚本）、templates/（页面）、static/（样式）、config.yaml（配置）
+<strong>不能改：</strong> engine.py/web_app.py等核心代码（安全黑名单）</p>
+<p><strong>流程：</strong> 用户说需求→哈文生成提案→用户看描述→批准/拒绝→可回滚</p>
+<h3 id="327">3.27 知识包</h3>
+<p>整理好的知识库文档打包，可分享给其他用户。</p>
+<table>
+<thead>
+<tr>
+<th>操作</th>
+<th>方式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>制作</td>
+<td>用户说"帮我把知识库里的XX打包成知识包"→生成代码打包</td>
+</tr>
+<tr>
+<td>安装</td>
+<td>用户说"帮我安装XX知识包"→生成代码解压→导入知识库</td>
+</tr>
+<tr>
+<td>格式</td>
+<td>知识包.zip（documents/ + metadata.yaml）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="328-bundle">3.28 Bundle（集合包）</h3>
+<p>多个Skill+Agent+知识包的组合，完整解决方案。</p>
+<table>
+<thead>
+<tr>
+<th>操作</th>
+<th>方式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>制作</td>
+<td>用户说"帮我创建Bundle，包含记账Skill+健康Agent+营养学知识包"→生成代码打包</td>
+</tr>
+<tr>
+<td>安装</td>
+<td>用户说"帮我安装Bundle"→生成代码解压→自动安装所有Skill/Agent/知识包</td>
+</tr>
+<tr>
+<td>使用</td>
+<td>安装后Skill/Agent/知识包自动生效（不需要额外操作）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Bundle格式：</strong></p>
+<div class="codehilite"><pre><span></span><code>Bundle名称.zip
+├── bundle.yaml    ← 配置清单
+├── skills/        ← Skill文件
+├── agents/        ← Agent配置
+└── knowledge/     ← 知识包文档
+</code></pre></div>
+
+<h3 id="329-harvenhub">3.29 HarvenHub 社区市场</h3>
+<p>哈文的社区市场，用户上传/下载/分享内容。</p>
+<p><strong>Hub支持的内容类型：</strong></p>
+<table>
+<thead>
+<tr>
+<th>类型</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>⚡ Skill</td>
+<td>技能脚本</td>
+</tr>
+<tr>
+<td>🤖 Agent</td>
+<td>智能体</td>
+</tr>
+<tr>
+<td>📚 知识包</td>
+<td>知识库文档包</td>
+</tr>
+<tr>
+<td>📦 Bundle</td>
+<td>集合包（Skill+Agent+知识包）</td>
+</tr>
+<tr>
+<td>📋 模板</td>
+<td>画板/工作流模板</td>
+</tr>
+<tr>
+<td>🧠 模型/工具</td>
+<td>66个预置模型+工具下载链接</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Hub分类：</strong>
+🏠家庭 / 🏢企业 / 🏭工厂 / 🏫学校 / 🏥医疗 / 🍽️餐饮 / 🌾农业 / 🛒电商 / 🔧工具 / 📦其他</p>
+<p><strong>预置内容（66个）：</strong>
+- 通用模型24个（qwen2.5/deepseek-r1/llama3/gemma2/phi3/yi/mistral等）
+- 垂直模型13个（MusicGen/SD/TTS/Whisper/Bark/华佗等）
+- 工具12个（Ollama/Python/Git/Docker/FFmpeg/winget安装）
+- 代码模型7个（codellama/deepseek-coder/qwen2.5-coder等）
+- 推理模型5个（deepseek-r1系列）
+- 视觉模型5个（minicpm-v/llava/moondream）</p>
+<p><strong>Hub架构：</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="err">哈文客户端（</span><span class="mi">5000</span><span class="err">端口）</span>
+<span class="w">  </span><span class="err">└──</span><span class="w"> </span><span class="err">☁️</span><span class="w"> </span><span class="n">Hub云端Tab</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="err">连接</span><span class="n">Hub服务端</span>
+
+<span class="n">Hub服务端</span><span class="err">（</span><span class="mi">5001</span><span class="err">端口，独立项目</span><span class="w"> </span><span class="n">H</span><span class="p">:</span>\<span class="n">HarvenHub</span>\<span class="err">）</span>
+<span class="w">  </span><span class="err">├──</span><span class="w"> </span><span class="n">API服务</span><span class="err">（</span><span class="n">Flask</span><span class="err">）</span>
+<span class="w">  </span><span class="err">├──</span><span class="w"> </span><span class="err">数据库（</span><span class="n">SQLite</span><span class="err">：</span><span class="n">users</span><span class="o">/</span><span class="n">items</span><span class="o">/</span><span class="n">reviews</span><span class="o">/</span><span class="n">requests</span><span class="o">/</span><span class="n">downloads</span><span class="o">/</span><span class="n">reports</span><span class="err">）</span>
+<span class="w">  </span><span class="err">├──</span><span class="w"> </span><span class="err">文件存储（</span><span class="n">storage</span><span class="o">/</span><span class="n">files</span><span class="o">/</span><span class="err">）</span>
+<span class="w">  </span><span class="err">├──</span><span class="w"> </span><span class="err">自动审核（</span><span class="mi">4</span><span class="err">层：文件类型</span><span class="o">/</span><span class="err">大小</span><span class="o">/</span><span class="err">病毒</span><span class="o">/</span><span class="err">代码扫描）</span>
+<span class="w">  </span><span class="err">├──</span><span class="w"> </span><span class="err">用户系统（注册</span><span class="o">/</span><span class="err">登录</span><span class="o">/</span><span class="err">快速登录）</span>
+<span class="w">  </span><span class="err">└──</span><span class="w"> </span><span class="err">管理后台（</span><span class="n">http</span><span class="p">:</span><span class="o">//</span><span class="mf">127.0</span><span class="o">.</span><span class="mf">0.1</span><span class="p">:</span><span class="mi">5001</span><span class="o">/</span><span class="n">admin</span><span class="err">）</span>
+</code></pre></div>
+
+<p><strong>Hub API：</strong></p>
+<table>
+<thead>
+<tr>
+<th>API</th>
+<th>功能</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GET /api/hub/list</td>
+<td>内容列表</td>
+</tr>
+<tr>
+<td>GET /api/hub/search</td>
+<td>搜索</td>
+</tr>
+<tr>
+<td>GET /api/hub/detail/<id></td>
+<td>详情</td>
+</tr>
+<tr>
+<td>GET /api/hub/download/<id></td>
+<td>下载</td>
+</tr>
+<tr>
+<td>POST /api/hub/upload</td>
+<td>上传</td>
+</tr>
+<tr>
+<td>POST /api/hub/review</td>
+<td>评价</td>
+</tr>
+<tr>
+<td>POST /api/hub/request</td>
+<td>发布需求</td>
+</tr>
+<tr>
+<td>POST /api/hub/report</td>
+<td>举报</td>
+</tr>
+<tr>
+<td>GET /api/hub/categories</td>
+<td>分类</td>
+</tr>
+<tr>
+<td>GET /api/hub/stats</td>
+<td>统计</td>
+</tr>
+<tr>
+<td>POST /api/user/register</td>
+<td>注册</td>
+</tr>
+<tr>
+<td>POST /api/user/login</td>
+<td>登录</td>
+</tr>
+<tr>
+<td>POST /api/user/quick_login</td>
+<td>快速登录</td>
+</tr>
+<tr>
+<td>POST /api/hub/install</td>
+<td>下载并自动安装（哈文后端）</td>
+</tr>
+<tr>
+<td>POST /api/hub/execute</td>
+<td>执行安装命令（哈文后端）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>模型/工具安装方式：</strong>
+- Ollama模型 → <code>ollama pull 模型名</code>
+- pip安装 → <code>pip install 包名</code>
+- winget安装 → <code>winget install 工具名</code>（Windows快速安装）
+- ModelScope → <code>snapshot_download('模型名')</code>
+- GitHub → <code>git clone URL</code>
+- URL → 打开浏览器下载</p>
+<h3 id="330-cli-anything-b-2026-07-17">3.30 CLI-Anything B+ 集成（2026-07-17）</h3>
+<p>将 79 个创意软件 CLI 封装一键接入哈文，通过对话直接控制 Blender/GIMP/Inkscape 等软件。</p>
+<table>
+<thead>
+<tr>
+<th>集成方式</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>推荐工具卡片</td>
+<td>设置→🧩插件管理→🛠️技能顶部，一键安装 CLI-Anything Hub</td>
+</tr>
+<tr>
+<td>FC 工具</td>
+<td><code>cli_anything_list</code> / <code>cli_anything_execute</code> / <code>cli_anything_install</code>（3个工具）</td>
+</tr>
+<tr>
+<td>增强上下文</td>
+<td>对话中检测关键词（blender/gimp 等）→ enhanced_context 自动注入安装提示</td>
+</tr>
+</tbody>
+</table>
+<p><strong>设计原则（B+方案）：</strong> Skill 模式 + 设置面板被动提醒，不内置代码只内置安装能力。目标软件由用户自行安装。</p>
+<h3 id="331-ui-v12026-07-14">3.31 UI 面板系统 V1（2026-07-14）</h3>
+<p>用户可安装自定义 UI 管理面板（记账/宠物/健身等），ifarme 沙盒隔离。</p>
+<table>
+<thead>
+<tr>
+<th>组件</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>PanelManager</td>
+<td>单例，扫描 <code>data/panels/</code>，自动建 SQLite 表</td>
+</tr>
+<tr>
+<td>panel_routes.py</td>
+<td>Blueprint <code>/api/panels</code>（列表/安装/卸载/创建/数据CRUD）</td>
+</tr>
+<tr>
+<td>面板格式</td>
+<td><code>data/panels/&lt;id&gt;/panel.json</code> + <code>index.html</code> + <code>panel.css</code> + <code>panel.js</code></td>
+</tr>
+<tr>
+<td>前端通信</td>
+<td>iframe 沙盒 + postMessage（HarvenPanel API）</td>
+</tr>
+<tr>
+<td>前端组件</td>
+<td>sidebar-panels.html + panel-viewer.html + modal-panel-manage.html + app-panels.js</td>
+</tr>
+</tbody>
+</table>
+<h3 id="332">3.32 外部模型安装器（零推荐+搜索优先）</h3>
+<p>2026-07-20 重写：所有模型不推荐，用户根据配置自行选择。</p>
+<table>
+<thead>
+<tr>
+<th>特性</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>搜索融合</td>
+<td>两层数据源：安装器 MODEL_CATALOG（6个）+ model_catalog.json（44个），去重</td>
+</tr>
+<tr>
+<td>硬件检测 API</td>
+<td><code>GET /api/models/installer/hardware</code> 检测 VRAM/RAM</td>
+</tr>
+<tr>
+<td>分类标准化</td>
+<td>中文→英文映射（"音乐"→"music"）</td>
+</tr>
+<tr>
+<td>界面</td>
+<td>页面加载时空白，用户搜索后才显示结果</td>
+</tr>
+</tbody>
+</table>
+<h3 id="333-searxng">3.33 SearXNG 三态检测</h3>
+<p>Bing 搜索已内置（无需 Docker/Key），SearXNG 为可选增强。新增实时连通性检测：</p>
+<table>
+<thead>
+<tr>
+<th>状态</th>
+<th>显示</th>
+<th>触发条件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>✅ 已启用</td>
+<td>绿色</td>
+<td>SearXNG URL 已配置 + 连通性检测通过</td>
+</tr>
+<tr>
+<td>⚠️ 已配置但未响应</td>
+<td>黄色</td>
+<td>URL 已填但 5 秒内无响应</td>
+</tr>
+<tr>
+<td>✅ Bing 已就绪</td>
+<td>绿色</td>
+<td>使用内置 Bing 搜索（默认）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>检测 API：</strong> <code>POST /api/settings/searxng-test</code>，真实请求 SearXNG API（5秒超时）</p>
+<hr />
+<h2 id="8tab">第四部分：设置面板（8个Tab）</h2>
+<table>
+<thead>
+<tr>
+<th>Tab</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>①基本设置</td>
+<td>联网搜索（Bing/SearXNG）+ 语言 + 数据库状态</td>
+</tr>
+<tr>
+<td>②模型管理</td>
+<td>本地模型 + 外部模型（搜索优先安装器）+ 协作外脑</td>
+</tr>
+<tr>
+<td>③个人画像</td>
+<td>用户偏好/性格/职业</td>
+</tr>
+<tr>
+<td>④外观定制</td>
+<td>名称/图标/主题</td>
+</tr>
+<tr>
+<td>⑤安全隐私</td>
+<td>杀毒 + 代码沙箱 + 隐私模式 + 管理员密码</td>
+</tr>
+<tr>
+<td>⑥💾数据</td>
+<td>数据保险箱（备份/恢复）+ 设备命令日志</td>
+</tr>
+<tr>
+<td>⑦🧩插件管理</td>
+<td>5个子Tab：🛠️技能（含CLI-Anything推荐）/🧱构建/🧩Agent/🏭工坊/📦外部模型</td>
+</tr>
+<tr>
+<td>⑧关于&amp;连接</td>
+<td>手机 + 公网 + IM连接 + HarvenHub + 版本信息</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="_4">第五部分：安装部署</h2>
+<h3 id="51">5.1 环境要求</h3>
+<table>
+<thead>
+<tr>
+<th>要求</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>操作系统</td>
+<td>Windows 10/11（64位）</td>
+</tr>
+<tr>
+<td>Python</td>
+<td>3.13+（或使用嵌入式Python）</td>
+</tr>
+<tr>
+<td>内存</td>
+<td>最低8GB，推荐16GB+</td>
+</tr>
+<tr>
+<td>显卡</td>
+<td>可选（没有显卡可用外脑模式）</td>
+</tr>
+<tr>
+<td>磁盘</td>
+<td>最低5GB（含依赖包）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="52">5.2 安装步骤</h3>
+<div class="codehilite"><pre><span></span><code><span class="c1"># 1. 克隆项目</span>
+git<span class="w"> </span>clone<span class="w"> </span>https://github.com/AmenMonk/HarvenAI.git
+<span class="nb">cd</span><span class="w"> </span>HarvenAI
+
+<span class="c1"># 2. 创建虚拟环境</span>
+python<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>.venv
+
+<span class="c1"># 3. 激活虚拟环境</span>
+.venv<span class="se">\S</span>cripts<span class="se">\a</span>ctivate
+
+<span class="c1"># 4. 安装依赖</span>
+pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>requirements.txt
+
+<span class="c1"># 5. 启动</span>
+python<span class="w"> </span>web_app.py
+</code></pre></div>
+
+<h3 id="53-requirementstxt">5.3 预装库列表（requirements.txt）</h3>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>库</th>
+<th>版本</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Web框架</td>
+<td>flask / flask-cors / Werkzeug</td>
+<td>3.1.3 / 6.0.4 / 3.1.8</td>
+</tr>
+<tr>
+<td>AI/模型</td>
+<td>openai / modelscope / llama-cpp-python / litellm</td>
+<td>2.41.0 / 1.37.1 / 0.3+ / 1.88.0</td>
+</tr>
+<tr>
+<td>向量检索</td>
+<td>faiss-cpu / numpy</td>
+<td>1.14.2 / 2.4.6</td>
+</tr>
+<tr>
+<td>数据处理</td>
+<td>PyYAML / requests / beautifulsoup4 / pillow / tiktoken</td>
+<td>6.0.3 / 2.34.2 / 4.15.0 / 12.2.0 / 0.13.0</td>
+</tr>
+<tr>
+<td>语音</td>
+<td>faster-whisper / opencv-python-headless</td>
+<td>1.2.1 / 4.13.0.92</td>
+</tr>
+<tr>
+<td>桌面UI</td>
+<td>PySide6（LGPL）</td>
+<td>6.11.1</td>
+</tr>
+<tr>
+<td>PDF解析</td>
+<td>pypdf / pdfplumber</td>
+<td>6.13.0 / 0.11.9</td>
+</tr>
+<tr>
+<td>浏览器</td>
+<td>playwright</td>
+<td>1.58.0</td>
+</tr>
+<tr>
+<td>调度</td>
+<td>apscheduler / watchdog</td>
+<td>3.11.1 / 6.0.0</td>
+</tr>
+</tbody>
+</table>
+<h3 id="54">5.4 按需安装库</h3>
+<table>
+<thead>
+<tr>
+<th>库</th>
+<th>用途</th>
+<th>安装命令</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>audiocraft</td>
+<td>MusicGen音乐生成</td>
+<td>pip install audiocraft</td>
+</tr>
+<tr>
+<td>diffusers</td>
+<td>Stable Diffusion图片生成</td>
+<td>pip install diffusers</td>
+</tr>
+<tr>
+<td>TTS</td>
+<td>Coqui语音合成</td>
+<td>pip install TTS</td>
+</tr>
+<tr>
+<td>torch</td>
+<td>深度学习</td>
+<td>pip install torch</td>
+</tr>
+</tbody>
+</table>
+<h3 id="55">5.5 启动方式</h3>
+<table>
+<thead>
+<tr>
+<th>方式</th>
+<th>命令</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>命令行</td>
+<td><code>python web_app.py</code></td>
+</tr>
+<tr>
+<td>桌面快捷方式</td>
+<td>双击"Harven AI.lnk"</td>
+</tr>
+<tr>
+<td>批处理</td>
+<td>双击"启动HarvenAI.bat"</td>
+</tr>
+</tbody>
+</table>
+<h3 id="56">5.6 首次启动流程</h3>
+<div class="codehilite"><pre><span></span><code>首次启动
+    ↓
+config.yaml default_model为空 → 跳转/first_run
+    ↓
+硬件检测 → CPU/GPU/内存检测
+    ↓
+模型推荐 → 根据配置推荐合适模型
+    ↓
+用户选择 → 下载安装模型
+    ↓
+管理员密码设置 → 初始密码harven2026，首次登录强制改密
+    ↓
+进入主界面
+</code></pre></div>
+
+<hr />
+<h2 id="_5">第六部分：开发者指南</h2>
+<h3 id="61">6.1 目录结构</h3>
+<div class="codehilite"><pre><span></span><code><span class="n">HarvenAI</span><span class="o">/</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">src</span><span class="o">/</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">core</span><span class="o">/</span><span class="w">                    </span><span class="c1"># 核心模块</span>
+<span class="err">│</span><span class="w">   </span><span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">engine</span><span class="o">.</span><span class="n">py</span><span class="w">            </span><span class="c1"># 对话引擎（核心）</span>
+<span class="err">│</span><span class="w">   </span><span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">morality</span><span class="o">.</span><span class="n">py</span><span class="w">          </span><span class="c1"># 诚实原则+系统提示词</span>
+<span class="err">│</span><span class="w">   </span><span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">tool_executor</span><span class="o">.</span><span class="n">py</span><span class="w">     </span><span class="c1"># 代码执行层</span>
+<span class="err">│</span><span class="w">   </span><span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">memory</span><span class="o">.</span><span class="n">py</span><span class="w">            </span><span class="c1"># 记忆系统</span>
+<span class="err">│</span><span class="w">   </span><span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">knowledge_base</span><span class="o">.</span><span class="n">py</span><span class="w">    </span><span class="c1"># 知识库</span>
+<span class="err">│</span><span class="w">   </span><span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">multi_model_manager</span><span class="o">.</span><span class="n">py</span><span class="w">  </span><span class="c1"># 多模型管理</span>
+<span class="err">│</span><span class="w">   </span><span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">hardware_detector</span><span class="o">.</span><span class="n">py</span><span class="w"> </span><span class="c1"># 硬件检测</span>
+<span class="err">│</span><span class="w">   </span><span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">model_installer</span><span class="o">.</span><span class="n">py</span><span class="w">   </span><span class="c1"># 模型安装器</span>
+<span class="err">│</span><span class="w">   </span><span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">file_scanner</span><span class="o">.</span><span class="n">py</span><span class="w">      </span><span class="c1"># 文件安全扫描</span>
+<span class="err">│</span><span class="w">   </span><span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">code_sandbox</span><span class="o">.</span><span class="n">py</span><span class="w">      </span><span class="c1"># 代码沙箱</span>
+<span class="err">│</span><span class="w">   </span><span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">agent_registry</span><span class="o">.</span><span class="n">py</span><span class="w">    </span><span class="c1"># Agent注册表</span>
+<span class="err">│</span><span class="w">   </span><span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">skill_manager</span><span class="o">.</span><span class="n">py</span><span class="w">     </span><span class="c1"># Skill管理</span>
+<span class="err">│</span><span class="w">   </span><span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">scripts_runner</span><span class="o">.</span><span class="n">py</span><span class="w">    </span><span class="c1"># Skill脚本执行引擎（AST沙箱）</span>
+<span class="err">│</span><span class="w">   </span><span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">panel_manager</span><span class="o">.</span><span class="n">py</span><span class="w">     </span><span class="c1"># UI面板管理器</span>
+<span class="err">│</span><span class="w">   </span><span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">panel_routes</span><span class="o">.</span><span class="n">py</span><span class="w">      </span><span class="c1"># 面板API路由</span>
+<span class="err">│</span><span class="w">   </span><span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">task_manager</span><span class="o">.</span><span class="n">py</span><span class="w">      </span><span class="c1"># 任务管理</span>
+<span class="err">│</span><span class="w">   </span><span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">collab_manager</span><span class="o">.</span><span class="n">py</span><span class="w">    </span><span class="c1"># 协作模式管理</span>
+<span class="err">│</span><span class="w">   </span><span class="err">│</span><span class="w">   </span><span class="err">└──</span><span class="w"> </span><span class="n">device_manager</span><span class="o">.</span><span class="n">py</span><span class="w">    </span><span class="c1"># 设备管理</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">models</span><span class="o">/</span>
+<span class="err">│</span><span class="w">   </span><span class="err">│</span><span class="w">   </span><span class="err">└──</span><span class="w"> </span><span class="n">database</span><span class="o">.</span><span class="n">py</span><span class="w">          </span><span class="c1"># 数据库模型</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">utils</span><span class="o">/</span>
+<span class="err">│</span><span class="w">   </span><span class="err">│</span><span class="w">   </span><span class="err">└──</span><span class="w"> </span><span class="n">config</span><span class="o">.</span><span class="n">py</span><span class="w">            </span><span class="c1"># 配置管理</span>
+<span class="err">│</span><span class="w">   </span><span class="err">└──</span><span class="w"> </span><span class="n">ui</span><span class="o">/</span>
+<span class="err">│</span><span class="w">       </span><span class="err">└──</span><span class="w"> </span><span class="n">main_window</span><span class="o">.</span><span class="n">py</span><span class="w">       </span><span class="c1"># PySide6桌面窗口</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">templates</span><span class="o">/</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">index</span><span class="o">.</span><span class="n">html</span><span class="w">               </span><span class="c1"># 主页面</span>
+<span class="err">│</span><span class="w">   </span><span class="err">└──</span><span class="w"> </span><span class="n">includes</span><span class="o">/</span><span class="w">                </span><span class="c1"># 30个include文件</span>
+<span class="err">├──</span><span class="w"> </span><span class="k">static</span><span class="o">/</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">css</span><span class="o">/</span><span class="w">                     </span><span class="c1"># 样式</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">js</span><span class="o">/</span>
+<span class="err">│</span><span class="w">   </span><span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">app</span><span class="o">.</span><span class="n">js</span><span class="w">               </span><span class="c1"># 主JS</span>
+<span class="err">│</span><span class="w">   </span><span class="err">│</span><span class="w">   </span><span class="err">└──</span><span class="w"> </span><span class="n">modules</span><span class="o">/</span><span class="w">             </span><span class="c1"># 18个JS模块</span>
+<span class="err">│</span><span class="w">   </span><span class="err">└──</span><span class="w"> </span><span class="n">icons</span><span class="o">/</span><span class="w">                   </span><span class="c1"># 图标</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">skills</span><span class="o">/</span><span class="w">                      </span><span class="c1"># 技能脚本（旧版兼容）</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">data</span><span class="o">/</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">skills</span><span class="o">/</span><span class="w">                  </span><span class="c1"># 可执行Skill（accounting/code_audit/music-gen等）</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">panels</span><span class="o">/</span><span class="w">                  </span><span class="c1"># UI面板（accounting等）</span>
+<span class="err">│</span><span class="w">   </span><span class="err">└──</span><span class="w"> </span><span class="n">sqlite</span><span class="o">/</span>
+<span class="err">│</span><span class="w">       </span><span class="err">└──</span><span class="w"> </span><span class="n">lingzhi</span><span class="o">.</span><span class="n">db</span><span class="w">           </span><span class="c1"># SQLite数据库</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">config</span><span class="o">.</span><span class="n">yaml</span><span class="w">                  </span><span class="c1"># 配置文件</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">web_app</span><span class="o">.</span><span class="n">py</span><span class="w">                   </span><span class="c1"># Flask入口</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">requirements</span><span class="o">.</span><span class="n">txt</span><span class="w">             </span><span class="c1"># 依赖列表</span>
+<span class="err">└──</span><span class="w"> </span><span class="err">启动</span><span class="n">HarvenAI</span><span class="o">.</span><span class="n">bat</span><span class="w">             </span><span class="c1"># 启动脚本</span>
+</code></pre></div>
+
+<h3 id="62">6.2 核心模块</h3>
+<table>
+<thead>
+<tr>
+<th>模块</th>
+<th>文件</th>
+<th>职责</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>对话引擎</td>
+<td>engine.py</td>
+<td>管理对话流程、模型调用、工具执行</td>
+</tr>
+<tr>
+<td>诚实原则</td>
+<td>morality.py</td>
+<td>系统提示词、身份、能力说明</td>
+</tr>
+<tr>
+<td>工具执行</td>
+<td>tool_executor.py</td>
+<td>提取代码块、安全检查、执行</td>
+</tr>
+<tr>
+<td>记忆系统</td>
+<td>memory.py</td>
+<td>短期记忆、长期记忆、跨对话记忆</td>
+</tr>
+<tr>
+<td>知识库</td>
+<td>knowledge_base.py</td>
+<td>文档上传、向量化、语义搜索</td>
+</tr>
+<tr>
+<td>多模型管理</td>
+<td>multi_model_manager.py</td>
+<td>本地模型+外部模型统一管理</td>
+</tr>
+<tr>
+<td>硬件检测</td>
+<td>hardware_detector.py</td>
+<td>CPU/GPU/内存检测、模型推荐</td>
+</tr>
+<tr>
+<td>文件扫描</td>
+<td>file_scanner.py</td>
+<td>5层安全扫描</td>
+</tr>
+<tr>
+<td>Agent注册</td>
+<td>agent_registry.py</td>
+<td>预置+自定义Agent</td>
+</tr>
+<tr>
+<td>协作管理</td>
+<td>collab_manager.py</td>
+<td>云地协作+本地双模</td>
+</tr>
+</tbody>
+</table>
+<h3 id="63-js18">6.3 前端JS模块（18个）</h3>
+<table>
+<thead>
+<tr>
+<th>模块</th>
+<th>文件</th>
+<th>职责</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>核心框架</td>
+<td>app-core.js</td>
+<td>主框架</td>
+</tr>
+<tr>
+<td>对话</td>
+<td>app-conversation.js</td>
+<td>对话+查询模式</td>
+</tr>
+<tr>
+<td>发送</td>
+<td>app-send.js</td>
+<td>消息发送</td>
+</tr>
+<tr>
+<td>模型管理</td>
+<td>app-model-manager.js</td>
+<td>模型配置</td>
+</tr>
+<tr>
+<td>知识库</td>
+<td>app-knowledge.js</td>
+<td>知识库管理</td>
+</tr>
+<tr>
+<td>设置</td>
+<td>app-settings.js</td>
+<td>设置面板</td>
+</tr>
+<tr>
+<td>Skills</td>
+<td>app-skills.js</td>
+<td>技能管理（兼容旧版）</td>
+</tr>
+<tr>
+<td>硬件</td>
+<td>app-hardware.js</td>
+<td>硬件检测</td>
+</tr>
+<tr>
+<td>网络</td>
+<td>app-network.js</td>
+<td>联网搜索</td>
+</tr>
+<tr>
+<td>设备</td>
+<td>app-devices.js</td>
+<td>IoT设备</td>
+</tr>
+<tr>
+<td>插件</td>
+<td>app-plugins.js</td>
+<td>插件管理 + Skills核心功能（1423行）+ CLI-Anything推荐工具</td>
+</tr>
+<tr>
+<td>进化</td>
+<td>app-evolution.js</td>
+<td>受控进化</td>
+</tr>
+<tr>
+<td>统计</td>
+<td>app-stats.js</td>
+<td>统计模块</td>
+</tr>
+<tr>
+<td>保底</td>
+<td>app-fallback.js</td>
+<td>保底机制</td>
+</tr>
+<tr>
+<td>知识萃取</td>
+<td>app-extraction.js</td>
+<td>知识萃取</td>
+</tr>
+<tr>
+<td>版本检查</td>
+<td>app-version-check.js</td>
+<td>版本检测</td>
+</tr>
+<tr>
+<td>HarvenHub</td>
+<td>app-harvenhub.js</td>
+<td>社区市场</td>
+</tr>
+<tr>
+<td>媒体</td>
+<td>app-media.js</td>
+<td>媒体播放</td>
+</tr>
+</tbody>
+</table>
+<h3 id="64">6.4 数据库结构</h3>
+<table>
+<thead>
+<tr>
+<th>表名</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>user_profile</td>
+<td>用户信息</td>
+</tr>
+<tr>
+<td>user_preferences</td>
+<td>用户偏好</td>
+</tr>
+<tr>
+<td>specializations</td>
+<td>专项培养</td>
+</tr>
+<tr>
+<td>conversations</td>
+<td>对话记录</td>
+</tr>
+<tr>
+<td>messages</td>
+<td>消息记录</td>
+</tr>
+<tr>
+<td>devices</td>
+<td>IoT设备</td>
+</tr>
+<tr>
+<td>device_commands</td>
+<td>设备命令</td>
+</tr>
+<tr>
+<td>device_permissions</td>
+<td>设备权限</td>
+</tr>
+<tr>
+<td>structured_tasks</td>
+<td>任务列表</td>
+</tr>
+<tr>
+<td>cognitive_locks</td>
+<td>长期记忆</td>
+</tr>
+</tbody>
+</table>
+<h3 id="65-configyaml">6.5 配置文件（config.yaml）</h3>
+<div class="codehilite"><pre><span></span><code><span class="c1"># 核心配置</span>
+<span class="nt">default_model</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&quot;</span><span class="w">              </span><span class="c1"># 默认模型（空=首次启动硬件检测）</span>
+<span class="nt">admin_password</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;harven2026&quot;</span><span class="w">   </span><span class="c1"># 管理员密码（首次登录强制修改）</span>
+<span class="nt">search_provider</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;bing&quot;</span><span class="w">        </span><span class="c1"># 搜索引擎（bing/searxng）</span>
+<span class="nt">tool_execution_enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">   </span><span class="c1"># 代码执行开关</span>
+<span class="nt">searxng_url</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&quot;</span><span class="w">                </span><span class="c1"># SearXNG自建实例URL（可选）</span>
+
+<span class="c1"># 查询模式</span>
+<span class="nt">default_query_mode</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;auto&quot;</span><span class="w">     </span><span class="c1"># kb_only/direct/auto（auto行为同direct）</span>
+
+<span class="c1"># 协作模式</span>
+<span class="nt">collab_mode</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;off&quot;</span><span class="w">             </span><span class="c1"># off/cloud_local/local_dual</span>
+<span class="nt">collab_enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">          </span><span class="c1"># 协作模式开关</span>
+
+<span class="c1"># 模型配置</span>
+<span class="nt">ollama</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">base_url</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;http://localhost:11434&quot;</span>
+
+<span class="nt">backends</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">local</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">default_model</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;qwen2.5:14b&quot;</span><span class="w">  </span><span class="c1"># 本地默认模型</span>
+<span class="w">  </span><span class="nt">external</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">default_model</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&quot;</span><span class="w">              </span><span class="c1"># 外脑默认模型（空=使用设置面板选择）</span>
+</code></pre></div>
+
+<h3 id="66">6.6 ⚠️ 开发者五大铁律（踩坑总结）</h3>
+<p>这些是实际开发中反复踩坑后总结的关键教训，对维护者至关重要：</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>铁律</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>重启铁律</strong></td>
+<td>改 Flask 后重启前必须 <code>netstat -ano \| findstr :7000</code> 确认无残留进程；<code>debug=False</code> 时模板被缓存，<code>taskkill</code> 可能遗漏后台进程</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>HTML 铁律</strong></td>
+<td>改 <code>templates/includes/*.html</code> 后必须检查 <code>&lt;div&gt;</code> 开闭平衡（少一个 <code>&lt;/div&gt;</code> → 后续面板全失效，已踩坑 2 次）</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>Flask 线程铁律</strong></td>
+<td><code>app.run()</code> 必须 <code>threaded=True</code>（单线程一个请求挂起拖垮整个服务）</td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>config.yaml 铁律</strong></td>
+<td>保存 config 用 <code>yaml.dump(dict(config),...)</code> 而非 <code>yaml.dump(config,...)</code>，否则 PyYAML 写 <code>!!python/object/new:</code> 导致 <code>safe_load</code> 崩溃</td>
+</tr>
+<tr>
+<td>5</td>
+<td><strong>NUCLEAR 覆盖铁律</strong></td>
+<td><code>index.html</code> 中的 <code>switchSettingsTab</code> 用 <code>window.switchSettingsTab = function(){...}</code> 完全覆盖 <code>app-settings.js</code> 版本。<strong>改设置面板切换逻辑必须改 index.html 的 NUCLEAR 版</strong>，改 app-settings.js 不生效</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="_6">第七部分：能力边界</h2>
+<h3 id="71-29">7.1 能做什么（29项功能）</h3>
+<ol>
+<li>本地知识库（三层架构）</li>
+<li>代码执行（操控电脑的核心方式）</li>
+<li>文件管理（读写/目录/打开文件）</li>
+<li>任务自动化（软件安装/模型下载）</li>
+<li>专项培养（对话角色设定）</li>
+<li>监控中心（RSS话题追踪）</li>
+<li>垂直模型（6种内置+动态扩展）</li>
+<li>图片识别（视觉模型）</li>
+<li>联网搜索（Bing+SearXNG三态检测）</li>
+<li>模型安装（pip/HF/ModelScope/Ollama/GitHub）</li>
+<li>通用模型管理（Ollama管理）</li>
+<li>查询模式（本地/外脑）</li>
+<li>协作模式（云地协作/本地双模）</li>
+<li>硬件检测（自动推荐模型）</li>
+<li>多模型管理（28家厂商）</li>
+<li>插件管理（5个子Tab）</li>
+<li>Skills系统（可执行脚本+Skill Builder）</li>
+<li>Agent智能体（注册中心+Agent工坊）</li>
+<li>安全防护（三层）</li>
+<li>杀毒扫描（ClamAV）</li>
+<li>设备管理（IoT驱动）</li>
+<li>手机联动（远程对话）</li>
+<li>IM连接（企微/钉钉/飞书）</li>
+<li>数据保险箱（备份/恢复）</li>
+<li>品牌定制（名称/图标/外观）</li>
+<li>受控进化（提案/审批/应用/回滚）</li>
+<li>CLI-Anything集成（79个软件CLI封装，FC工具+推荐卡片）</li>
+<li>UI面板系统V1（iframe沙盒+postMessage，自定义管理面板）</li>
+<li>外部模型安装器（零推荐+搜索优先+硬件检测）</li>
+</ol>
+<h3 id="72">7.2 不能做什么</h3>
+<table>
+<thead>
+<tr>
+<th>限制</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>控制桌面界面</td>
+<td>不能移动鼠标/点击按钮</td>
+</tr>
+<tr>
+<td>打开GUI应用窗口</td>
+<td>不能直接控制其他软件窗口</td>
+</tr>
+<tr>
+<td>rm -rf / del /S / format / shutdown / reboot</td>
+<td>危险命令黑名单</td>
+</tr>
+<tr>
+<td>ctypes / winreg / win32api / win32com</td>
+<td>危险模块黑名单</td>
+</tr>
+<tr>
+<td>超时120秒（下载5分钟）</td>
+<td>代码执行超时限制</td>
+</tr>
+</tbody>
+</table>
+<h3 id="73">7.3 安全限制</h3>
+<table>
+<thead>
+<tr>
+<th>限制类型</th>
+<th>具体内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>危险命令</td>
+<td>rm -rf / del /S / format / shutdown / reboot</td>
+</tr>
+<tr>
+<td>危险模块</td>
+<td>ctypes / winreg / win32api / win32com</td>
+</tr>
+<tr>
+<td>越权调用</td>
+<td>通用模型不能直接调用垂直模型</td>
+</tr>
+<tr>
+<td>联网搜索代码</td>
+<td>模型不能自己写requests搜索（系统有内置Bing）</td>
+</tr>
+<tr>
+<td>文件上传</td>
+<td>5层安全扫描（扩展名/大小/Magic Bytes/内容模式/杀毒）</td>
+</tr>
+<tr>
+<td>代码执行</td>
+<td>120秒超时（下载类5分钟）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="74">7.4 代码执行环境</h3>
+<table>
+<thead>
+<tr>
+<th>项目</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Python环境</td>
+<td><code>.venv\Scripts\python.exe</code>（预装所有依赖）</td>
+</tr>
+<tr>
+<td>预装库</td>
+<td>modelscope / openai / flask / faiss / requests 等12个</td>
+</tr>
+<tr>
+<td>超时</td>
+<td>普通代码120秒，下载/安装类5分钟</td>
+</tr>
+<tr>
+<td>沙箱</td>
+<td>Docker容器隔离（优先）/ 子进程隔离（降级）</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="_7">附录</h2>
+<h3 id="a">A. 版本历史</h3>
+<table>
+<thead>
+<tr>
+<th>版本</th>
+<th>日期</th>
+<th>主要变更</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>v6.3</td>
+<td>2026-08-03</td>
+<td><strong>引擎优先架构（FC→Skill转变）</strong>：_try_quick_command扩展（list_dir/read_file/check_software加到快速命令，正则匹配"下载了什么"→秒回不经过模型）；代码执行优先（模型写的代码先execute_python_code()执行，不再直接过滤）；去掉FC误导警告（不再说"应该用内置工具"，改为"安全限制未执行"）；<strong>多模型设置修复</strong>：8个内置模型全显示（之前只4个）；模型选择改为input+datalist（可输入任意模型名如glm-5.2）；保存API Key修复（之前只存4个→现在全存，空输入不清空已有key）；外脑下拉框动态加载（含自定义模型）；底部状态简化（只显示当前模型）；<strong>GLM配置修复</strong>：删除错误的"哈文GLM"自定义provider，正确配置zhipu的base_url；<strong>对话上下文</strong>：查看旧对话后发消息→自动开新对话；历史≥6条→显示"建议新对话"提示</td>
+</tr>
+<tr>
+<td>v7.0</td>
+<td>2026-08-09</td>
+<td><strong>出站控制改革</strong>：默认不拦截（正常模式）——<code>_whitelist_enabled</code>默认False，新安装即可使用任意外脑API（DeepSeek/GLM/OpenAI/Claude/Gemini等），不再被"不在允许域名列表中"拦截；内置17个常用API域名+config.yaml可扩展；出站请求日志记录（<code>_outbound_log</code>，最多200条）；新增<code>/api/outbound/status</code>+<code>/api/outbound/toggle</code>API；严格模式可选开启（<code>independence.whitelist_enabled: true</code>）；沙箱防护恶意代码（Skill脚本禁subprocess/socket），白名单只作可选功能</td>
+</tr>
+<tr>
+<td>v6.2</td>
+<td>2026-08-02</td>
+<td><strong>HarvenHub云端集成</strong>：新增<code>/api/harvenhub-cloud/browse</code>端点代理harvenhub.com；skill安装自动下载+解压到<code>data/skills/</code>；文件名解析修复（RFC 5987）；FC工具安装后自动重新加载（不需重启）；工具检测改为子进程（避免<code>import windows_use</code>崩溃主进程）；正确import名映射（python-docx→docx, python-pptx→pptx）；<strong>二维码修复</strong>：SVG→base64 PNG（1.3KB）；手机IP自动检测（切tab时触发）；<strong>FC工具扩展</strong>：list_dir+read_file注册到TOOL_REGISTRY（共40个工具）；<strong>HarvenHub后端</strong>：需求广场/评价/下载外键约束修复（users表加guest/anonymous）；重试3次解决database locked；管理后台加需求删除+用户删除按钮；<code>/version.json</code>路由；<strong>端口5000→7000</strong>（解决Windows Docker/macOS AirPlay冲突）；版本0.2.0→0.2.1</td>
+</tr>
+<tr>
+<td>v6.1</td>
+<td>2026-07-20</td>
+<td>设置面板重构（独立💾数据Tab+插件管理5子Tab）；Agent注册中心/工坊移至插件管理子导航；Skills升级为可执行脚本系统（scripts_runner.py）；CLI-Anything B+集成；UI面板系统V1；外部模型安装器零推荐重写；SearXNG三态检测；config.yaml修正（default_query_mode）；目录结构补齐；开发者五大铁律</td>
+</tr>
+<tr>
+<td>v6.0</td>
+<td>2026-07-18</td>
+<td>超时30→120秒；工具执行后二次推理；stderr智能过滤；代码审计Skill；Skill触发词自动执行；记忆系统方案C（按需提取+用引擎模型）；联网意图不阻断；目录结构注入提示词；iframe allow-modals；代码块格式强制；P0/P1/P2全归零；134条垃圾记忆清理</td>
+</tr>
+<tr>
+<td>v5.0</td>
+<td>2026-07-08</td>
+<td>清理功德行残留+auto模式残留+DuckDuckGo残留；LOCAL_CAPABILITIES强化；.venv Python修复</td>
+</tr>
+<tr>
+<td>v4.0</td>
+<td>2026-07-03</td>
+<td>功德行删除，纯诚实原则</td>
+</tr>
+<tr>
+<td>v3.0</td>
+<td>2026-06-13</td>
+<td>模式架构重构</td>
+</tr>
+</tbody>
+</table>
+<h3 id="b">B. 许可证</h3>
+<ul>
+<li>主许可证：Apache 2.0</li>
+<li>PySide6：LGPL（与Apache 2.0兼容）</li>
+<li>禁止使用：PyQt6（GPL-3.0）、PyMuPDF（AGPL-3.0）</li>
+</ul>
+<h3 id="c">C. 项目信息</h3>
+<ul>
+<li>项目路径：H:\HarvenAI\</li>
+<li>数据库：data/sqlite/lingzhi.db</li>
+<li>配置文件：config.yaml</li>
+<li>启动命令：<code>python web_app.py</code></li>
+<li>联系邮箱：38552540@qq.com</li>
+</ul>
+<hr />
+<p><em>本文档由 Harven AI 团队维护，最后更新：2026-08-02</em></p>
+<hr />
+<h2 id="dv622026-08-02">附录D：v6.2变更详解（2026-08-02）</h2>
+<h3 id="d1-harvenhub">D.1 HarvenHub云端集成</h3>
+<table>
+<thead>
+<tr>
+<th>功能</th>
+<th>端点</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>云端浏览</td>
+<td><code>GET /api/harvenhub-cloud/browse</code></td>
+<td>代理harvenhub.com的API，自动转换字段名（type→item_type）</td>
+</tr>
+<tr>
+<td>云端下载</td>
+<td><code>POST /api/harvenhub-cloud/download/&lt;id&gt;</code></td>
+<td>下载skill→自动安装到<code>data/skills/&lt;name&gt;/SKILL.md</code></td>
+</tr>
+<tr>
+<td>云端上传</td>
+<td><code>POST /api/harvenhub-cloud/upload</code></td>
+<td>上传skill/tool到社区</td>
+</tr>
+<tr>
+<td>连接检查</td>
+<td><code>GET /api/harvenhub-cloud/check</code></td>
+<td>检查与harvenhub.com的连接状态</td>
+</tr>
+</tbody>
+</table>
+<p><strong>前端改动</strong>：<code>hhMarketLoad()</code>从本地<code>/api/harvenhub-market/browse</code>改为云端<code>/api/harvenhub-cloud/browse</code>，显示102个云端内容（21 skill + 14 tool + 67 model）。</p>
+<p><strong>安装流程</strong>：</p>
+<div class="codehilite"><pre><span></span><code><span class="err">用户点</span><span class="s2">&quot;安装&quot;</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">POST</span><span class="w"> </span><span class="o">/</span><span class="n">api</span><span class="o">/</span><span class="n">harvenhub</span><span class="o">-</span><span class="n">cloud</span><span class="o">/</span><span class="n">download</span><span class="o">/&lt;</span><span class="n">id</span><span class="o">&gt;</span>
+<span class="w">  </span><span class="err">→</span><span class="w"> </span><span class="n">hub_download</span><span class="p">()</span><span class="w"> </span><span class="err">下载文件到</span><span class="n">data</span><span class="o">/</span><span class="n">downloads</span><span class="o">/</span>
+<span class="w">  </span><span class="err">→</span><span class="w"> </span><span class="err">获取</span><span class="n">item信息判断类型</span>
+<span class="w">  </span><span class="err">→</span><span class="w"> </span><span class="err">如果</span><span class="n">type</span><span class="o">=</span><span class="n">skill</span><span class="err">：复制</span><span class="o">/</span><span class="err">解压到</span><span class="n">data</span><span class="o">/</span><span class="n">skills</span><span class="o">/&lt;</span><span class="n">name</span><span class="o">&gt;/</span>
+<span class="w">  </span><span class="err">→</span><span class="w"> </span><span class="err">返回安装成功</span>
+</code></pre></div>
+
+<p><strong>文件名解析修复</strong>：Content-Disposition头用正则+RFC 5987正确解析，解决中文文件名[Errno 22]问题。</p>
+<h3 id="d2-fc">D.2 FC工具系统</h3>
+<table>
+<thead>
+<tr>
+<th>改动</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>安装后自动加载</td>
+<td><code>install_recommended_tool()</code>调用<code>load_fc_wrappers()</code>，不需重启</td>
+</tr>
+<tr>
+<td>工具检测子进程化</td>
+<td>用<code>subprocess.run([python, '-c', 'import xxx'])</code>检测，避免<code>import windows_use</code>崩溃主进程</td>
+</tr>
+<tr>
+<td>正确import名映射</td>
+<td><code>PKG_IMPORT_MAP</code>：python-docx→docx, python-pptx→pptx, windows-use→windows_use</td>
+</tr>
+<tr>
+<td>去掉pip show兜底</td>
+<td>pip show有假阳性（包存在但import崩溃），只用子进程import检测</td>
+</tr>
+<tr>
+<td>新增FC工具</td>
+<td><code>list_dir</code>（列目录）+ <code>read_file</code>（读文件），TOOL_REGISTRY共40个工具</td>
+</tr>
+<tr>
+<td>方案A扩展</td>
+<td>当模型有FC工具但不主动调用时，引擎自动检测关键词并执行：A-1检查软件、A-2列目录（"下载了什么"→自动list_dir）、A-3读文件（"看看文件"→自动read_file）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="d3-harvenhub">D.3 HarvenHub后端修复</h3>
+<table>
+<thead>
+<tr>
+<th>问题</th>
+<th>原因</th>
+<th>修复</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>需求广场500</td>
+<td><code>user_id='anonymous'</code>外键约束失败</td>
+<td>users表加guest/anonymous用户 + PRAGMA foreign_keys=OFF</td>
+</tr>
+<tr>
+<td>下载500</td>
+<td><code>downloads.user_id='anonymous'</code>同上</td>
+<td>同上</td>
+</tr>
+<tr>
+<td>评价500</td>
+<td><code>reviews.user_id</code>同上</td>
+<td>同上 + 重试3次</td>
+</tr>
+<tr>
+<td>上传500</td>
+<td>items插入外键约束</td>
+<td>users表已有system用户，修复后正常</td>
+</tr>
+<tr>
+<td>database locked</td>
+<td>SQLite并发写入</td>
+<td>PRAGMA busy_timeout=5000 + 重试3次 + WAL模式</td>
+</tr>
+</tbody>
+</table>
+<h3 id="d4">D.4 手机连接</h3>
+<table>
+<thead>
+<tr>
+<th>改动</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>二维码格式</td>
+<td>SVG→base64 PNG（1.3KB vs 67KB），<code>&lt;img src="data:image/png;base64,..."&gt;</code></td>
+</tr>
+<tr>
+<td>IP自动检测</td>
+<td>切到"手机+公网"tab时调用<code>detectLocalAddr()</code>，从API获取真实IP</td>
+</tr>
+<tr>
+<td>端口5000→7000</td>
+<td>解决Windows Docker/macOS AirPlay冲突，防火墙规则已加</td>
+</tr>
+<tr>
+<td>二维码API修复</td>
+<td>返回JSON而非raw SVG，<code>int()</code>→<code>float()</code>支持小数小时参数</td>
+</tr>
+</tbody>
+</table>
+<h3 id="d5">D.5 其他改动</h3>
+<table>
+<thead>
+<tr>
+<th>改动</th>
+<th>文件</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>版本0.2.1</td>
+<td>version.json/config.yaml/evolution_manager.py</td>
+<td>版本号+changelog更新</td>
+</tr>
+<tr>
+<td>出站白名单</td>
+<td>config.yaml</td>
+<td>加<code>harvenhub.com</code>到allowed_domains</td>
+</tr>
+<tr>
+<td>管理后台按钮</td>
+<td>admin.html</td>
+<td>需求删除+用户删除按钮</td>
+</tr>
+<tr>
+<td>version.json路由</td>
+<td>HarvenHub <strong>init</strong>.py</td>
+<td><code>GET /version.json</code>返回版本信息</td>
+</tr>
+<tr>
+<td>插件子导航</td>
+<td>index.html NUCLEAR覆盖</td>
+<td>切到关于tab时隐藏插件子导航</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="ev702026-08-09">附录E：v7.0变更详解（2026-08-09）</h2>
+<h3 id="e1-6v70">E.1 引擎6层流程（v7.0核心架构）</h3>
+<div class="codehilite"><pre><span></span><code><span class="err">用户发消息</span>
+<span class="w">  </span><span class="err">↓</span>
+<span class="err">第</span><span class="mi">1</span><span class="err">层：</span><span class="n">_try_quick_command</span><span class="err">（正则匹配，秒回，不经过模型）</span>
+<span class="w">  </span><span class="err">├─</span><span class="w"> </span><span class="s2">&quot;下载了什么|什么.*下载|下了.*啥|最近.*下载|昨天.*下载&quot;</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">list_dir</span><span class="p">(</span><span class="n">Downloads</span><span class="p">)</span>
+<span class="w">  </span><span class="err">├─</span><span class="w"> </span><span class="s2">&quot;目录.*什么|文件夹.*什么|有什么文件|看看.*目录|查看.*目录&quot;</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">list_dir</span><span class="p">(</span><span class="err">指定路径</span><span class="p">)</span>
+<span class="w">  </span><span class="err">├─</span><span class="w"> </span><span class="s2">&quot;安装.*模型|下载.*模型&quot;</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="err">模型安装</span>
+<span class="w">  </span><span class="err">├─</span><span class="w"> </span><span class="s2">&quot;卸载.*模型|删掉.*模型&quot;</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="err">模型卸载</span>
+<span class="w">  </span><span class="err">├─</span><span class="w"> </span><span class="s2">&quot;本地.*模型|查看本地模型&quot;</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="err">列出已装模型</span>
+<span class="w">  </span><span class="err">└─</span><span class="w"> </span><span class="err">没匹配</span><span class="w"> </span><span class="err">↓</span>
+
+<span class="err">第</span><span class="mi">2</span><span class="err">层：</span><span class="n">_try_smart_split</span><span class="err">（智能拆分，阈值≥</span><span class="mi">1</span><span class="err">）</span>
+<span class="w">  </span><span class="err">├─</span><span class="w"> </span><span class="err">检测金额：正则</span><span class="w"> </span><span class="p">(</span>\<span class="n">d</span><span class="o">+</span><span class="p">(</span><span class="err">?</span><span class="p">:</span>\<span class="o">.</span>\<span class="n">d</span><span class="o">+</span><span class="p">)</span><span class="err">?</span><span class="p">)</span>\<span class="n">s</span><span class="o">*</span><span class="err">元</span>
+<span class="w">  </span><span class="err">├─</span><span class="w"> </span><span class="err">≥</span><span class="mi">1</span><span class="err">个金额</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="err">拆分多条记账</span>
+<span class="w">  </span><span class="err">├─</span><span class="w"> </span><span class="err">检测提醒：该</span><span class="p">(</span><span class="o">.+</span><span class="err">?</span><span class="p">)</span><span class="err">了</span><span class="o">|</span><span class="err">记得</span><span class="p">(</span><span class="o">.+</span><span class="err">?</span><span class="p">)</span><span class="o">|</span><span class="err">提醒我</span><span class="p">(</span><span class="o">.+</span><span class="err">?</span><span class="p">)</span><span class="o">|</span><span class="err">别忘了</span><span class="p">(</span><span class="o">.+</span><span class="err">?</span><span class="p">)</span>
+<span class="w">  </span><span class="err">├─</span><span class="w"> </span><span class="err">含提醒词</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="err">生成提醒</span>
+<span class="w">  </span><span class="err">├─</span><span class="w"> </span><span class="err">分类推断：买菜</span><span class="o">/</span><span class="err">交通</span><span class="o">/</span><span class="err">学习</span><span class="o">/</span><span class="err">餐饮（关键词匹配）</span>
+<span class="w">  </span><span class="err">└─</span><span class="w"> </span><span class="err">没匹配</span><span class="w"> </span><span class="err">↓</span>
+
+<span class="err">第</span><span class="mi">3</span><span class="err">层：协作模式检查（安全开关）</span>
+<span class="w">  </span><span class="err">├─</span><span class="w"> </span><span class="n">OFF</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">_collab_on</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">False</span>
+<span class="w">  </span><span class="err">│</span><span class="w">   </span><span class="err">├─</span><span class="w"> </span><span class="err">安全</span><span class="n">Skill可用</span><span class="err">（</span><span class="n">accounting</span><span class="o">/</span><span class="n">finance_report</span><span class="o">/</span><span class="n">code_audit</span><span class="o">/</span><span class="n">health_tracker</span><span class="err">）</span>
+<span class="w">  </span><span class="err">│</span><span class="w">   </span><span class="err">└─</span><span class="w"> </span><span class="err">垂直</span><span class="n">Skill被阻止</span><span class="err">（</span><span class="n">music</span><span class="o">-</span><span class="n">gen</span><span class="o">/</span><span class="n">song_production</span><span class="err">）</span>
+<span class="w">  </span><span class="err">└─</span><span class="w"> </span><span class="n">ON</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">_collab_on</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">True</span>
+<span class="w">      </span><span class="err">└─</span><span class="w"> </span><span class="err">所有</span><span class="n">Skill可用</span><span class="w"> </span><span class="err">↓</span>
+
+<span class="err">第</span><span class="mi">4</span><span class="err">层：</span><span class="n">_try_skill_trigger_match</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">run_skill_script_streaming</span><span class="err">（流式执行）</span>
+<span class="w">  </span><span class="err">├─</span><span class="w"> </span><span class="err">扫描所有</span><span class="n">Skill的trigger词</span><span class="err">（支持</span><span class="o">|</span><span class="err">分隔</span><span class="o">+</span><span class="err">正则）</span>
+<span class="w">  </span><span class="err">├─</span><span class="w"> </span><span class="err">匹配</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="err">检查协作模式（垂直</span><span class="n">Skill在OFF时阻止</span><span class="err">）</span>
+<span class="w">  </span><span class="err">├─</span><span class="w"> </span><span class="err">执行</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">run_skill_script_streaming</span><span class="p">()</span><span class="w"> </span><span class="err">逐行</span><span class="nb">yield</span><span class="w"> </span><span class="n">stdout</span>
+<span class="w">  </span><span class="err">├─</span><span class="w"> </span><span class="n">Skill名称动态显示</span><span class="err">：</span><span class="n">f</span><span class="s2">&quot;检测到【{skill_name}】触发词&quot;</span>
+<span class="w">  </span><span class="err">└─</span><span class="w"> </span><span class="err">没匹配</span><span class="w"> </span><span class="err">↓</span>
+
+<span class="err">第</span><span class="mi">5</span><span class="err">层：旧协作逻辑（</span><span class="n">fallback</span><span class="err">）</span>
+<span class="w">  </span><span class="err">├─</span><span class="w"> </span><span class="n">cloud_local</span><span class="err">：外脑分析→调垂直参数→垂直执行</span>
+<span class="w">  </span><span class="err">├─</span><span class="w"> </span><span class="n">local_dual</span><span class="err">：本地模型调度→调垂直参数→垂直执行</span>
+<span class="w">  </span><span class="err">├─</span><span class="w"> </span><span class="err">失败</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="err">提示</span><span class="s2">&quot;模型未返回内容&quot;</span><span class="err">（含协作模式建议）</span>
+<span class="w">  </span><span class="err">└─</span><span class="w"> </span><span class="err">非协作模式</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="err">跳过</span><span class="w"> </span><span class="err">↓</span>
+
+<span class="err">第</span><span class="mi">6</span><span class="err">层：通用模型回答</span>
+<span class="w">  </span><span class="err">├─</span><span class="w"> </span><span class="err">本地模式</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">Ollama模型</span>
+<span class="w">  </span><span class="err">└─</span><span class="w"> </span><span class="err">外脑模式</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">DeepSeek</span><span class="o">/</span><span class="n">GLM</span><span class="o">/</span><span class="err">豆包等</span>
+</code></pre></div>
+
+<p><strong>消息存储</strong>：所有层级（1-4）执行结果都存入conversations+messages表，解决空对话问题。</p>
+<p><strong>流式执行</strong>：<code>run_skill_script_streaming()</code>使用<code>subprocess.Popen</code>逐行读取stdout，通过<code>yield</code>实时显示进度。</p>
+<h3 id="e2-skillv210skill">E.2 Skill系统v2（10个Skill）</h3>
+<h4 id="e21-skill">E.2.1 Skill完整清单</h4>
+<table>
+<thead>
+<tr>
+<th>Skill</th>
+<th>类型</th>
+<th>触发词</th>
+<th>功能</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>accounting</td>
+<td>脚本</td>
+<td>记一笔|记账.<em>元|花了.</em>元|支出.<em>元|收入.</em>元|月度汇总|查账|我的账单|花了多少|余额多少</td>
+<td>家庭记账（SQLite CRUD）</td>
+</tr>
+<tr>
+<td>code_audit</td>
+<td>脚本</td>
+<td>检测废代码|代码审计|代码健康|废命令|scan code|audit code</td>
+<td>代码健康检测（P0/P1/P2）</td>
+</tr>
+<tr>
+<td>finance_report</td>
+<td>脚本</td>
+<td>财务月结|财务报告|月度报告|财务汇总|收支报告|本月报告|月结</td>
+<td>生成Markdown财务报告</td>
+</tr>
+<tr>
+<td>health_tracker</td>
+<td>脚本</td>
+<td>记录运动|记录体重|健康追踪|运动记录|健身记录|健康数据</td>
+<td>健康数据记录</td>
+</tr>
+<tr>
+<td>music-gen</td>
+<td>脚本</td>
+<td>生成音乐|创作音乐|写首歌|作曲|写.<em>音乐|做.</em>音乐|乡村音乐|BGM|背景音乐|编曲</td>
+<td>调MusicGen生成音乐</td>
+</tr>
+<tr>
+<td>song_production</td>
+<td>脚本</td>
+<td>写一首歌|制作歌曲|做一首完整的歌|写歌配乐|歌曲制作|编一首歌</td>
+<td>多模型编排（写词→作曲→配声→合成）</td>
+</tr>
+<tr>
+<td>data_analyst</td>
+<td>提示词</td>
+<td>数据分析|分析数据|数据报表|统计图表</td>
+<td>数据分析建议</td>
+</tr>
+<tr>
+<td>python_expert</td>
+<td>提示词</td>
+<td>Python代码|python问题|写Python|python脚本</td>
+<td>Python编程建议</td>
+</tr>
+<tr>
+<td>tech_writer</td>
+<td>提示词</td>
+<td>技术文档|写文档|技术写作|API文档</td>
+<td>技术写作建议</td>
+</tr>
+<tr>
+<td>workflow-extractor</td>
+<td>提示词</td>
+<td>提取流程|工作流|流程分析|workflow</td>
+<td>工作流分析</td>
+</tr>
+</tbody>
+</table>
+<h4 id="e22-_helperspy7">E.2.2 _helpers.py（7个函数）</h4>
+<div class="codehilite"><pre><span></span><code><span class="c1"># data/skills/_helpers.py</span>
+<span class="n">call_vertical</span><span class="p">(</span><span class="n">model_id</span><span class="p">,</span> <span class="n">params</span><span class="p">)</span>     <span class="c1"># 调垂直模型（POST /api/vertical/execute）</span>
+<span class="n">call_model</span><span class="p">(</span><span class="n">prompt</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>      <span class="c1"># 调通用模型（POST /api/chat/internal，支持多外脑）</span>
+<span class="n">ask_user</span><span class="p">(</span><span class="n">question</span><span class="p">,</span> <span class="n">options</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>    <span class="c1"># 问用户（文件通信：问题文件→回答文件，120秒超时）</span>
+<span class="n">check_gpu</span><span class="p">()</span>                         <span class="c1"># 检查GPU显存（nvidia-smi）</span>
+<span class="n">get_db_path</span><span class="p">()</span>                       <span class="c1"># 返回 data/sqlite/lingzhi.db 路径</span>
+<span class="n">get_media_dir</span><span class="p">()</span>                     <span class="c1"># 返回 data/media/ 路径（自动创建）</span>
+<span class="n">get_reports_dir</span><span class="p">()</span>                   <span class="c1"># 返回 data/reports/ 路径（自动创建）</span>
+</code></pre></div>
+
+<h4 id="e23">E.2.3 沙箱配置</h4>
+<table>
+<thead>
+<tr>
+<th>配置</th>
+<th>值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>超时</td>
+<td>300秒</td>
+<td>支持长时间任务（MusicGen等）</td>
+</tr>
+<tr>
+<td>禁用模块</td>
+<td>subprocess/socket/shutil/ctypes/requests/urllib.request</td>
+<td>防止越权</td>
+</tr>
+<tr>
+<td>禁用函数</td>
+<td>eval/exec/compile/<strong>import</strong></td>
+<td>防止注入</td>
+</tr>
+<tr>
+<td>流式执行</td>
+<td>run_skill_script_streaming()</td>
+<td>Popen逐行yield stdout</td>
+</tr>
+<tr>
+<td>AST扫描</td>
+<td>scan_script_security()</td>
+<td>预扫描所有.py文件</td>
+</tr>
+</tbody>
+</table>
+<h4 id="e24-song_production">E.2.4 song_production多模型编排</h4>
+<div class="codehilite"><pre><span></span><code><span class="c1"># Step 1: 通用模型写歌词</span>
+<span class="n">lyrics</span> <span class="o">=</span> <span class="n">call_model</span><span class="p">(</span><span class="s2">&quot;写一首乡村风格歌词，4行&quot;</span><span class="p">)</span>
+
+<span class="c1"># Step 2: MusicGen生成音乐</span>
+<span class="n">music</span> <span class="o">=</span> <span class="n">call_vertical</span><span class="p">(</span><span class="s1">&#39;musicgen-small&#39;</span><span class="p">,</span> <span class="p">{</span><span class="s1">&#39;genre&#39;</span><span class="p">:</span> <span class="s1">&#39;country&#39;</span><span class="p">,</span> <span class="s1">&#39;duration&#39;</span><span class="p">:</span> <span class="mi">30</span><span class="p">})</span>
+
+<span class="c1"># Step 3: Bark演唱歌词</span>
+<span class="n">vocals</span> <span class="o">=</span> <span class="n">call_vertical</span><span class="p">(</span><span class="s1">&#39;bark&#39;</span><span class="p">,</span> <span class="p">{</span><span class="s1">&#39;text&#39;</span><span class="p">:</span> <span class="n">lyrics</span><span class="p">[:</span><span class="mi">200</span><span class="p">]})</span>
+
+<span class="c1"># Step 4: FFmpeg合成</span>
+<span class="n">subprocess</span><span class="o">.</span><span class="n">run</span><span class="p">([</span><span class="s1">&#39;ffmpeg&#39;</span><span class="p">,</span> <span class="s1">&#39;-y&#39;</span><span class="p">,</span> <span class="s1">&#39;-i&#39;</span><span class="p">,</span> <span class="n">music</span><span class="p">,</span> <span class="s1">&#39;-i&#39;</span><span class="p">,</span> <span class="n">vocals</span><span class="p">,</span>
+    <span class="s1">&#39;-filter_complex&#39;</span><span class="p">,</span> <span class="s1">&#39;amix=inputs=2:duration=longest&#39;</span><span class="p">,</span> <span class="n">output</span><span class="p">])</span>
+</code></pre></div>
+
+<h4 id="e25">E.2.5 触发词管理</h4>
+<ul>
+<li>API：<code>GET /api/skills/triggers</code>（列表）、<code>PUT /api/skills/triggers/&lt;id&gt;</code>（更新）</li>
+<li>UI：设置→高级功能→Skill触发词管理（可视化编辑）</li>
+<li>格式：<code>trigger: 词1|词2|词.*正则</code>（单数trigger，不是triggers）</li>
+</ul>
+<h4 id="e26">E.2.6 触发词安全规则</h4>
+<ul>
+<li>必须含特定前缀或后缀（如"记账.*元"要求"记账"后跟"元"）</li>
+<li>短词（≤3字符）容易误触：BGM/月结/audit 保留，其他改严格</li>
+<li>协作OFF时垂直Skill的触发词不触发</li>
+</ul>
+<h3 id="e3-v2">E.3 协作模式v2（安全开关）</h3>
+<h4 id="e31">E.3.1 三种模式</h4>
+<table>
+<thead>
+<tr>
+<th>模式</th>
+<th>_collab_on</th>
+<th>安全Skill</th>
+<th>垂直Skill</th>
+<th>call_vertical</th>
+<th>旧协作逻辑</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>🚫 OFF</td>
+<td>False</td>
+<td>✅可用</td>
+<td>❌阻止</td>
+<td>❌阻止</td>
+<td>❌跳过</td>
+</tr>
+<tr>
+<td>☁️ 智能协作</td>
+<td>True</td>
+<td>✅可用</td>
+<td>✅可用</td>
+<td>✅可用</td>
+<td>✅fallback</td>
+</tr>
+<tr>
+<td>🏠 本地协作</td>
+<td>True</td>
+<td>✅可用</td>
+<td>✅可用</td>
+<td>✅可用</td>
+<td>✅fallback</td>
+</tr>
+</tbody>
+</table>
+<h4 id="e32-skill">E.3.2 垂直Skill阻止机制</h4>
+<div class="codehilite"><pre><span></span><code><span class="n">_vertical_skills</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;music-gen&#39;</span><span class="p">,</span> <span class="s1">&#39;musicgen&#39;</span><span class="p">,</span> <span class="s1">&#39;bark&#39;</span><span class="p">,</span> <span class="s1">&#39;stable-diffusion&#39;</span><span class="p">,</span> <span class="s1">&#39;huatuo&#39;</span><span class="p">]</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">_collab_on</span> <span class="ow">and</span> <span class="n">_skill_name</span> <span class="ow">and</span> <span class="nb">any</span><span class="p">(</span><span class="n">v</span> <span class="ow">in</span> <span class="n">_skill_name</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">_vertical_skills</span><span class="p">):</span>
+    <span class="k">yield</span> <span class="p">(</span><span class="s2">&quot;text&quot;</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;⚠️ 【</span><span class="si">{</span><span class="n">_skill_name</span><span class="si">}</span><span class="s2">】需要开启协作模式才能执行。&quot;</span><span class="p">)</span>
+    <span class="k">return</span>
+</code></pre></div>
+
+<h4 id="e33">E.3.3 多外脑支持</h4>
+<div class="codehilite"><pre><span></span><code><span class="c1"># call_model()支持model参数</span>
+<span class="n">lyrics</span> <span class="o">=</span> <span class="n">call_model</span><span class="p">(</span><span class="s2">&quot;写歌词&quot;</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;deepseek&quot;</span><span class="p">)</span>  <span class="c1"># 临时切换到DeepSeek</span>
+<span class="n">analysis</span> <span class="o">=</span> <span class="n">call_model</span><span class="p">(</span><span class="s2">&quot;分析乐理&quot;</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;zhipu&quot;</span><span class="p">)</span>  <span class="c1"># 临时切换到GLM</span>
+<span class="c1"># 引擎：switch_foreign_model() → 调用 → 恢复原模型</span>
+</code></pre></div>
+
+<ul>
+<li>API：<code>GET /api/multi-model/list</code>（列表）、<code>POST /api/multi-model/switch</code>（切换）</li>
+<li>UI：顶部栏下拉框快速切换</li>
+</ul>
+<h4 id="e34-ask_user">E.3.4 ask_user交互机制</h4>
+<div class="codehilite"><pre><span></span><code>Skill脚本调ask_user(&quot;什么风格？&quot;)
+  ↓
+写问题到 data/tmp/ask_user/{id}_question.json
+  ↓
+前端每2秒轮询 /api/ask_user/pending
+  ↓
+检测到问题 → 显示模态框 → 用户回答
+  ↓
+POST /api/ask_user/answer → 写 {id}_answer.txt
+  ↓
+Skill脚本读取回答 → 继续执行
+</code></pre></div>
+
+<h3 id="e4-v2">E.4 面板系统v2</h3>
+<h4 id="e41">E.4.1 创建面板功能</h4>
+<table>
+<thead>
+<tr>
+<th>功能</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>模板选择</td>
+<td>5种预设：空白/💰记账/💪健身/✅待办/📦库存</td>
+</tr>
+<tr>
+<td>图标选择</td>
+<td>8个emoji：💰💪✅📦📅📊🏠🎯</td>
+</tr>
+<tr>
+<td>统计图表</td>
+<td>汇总卡片（总记录/分类数/数值合计）+分类柱状图</td>
+</tr>
+<tr>
+<td>搜索筛选</td>
+<td>可选生成搜索框+类型筛选</td>
+</tr>
+<tr>
+<td>预览</td>
+<td>创建前预览面板效果</td>
+</tr>
+<tr>
+<td>卡片视图</td>
+<td>表格↔卡片视图切换（toggleView）</td>
+</tr>
+<tr>
+<td>字段类型</td>
+<td>7种：文本/数字/日期/下拉/多行文本/时间/图片</td>
+</tr>
+</tbody>
+</table>
+<h4 id="e42-js">E.4.2 面板JS新功能</h4>
+<table>
+<thead>
+<tr>
+<th>函数</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>toggleView()</td>
+<td>切换表格/卡片视图</td>
+</tr>
+<tr>
+<td>renderCards(records)</td>
+<td>渲染卡片视图</td>
+</tr>
+<tr>
+<td>renderTable(records)</td>
+<td>渲染表格视图</td>
+</tr>
+<tr>
+<td>formatValue(f, val)</td>
+<td>格式化字段值（图片缩略图/多行文本截断）</td>
+</tr>
+</tbody>
+</table>
+<h4 id="e43-api">E.4.3 记账API</h4>
+<table>
+<thead>
+<tr>
+<th>端点</th>
+<th>方法</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>/api/accounting/summary</td>
+<td>GET</td>
+<td>总收入/总支出/分类统计/月度对比</td>
+</tr>
+<tr>
+<td>/api/accounting/records</td>
+<td>GET</td>
+<td>收支明细（去重，200条）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="e5">E.5 流程编辑器</h3>
+<h4 id="e51-8">E.5.1 可选模型（8种）</h4>
+<table>
+<thead>
+<tr>
+<th>模型</th>
+<th>标识</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>🤖 通用模型</td>
+<td>call_model</td>
+<td>写词/分析/总结</td>
+</tr>
+<tr>
+<td>🎵 MusicGen</td>
+<td>call_vertical_musicgen</td>
+<td>生成音乐</td>
+</tr>
+<tr>
+<td>🎤 Bark</td>
+<td>call_vertical_bark</td>
+<td>文字转语音</td>
+</tr>
+<tr>
+<td>🎨 SD</td>
+<td>call_vertical_sd</td>
+<td>生成图片</td>
+</tr>
+<tr>
+<td>🏥 华佗</td>
+<td>call_vertical_huatuo</td>
+<td>医疗问答</td>
+</tr>
+<tr>
+<td>🎬 FFmpeg</td>
+<td>ffmpeg_merge</td>
+<td>合并音频/视频</td>
+</tr>
+<tr>
+<td>💾 SQLite</td>
+<td>sqlite_query</td>
+<td>查数据库</td>
+</tr>
+<tr>
+<td>📝 写文件</td>
+<td>write_file</td>
+<td>保存到文件</td>
+</tr>
+</tbody>
+</table>
+<h4 id="e52">E.5.2 代码生成</h4>
+<p>流程编辑器自动生成Python脚本：
+- 导入_helpers.py
+- 每步生成调用代码
+- 支持参数传递（上一步结果→下一步输入）
+- 保存为Skill（调/api/skills/generate）</p>
+<h3 id="e6">E.6 高级功能面板</h3>
+<p>设置→⚙️高级功能：</p>
+<table>
+<thead>
+<tr>
+<th>功能</th>
+<th>API</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>触发词管理</td>
+<td>GET/PUT /api/skills/triggers</td>
+<td>可视化编辑所有Skill触发词</td>
+</tr>
+<tr>
+<td>定时任务</td>
+<td>GET/POST/DELETE /api/scheduler/*</td>
+<td>添加/删除/查看定时任务</td>
+</tr>
+<tr>
+<td>Obsidian同步</td>
+<td>POST /api/knowledge/obsidian</td>
+<td>输入vault路径→同步.md到知识库</td>
+</tr>
+<tr>
+<td>AI生成Skill</td>
+<td>POST /api/skills/generate</td>
+<td>输入描述→AI生成Python脚本</td>
+</tr>
+<tr>
+<td>AirLLM状态</td>
+<td>GET /api/airllm/status</td>
+<td>显示安装状态+说明</td>
+</tr>
+<tr>
+<td>硬件信息</td>
+<td>GET /api/hardware/gpu</td>
+<td>GPU型号+显存</td>
+</tr>
+</tbody>
+</table>
+<h3 id="e7">E.7 定时任务调度器</h3>
+<div class="codehilite"><pre><span></span><code><span class="c1"># src/core/task_scheduler.py</span>
+<span class="c1"># 后台线程每60秒检查 data/scheduler.json</span>
+<span class="c1"># 到时间自动执行对应Skill</span>
+
+<span class="c1"># 任务格式：</span>
+<span class="p">{</span>
+    <span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="s2">&quot;1234567890&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;每日财务报告&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;skill&quot;</span><span class="p">:</span> <span class="s2">&quot;finance_report&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;time&quot;</span><span class="p">:</span> <span class="s2">&quot;07:00&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;enabled&quot;</span><span class="p">:</span> <span class="n">true</span><span class="p">,</span>
+    <span class="s2">&quot;last_run&quot;</span><span class="p">:</span> <span class="s2">&quot;2026-08-09 07:00&quot;</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h3 id="e8-airllm">E.8 AirLLM集成</h3>
+<div class="codehilite"><pre><span></span><code><span class="c1"># src/core/airllm_integration.py</span>
+<span class="c1"># 检查AirLLM安装状态</span>
+<span class="c1"># 4GB显存可跑70B模型（逐层推理）</span>
+<span class="c1"># 24GB显存用户不需要（Ollama直接跑32B以下更快）</span>
+
+<span class="c1"># API: GET /api/airllm/status</span>
+<span class="c1"># 返回: {installed, description, benefit, warning, install_cmd, models}</span>
+</code></pre></div>
+
+<h3 id="e9">E.9 智能消息拆分详细规则</h3>
+<h4 id="e91">E.9.1 触发条件</h4>
+<div class="codehilite"><pre><span></span><code><span class="c1"># 阈值≥1（单个金额也拆分）</span>
+<span class="n">amounts</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s1">&#39;(\d+(?:\.\d+)?)\s*元&#39;</span><span class="p">,</span> <span class="n">user_message</span><span class="p">)</span>
+<span class="n">remind_words</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s1">&#39;该(.+?)了|记得(.+?)|提醒我(.+?)|别忘了(.+?)&#39;</span><span class="p">,</span> <span class="n">user_message</span><span class="p">)</span>
+
+<span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">amounts</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">1</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">remind_words</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+    <span class="k">return</span> <span class="kc">None</span>  <span class="c1"># 不拆分</span>
+</code></pre></div>
+
+<h4 id="e92">E.9.2 金额检测正则</h4>
+<div class="codehilite"><pre><span></span><code><span class="c1"># 3种匹配模式</span>
+<span class="n">patterns</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="sa">r</span><span class="s1">&#39;买(\w+?)\s*(?:花(?:费)?|用)?\s*(\d+(?:\.\d+)?)\s*元&#39;</span><span class="p">,</span>  <span class="c1"># 买海鲜50元</span>
+    <span class="sa">r</span><span class="s1">&#39;(\w+?)\s*(?:花费|花了|支出|用)\s*(\d+(?:\.\d+)?)\s*元&#39;</span><span class="p">,</span>  <span class="c1"># 加油花了600元</span>
+    <span class="sa">r</span><span class="s1">&#39;(\w+?)\s+(\d+(?:\.\d+)?)\s*元&#39;</span><span class="p">,</span>                          <span class="c1"># 咖啡30元</span>
+<span class="p">]</span>
+</code></pre></div>
+
+<h4 id="e93">E.9.3 分类推断</h4>
+<div class="codehilite"><pre><span></span><code><span class="n">cat_map</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s1">&#39;菜&#39;</span><span class="p">:</span> <span class="s1">&#39;买菜&#39;</span><span class="p">,</span> <span class="s1">&#39;海鲜&#39;</span><span class="p">:</span> <span class="s1">&#39;买菜&#39;</span><span class="p">,</span> <span class="s1">&#39;肉&#39;</span><span class="p">:</span> <span class="s1">&#39;买菜&#39;</span><span class="p">,</span> <span class="s1">&#39;水果&#39;</span><span class="p">:</span> <span class="s1">&#39;买菜&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;加油&#39;</span><span class="p">:</span> <span class="s1">&#39;交通&#39;</span><span class="p">,</span> <span class="s1">&#39;油&#39;</span><span class="p">:</span> <span class="s1">&#39;交通&#39;</span><span class="p">,</span> <span class="s1">&#39;车&#39;</span><span class="p">:</span> <span class="s1">&#39;交通&#39;</span><span class="p">,</span> <span class="s1">&#39;打车&#39;</span><span class="p">:</span> <span class="s1">&#39;交通&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;书&#39;</span><span class="p">:</span> <span class="s1">&#39;学习&#39;</span><span class="p">,</span> <span class="s1">&#39;包&#39;</span><span class="p">:</span> <span class="s1">&#39;学习&#39;</span><span class="p">,</span> <span class="s1">&#39;笔&#39;</span><span class="p">:</span> <span class="s1">&#39;学习&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;饭&#39;</span><span class="p">:</span> <span class="s1">&#39;餐饮&#39;</span><span class="p">,</span> <span class="s1">&#39;吃&#39;</span><span class="p">:</span> <span class="s1">&#39;餐饮&#39;</span><span class="p">,</span> <span class="s1">&#39;餐&#39;</span><span class="p">:</span> <span class="s1">&#39;餐饮&#39;</span><span class="p">,</span> <span class="s1">&#39;咖啡&#39;</span><span class="p">:</span> <span class="s1">&#39;餐饮&#39;</span><span class="p">,</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h3 id="e10-10tab">E.10 设置面板（10个Tab）</h3>
+<table>
+<thead>
+<tr>
+<th>Tab</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>①基本设置</td>
+<td>联网搜索（Bing/SearXNG三态）+语言+数据库状态</td>
+</tr>
+<tr>
+<td>②模型管理</td>
+<td>本地模型+外部模型（搜索优先安装器）+多模型设置（8个提供商）+协作外脑</td>
+</tr>
+<tr>
+<td>③个人画像</td>
+<td>用户偏好/性格/职业</td>
+</tr>
+<tr>
+<td>④外观定制</td>
+<td>名称/图标/主题</td>
+</tr>
+<tr>
+<td>⑤安全隐私</td>
+<td>杀毒+代码沙箱+隐私模式+管理员密码</td>
+</tr>
+<tr>
+<td>⑥💾数据</td>
+<td>数据保险箱（备份/恢复）+设备命令日志</td>
+</tr>
+<tr>
+<td>⑦🧩插件管理</td>
+<td>5个子Tab：🛠️技能/🧱构建/🧩Agent/🏭工坊/📦外部模型</td>
+</tr>
+<tr>
+<td>⑧关于&amp;连接</td>
+<td>手机+公网+IM连接+HarvenHub+版本信息</td>
+</tr>
+<tr>
+<td>⑨⚙️高级功能</td>
+<td>触发词管理+定时任务+Obsidian+AI生成+AirLLM+硬件</td>
+</tr>
+<tr>
+<td>⑩📋流程编辑器</td>
+<td>可视化创建多模型流程（8种模型+步骤排序+代码预览）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="e11-apiv70">E.11 API完整清单（v7.0）</h3>
+<h4 id="api">记账API</h4>
+<table>
+<thead>
+<tr>
+<th>端点</th>
+<th>方法</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>/api/accounting/summary</td>
+<td>GET</td>
+<td>收支汇总</td>
+</tr>
+<tr>
+<td>/api/accounting/records</td>
+<td>GET</td>
+<td>收支明细</td>
+</tr>
+</tbody>
+</table>
+<h4 id="skillapi">Skill/流程API</h4>
+<table>
+<thead>
+<tr>
+<th>端点</th>
+<th>方法</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>/api/skills/triggers</td>
+<td>GET</td>
+<td>列出所有触发词</td>
+</tr>
+<tr>
+<td>/api/skills/triggers/<id></td>
+<td>PUT</td>
+<td>更新触发词</td>
+</tr>
+<tr>
+<td>/api/skills/generate</td>
+<td>POST</td>
+<td>AI自动生成Skill</td>
+</tr>
+<tr>
+<td>/api/flows</td>
+<td>GET</td>
+<td>流程列表</td>
+</tr>
+<tr>
+<td>/api/flows/<id>/test</td>
+<td>POST</td>
+<td>测试运行流程</td>
+</tr>
+<tr>
+<td>/api/hub/flows</td>
+<td>GET</td>
+<td>可分享流程列表</td>
+</tr>
+</tbody>
+</table>
+<h4 id="api_1">对话/协作API</h4>
+<table>
+<thead>
+<tr>
+<th>端点</th>
+<th>方法</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>/api/chat/internal</td>
+<td>POST</td>
+<td>内部模型调用（多外脑）</td>
+</tr>
+<tr>
+<td>/api/chat/smart-split</td>
+<td>POST</td>
+<td>智能拆分消息</td>
+</tr>
+<tr>
+<td>/api/conversations/by-mode</td>
+<td>GET</td>
+<td>按模式筛选对话</td>
+</tr>
+<tr>
+<td>/api/multi-model/list</td>
+<td>GET</td>
+<td>外脑列表</td>
+</tr>
+<tr>
+<td>/api/multi-model/switch</td>
+<td>POST</td>
+<td>切换外脑</td>
+</tr>
+</tbody>
+</table>
+<h4 id="api_2">高级功能API</h4>
+<table>
+<thead>
+<tr>
+<th>端点</th>
+<th>方法</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>/api/ask_user/pending</td>
+<td>GET</td>
+<td>检查待回答问题</td>
+</tr>
+<tr>
+<td>/api/ask_user/answer</td>
+<td>POST</td>
+<td>提交回答</td>
+</tr>
+<tr>
+<td>/api/hardware/gpu</td>
+<td>GET</td>
+<td>GPU信息</td>
+</tr>
+<tr>
+<td>/api/airllm/status</td>
+<td>GET</td>
+<td>AirLLM状态</td>
+</tr>
+<tr>
+<td>/api/knowledge/obsidian</td>
+<td>POST</td>
+<td>Obsidian目录同步</td>
+</tr>
+<tr>
+<td>/api/scheduler/list</td>
+<td>GET</td>
+<td>定时任务列表</td>
+</tr>
+<tr>
+<td>/api/scheduler/add</td>
+<td>POST</td>
+<td>添加定时任务</td>
+</tr>
+<tr>
+<td>/api/scheduler/<id></td>
+<td>DELETE</td>
+<td>删除定时任务</td>
+</tr>
+</tbody>
+</table>
+<h4 id="api_3">面板API</h4>
+<table>
+<thead>
+<tr>
+<th>端点</th>
+<th>方法</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>/api/panels</td>
+<td>GET</td>
+<td>面板列表</td>
+</tr>
+<tr>
+<td>/api/panels/create</td>
+<td>POST</td>
+<td>创建面板（支持with_chart/with_search参数）</td>
+</tr>
+<tr>
+<td>/api/panels/<id>/data</td>
+<td>GET/POST</td>
+<td>面板数据CRUD</td>
+</tr>
+<tr>
+<td>/api/panels/<id>/data/<row_id></td>
+<td>PUT/DELETE</td>
+<td>更新/删除记录</td>
+</tr>
+</tbody>
+</table>
+<h3 id="e12-github">E.12 GitHub开源准备</h3>
+<table>
+<thead>
+<tr>
+<th>文件</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>.gitignore</td>
+<td>排除config.yaml/db/venv/<strong>pycache</strong>/模型缓存/临时文件</td>
+</tr>
+<tr>
+<td>config.example.yaml</td>
+<td>配置模板（空API Key，8个提供商）</td>
+</tr>
+<tr>
+<td>README.md</td>
+<td>项目介绍+安装+功能+技术栈+贡献指南</td>
+</tr>
+<tr>
+<td>CONTRIBUTING.md</td>
+<td>贡献流程+代码规范+方向</td>
+</tr>
+</tbody>
+</table>
+<h3 id="e13">E.13 新增文件清单</h3>
+<table>
+<thead>
+<tr>
+<th>文件</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>src/core/task_scheduler.py</td>
+<td>定时任务调度器（后台线程）</td>
+</tr>
+<tr>
+<td>src/core/airllm_integration.py</td>
+<td>AirLLM集成模块</td>
+</tr>
+<tr>
+<td>data/skills/_helpers.py</td>
+<td>Skill辅助函数（7个）</td>
+</tr>
+<tr>
+<td>data/skills/song_production/</td>
+<td>多模型编排Skill</td>
+</tr>
+<tr>
+<td>templates/includes/tab-流程编辑器.html</td>
+<td>流程编辑器UI</td>
+</tr>
+<tr>
+<td>templates/includes/tab-高级功能.html</td>
+<td>高级功能面板UI</td>
+</tr>
+<tr>
+<td>.gitignore</td>
+<td>Git忽略文件</td>
+</tr>
+<tr>
+<td>config.example.yaml</td>
+<td>配置模板</td>
+</tr>
+<tr>
+<td>README.md</td>
+<td>项目说明</td>
+</tr>
+<tr>
+<td>CONTRIBUTING.md</td>
+<td>贡献指南</td>
+</tr>
+<tr>
+<td>VERSION</td>
+<td>版本信息</td>
+</tr>
+</tbody>
+</table>
+<h3 id="e14-v706">E.14 开发者六大铁律（v7.0新增第6条）</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>铁律</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>重启铁律</td>
+<td>改Flask后重启前必须netstat确认无残留进程</td>
+</tr>
+<tr>
+<td>2</td>
+<td>HTML铁律</td>
+<td>改templates/includes/*.html后检查div开闭平衡</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Flask线程铁律</td>
+<td>app.run()必须threaded=True</td>
+</tr>
+<tr>
+<td>4</td>
+<td>config.yaml铁律</td>
+<td>保存config用yaml.dump(dict(config),...)</td>
+</tr>
+<tr>
+<td>5</td>
+<td>NUCLEAR覆盖铁律</td>
+<td>switchSettingsTab的NUCLEAR版在index.html</td>
+</tr>
+<tr>
+<td>6</td>
+<td><strong>面板类名铁律</strong></td>
+<td>新面板必须用class="tab-panel"（不是settings-subpanel），否则_showPanel找不到</td>
+</tr>
+</tbody>
+</table>
+<h3 id="e15-v70">E.15 v7.0版本信息</h3>
+<div class="codehilite"><pre><span></span><code>版本: v0.3.0
+构建: 2026-08-09
+Python文件: 112个
+JS文件: 25个
+Skill: 10个（6脚本+4提示词）
+API端点: 20+
+_helpers.py函数: 7个
+</code></pre></div>
+
+<hr />
+<p><em>本文档由 Harven AI 团队维护，最后更新：2026-08-09</em></p></div>
+</body></html>

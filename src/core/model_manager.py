@@ -1,0 +1,251 @@
+# Copyright 2026 AmenMonk. Licensed under the Apache License, Version 2.0.
+"""
+本地模型后端 — Phase 3: ModelBackend 抽象层
+支持多种本地推理引擎：Ollama / llama-cpp-python（GGUF 直跑）
+通过统一接口 chat() / list_models() / load_model() 调用
+"""
+import requests
+from openai import OpenAI
+import logging
+logger = logging.getLogger(__name__)
+
+# 非对话模型关键词（统一常量）
+_NONCHAT_KEYWORDS = [
+    'embed', 'bge-', 'nomic', 'gte-', 'e5-',
+    'musicgen', 'bark', 'riffusion', 'audiocraft',
+    'stable-diffusion', 'sdxl', 'flux', 'kolors',
+    'cogvideo', 'animatediff', 'opensora',
+    'whisper',
+]
+
+
+def check_ollama(base_url="http://localhost:11434"):
+    """
+    检查本地引擎是否在运行
+
+    Returns:
+        (bool, str): (是否可用, 描述信息)
+    """
+    try:
+        resp = requests.get(f"{base_url}/api/tags", timeout=8)
+        if resp.status_code == 200:
+            models = resp.json().get("models", [])
+            model_names = [m.get("name", "") for m in models]
+            return True, f"运行中，已安装 {len(models)} 个模型: {', '.join(model_names)}"
+        return False, f"本地引擎返回状态码 {resp.status_code}"
+    except requests.ConnectionError:
+        return False, "本地引擎未运行，请先启动引擎服务"
+    except Exception as e:
+        return False, f"检测本地引擎失败: {e}"
+
+
+def get_available_models(base_url="http://localhost:11434"):
+    """获取已安装的模型列表"""
+    try:
+        resp = requests.get(f"{base_url}/api/tags", timeout=5)
+        if resp.status_code == 200:
+            return [m.get("name", "") for m in resp.json().get("models", [])]
+    except Exception as _e: logger.debug(f"[model_manager] 忽略: {_e}")
+    return []
+
+
+class ModelManager:
+    """
+    Phase 3: 本地模型后端管理器 — 支持多种引擎
+    当前支持：Ollama (OpenAI 兼容 API) + llama-cpp-python (GGUF 直跑)
+    未来可扩展：vLLM / MLX / TensorRT-LLM
+    """
+
+    def __init__(self, base_url="http://localhost:11434", model="qwen2.5:14b"):
+        self.base_url = base_url
+        self.model = model
+        self._engine_type = None  # 'ollama' | 'llama_cpp' | None
+        self._llama_engine = None
+        self._using_gguf = False
+
+        # 尝试连接引擎（Ollama 优先，GGUF 回退）
+        ok, _ = check_ollama(base_url)
+        if ok:
+            self._engine_type = 'ollama'
+            self.client = OpenAI(
+                base_url=f"{base_url}/v1",
+                api_key="ollama",
+                timeout=120.0,
+            )
+            logger.info(f"[ModelManager] 引擎已连接: {base_url}")
+        else:
+            # Ollama 不可用，尝试加载 GGUF 模型
+            logger.info("[ModelManager] Ollama 引擎不可用，尝试 GGUF 直跑...")
+            self._try_gguf_fallback(model)
+    
+    def set_model(self, model_name):
+        """切换模型"""
+        self.model = model_name
+        if self._using_gguf:
+            self._try_gguf_fallback(model_name)
+
+    def _try_gguf_fallback(self, model_name=None):
+        """尝试加载 GGUF 模型（魔搭下载的）"""
+        try:
+            from src.core.llama_engine import LlamaEngine, find_local_gguf
+            gguf_path = find_local_gguf(model_name)
+            if gguf_path:
+                self._llama_engine = LlamaEngine(gguf_path)
+                self._engine_type = 'llama_cpp'
+                logger.info(f"[ModelManager] ✅ GGUF 引擎已加载: {gguf_path}")
+                return True
+        except ImportError:
+            logger.warning("[ModelManager] llama-cpp-python 未安装，无法使用 GGUF")
+        except Exception as e:
+            logger.error(f"[ModelManager] GGUF 加载失败: {e}")
+        self._engine_type = None
+        return False
+
+    @property
+    def is_available(self):
+        """模型是否可用"""
+        return self._engine_type is not None
+
+    def _chat_gguf(self, messages, stream=False, temperature=0.7, max_tokens=4096):
+        """GGUF 引擎对话"""
+        # 从 messages 提取 system prompt 和用户消息
+        system_prompt = ""
+        user_content = ""
+        history_parts = []
+        for m in messages:
+            if m["role"] == "system":
+                system_prompt = m["content"]
+            elif m["role"] == "user":
+                user_content = m["content"]
+            elif m["role"] == "assistant":
+                history_parts.append(f"Assistant: {m['content']}")
+
+        history_text = "\n".join(history_parts) if history_parts else ""
+        prompt = f"{history_text}\nUser: {user_content}\nAssistant:" if history_text else f"User: {user_content}\nAssistant:"
+
+        if system_prompt:
+            prompt = f"{system_prompt}\n\n{prompt}"
+
+        if stream:
+            return self._llama_engine.stream_generate(prompt, temperature=temperature, max_tokens=max_tokens)
+        else:
+            return self._llama_engine.generate(prompt, temperature=temperature, max_tokens=max_tokens)
+
+    def warmup(self):
+        """
+        模型预热：发送一条极短消息加载模型到 GPU
+        避免首次对话时的冷启动延迟（通常 8-15 秒）
+        """
+        import threading
+        def _do_warmup():
+            try:
+                messages = [{"role": "user", "content": "hi"}]
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    stream=False,
+                    temperature=0.1,
+                    max_tokens=5,
+                )
+                content = response.choices[0].message.content
+                logger.info(f"[ModelManager] 模型预热完成: {self.model} → {content[:30]}")
+            except Exception as e:
+                logger.error(f"[ModelManager] 模型预热失败（不影响使用）: {e}")
+        t = threading.Thread(target=_do_warmup, daemon=True)
+        t.start()
+    
+    def chat(self, messages, stream=False, temperature=0.7, max_tokens=4096):
+        """发送对话请求 — 自动选择引擎（Ollama 或 GGUF）"""
+        # ═══ 非语言模型拦截 ═══
+        _model_lower = (self.model or '').lower()
+        if any(kw in _model_lower for kw in _NONCHAT_KEYWORDS):
+            raise RuntimeError(
+                f"「{self.model}」是专业模型，不具备语言对话能力。"
+                "请切换到语言模型（如 qwen2.5:14b）或使用外脑模式。"
+            )
+
+        # GGUF 引擎路径
+        if self._engine_type == 'llama_cpp' and self._llama_engine and self._llama_engine.is_loaded:
+            return self._chat_gguf(messages, stream, temperature, max_tokens)
+
+        # Ollama 路径
+        if self._engine_type != 'ollama':
+            raise RuntimeError("本地引擎不可用：既没有 Ollama 也没有 GGUF 模型")
+        try:
+            logger.debug(f"[ModelManager] 调用模型: {self.model}, 消息数: {len(messages)}, stream={stream}")
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                stream=stream,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+            
+            if stream:
+                return self._stream_response(response)
+            else:
+                return response.choices[0].message.content
+        
+        except Exception as e:
+            logger.error(f"[ModelManager] 模型调用失败: {e}")
+            raise RuntimeError(f"模型调用失败: {e}") from e
+    
+    def _stream_response(self, response):
+        """处理流式响应，兼容普通模型和 thinking 模型（qwen3/deepseek-r1）
+        
+        thinking 模型的流式格式：
+          - 思考阶段：delta.reasoning_content 有内容，delta.content 为空/None
+          - 回答阶段：delta.content 有内容，delta.reasoning_content 为空/None
+        
+        Harven AI 不展示思考过程（show_thinking=False），直接等待 delta.content
+        """
+        total_chunks = 0
+        content_chunks = 0
+        thinking_chunks = 0
+        for chunk in response:
+            total_chunks += 1
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            
+            # 普通内容（所有模型的最终回答都在这里）
+            if delta.content:
+                content_chunks += 1
+                yield delta.content
+            # thinking 模型的思考内容 —— 跳过不输出（show_thinking=False）
+            elif hasattr(delta, 'reasoning_content') and delta.reasoning_content:
+                thinking_chunks += 1
+                # 不 yield，静默跳过思考过程
+        
+        logger.debug(
+            f"[ModelManager] 流结束: total={total_chunks}, content={content_chunks}, "
+            f"thinking={thinking_chunks}, model={self.model}"
+        )
+        if total_chunks > 0 and content_chunks == 0:
+            if thinking_chunks > 0:
+                logger.warning(
+                    f"[ModelManager] 模型只返回了思考内容 ({thinking_chunks} chunks) 但无最终回答！"
+                    f"模型={self.model}，可能是 thinking 模式下回答被截断或超时"
+                )
+            else:
+                logger.warning(f"[ModelManager] 模型返回 {total_chunks} 个 chunk 但全部无 content！模型={self.model}")
+        elif total_chunks == 0:
+            logger.warning(f"[ModelManager] 模型返回空流！模型={self.model}")
+    
+    def chat_with_context(self, system_prompt, conversation_history, user_message, 
+                          stream=False, temperature=0.7):
+        """
+        带系统提示词和历史上下文的对话
+        
+        Args:
+            system_prompt: 系统提示词
+            conversation_history: [{"role": str, "content": str}]
+            user_message: 当前用户消息
+            stream: 是否流式
+            temperature: 温度
+        """
+        messages = [{"role": "system", "content": system_prompt}]
+        messages.extend(conversation_history)
+        messages.append({"role": "user", "content": user_message})
+        
+        return self.chat(messages, stream=stream, temperature=temperature)

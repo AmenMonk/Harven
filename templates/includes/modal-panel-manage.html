@@ -1,0 +1,132 @@
+<!-- 面板管理模态框 -->
+<div class="modal-overlay" id="panelManagerOverlay" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:99999;align-items:center;justify-content:center;">
+  <div class="modal" style="background:var(--bg-primary);border-radius:12px;border:0.5px solid var(--border);width:520px;max-height:80vh;overflow:hidden;display:flex;flex-direction:column;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:0.5px solid var(--border);flex-shrink:0;">
+      <h3 style="margin:0;font-size:15px;font-weight:500;color:var(--text-primary);">面板管理</h3>
+      <button onclick="if(window.closePanelManager)closePanelManager()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-secondary);padding:4px;">×</button>
+    </div>
+
+    <!-- Tab切换 -->
+    <div style="display:flex;border-bottom:0.5px solid var(--border);flex-shrink:0;">
+      <button id="tabManageInstalled" class="panel-tab active" onclick="if(window.switchPanelTab)switchPanelTab('installed')"
+        style="flex:1;padding:10px;border:none;background:transparent;color:var(--text-secondary);cursor:pointer;font-size:13px;border-bottom:2px solid transparent;">已安装</button>
+      <button id="tabManageInstall" class="panel-tab" onclick="if(window.switchPanelTab)switchPanelTab('install')"
+        style="flex:1;padding:10px;border:none;background:transparent;color:var(--text-secondary);cursor:pointer;font-size:13px;border-bottom:2px solid transparent;">安装面板</button>
+      <button id="tabManageCreate" class="panel-tab" onclick="if(window.switchPanelTab)switchPanelTab('create')"
+        style="flex:1;padding:10px;border:none;background:transparent;color:var(--text-secondary);cursor:pointer;font-size:13px;border-bottom:2px solid transparent;">创建面板</button>
+    </div>
+
+    <div style="overflow-y:auto;flex:1;padding:16px;">
+      <!-- 已安装面板列表 -->
+      <div id="tabInstalled">
+        <div id="panelManageList">
+          <div style="text-align:center;color:var(--text-tertiary);font-size:12px;">加载中...</div>
+        </div>
+      </div>
+
+      <!-- 安装面板 -->
+      <div id="tabInstall" style="display:none;">
+        <div style="border:2px dashed var(--border);border-radius:8px;padding:2rem;text-align:center;">
+          <p style="color:var(--text-secondary);margin:0 0 12px 0;">选择面板ZIP文件安装</p>
+          <input type="file" id="panelZipInput" accept=".zip" onchange="if(window.installPanelFromFile)installPanelFromFile(this)"
+            style="display:none;">
+          <button onclick="document.getElementById('panelZipInput').click()"
+            style="background:var(--accent);border:none;border-radius:6px;padding:8px 24px;color:#fff;cursor:pointer;font-size:13px;">选择ZIP文件</button>
+        </div>
+        <div id="installFeedback" style="margin-top:12px;text-align:center;font-size:12px;"></div>
+      </div>
+
+      <!-- 创建面板 -->
+      <div id="tabCreate" style="display:none;">
+        <!-- ★ 2026-08-08: 模板选择 -->
+        <div class="panel-field" style="margin-bottom:10px;">
+          <label style="display:block;font-size:12px;color:var(--text-secondary);margin-bottom:4px;">📋 选择模板</label>
+          <select id="createPanelTemplate" onchange="if(window.applyPanelTemplate)applyPanelTemplate(this.value)" style="width:100%;padding:8px;border-radius:6px;border:0.5px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);font-size:13px;">
+            <option value="blank">空白面板（自定义）</option>
+            <option value="accounting">💰 记账面板（带统计图表）</option>
+            <option value="fitness">💪 健身面板（运动记录+趋势）</option>
+            <option value="todo">✅ 待办面板（任务管理）</option>
+            <option value="inventory">📦 库存面板（物品管理）</option>
+          </select>
+        </div>
+
+        <div class="panel-field" style="margin-bottom:10px;">
+          <label style="display:block;font-size:12px;color:var(--text-secondary);margin-bottom:4px;">面板名称 *</label>
+          <input type="text" id="createPanelName" placeholder="例如：家庭记账" style="width:100%;padding:8px;border-radius:6px;border:0.5px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);font-size:13px;">
+        </div>
+        <div class="panel-field" style="margin-bottom:10px;">
+          <label style="display:block;font-size:12px;color:var(--text-secondary);margin-bottom:4px;">面板ID *</label>
+          <input type="text" id="createPanelId" placeholder="英文ID，如 accounting" style="width:100%;padding:8px;border-radius:6px;border:0.5px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);font-size:13px;">
+        </div>
+        <div class="panel-field" style="margin-bottom:10px;">
+          <label style="display:block;font-size:12px;color:var(--text-secondary);margin-bottom:4px;">描述</label>
+          <input type="text" id="createPanelDesc" placeholder="面板用途说明" style="width:100%;padding:8px;border-radius:6px;border:0.5px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);font-size:13px;">
+        </div>
+
+        <!-- ★ 2026-08-08: 图标选择 -->
+        <div class="panel-field" style="margin-bottom:10px;">
+          <label style="display:block;font-size:12px;color:var(--text-secondary);margin-bottom:4px;">图标</label>
+          <div id="iconPicker" style="display:flex;gap:6px;flex-wrap:wrap;">
+            <span class="icon-option" onclick="if(window.selectIcon)selectIcon(this,'💰')" style="cursor:pointer;font-size:20px;padding:4px 8px;border-radius:6px;border:0.5px solid var(--border);">💰</span>
+            <span class="icon-option" onclick="if(window.selectIcon)selectIcon(this,'💪')" style="cursor:pointer;font-size:20px;padding:4px 8px;border-radius:6px;border:0.5px solid var(--border);">💪</span>
+            <span class="icon-option" onclick="if(window.selectIcon)selectIcon(this,'✅')" style="cursor:pointer;font-size:20px;padding:4px 8px;border-radius:6px;border:0.5px solid var(--border);">✅</span>
+            <span class="icon-option" onclick="if(window.selectIcon)selectIcon(this,'📦')" style="cursor:pointer;font-size:20px;padding:4px 8px;border-radius:6px;border:0.5px solid var(--border);">📦</span>
+            <span class="icon-option" onclick="if(window.selectIcon)selectIcon(this,'📅')" style="cursor:pointer;font-size:20px;padding:4px 8px;border-radius:6px;border:0.5px solid var(--border);">📅</span>
+            <span class="icon-option" onclick="if(window.selectIcon)selectIcon(this,'📊')" style="cursor:pointer;font-size:20px;padding:4px 8px;border-radius:6px;border:0.5px solid var(--border);">📊</span>
+            <span class="icon-option" onclick="if(window.selectIcon)selectIcon(this,'🏠')" style="cursor:pointer;font-size:20px;padding:4px 8px;border-radius:6px;border:0.5px solid var(--border);">🏠</span>
+            <span class="icon-option" onclick="if(window.selectIcon)selectIcon(this,'🎯')" style="cursor:pointer;font-size:20px;padding:4px 8px;border-radius:6px;border:0.5px solid var(--border);">🎯</span>
+            <span class="icon-option" onclick="if(window.selectIcon)selectIcon(this,'📝')" style="cursor:pointer;font-size:20px;padding:4px 8px;border-radius:6px;border:0.5px solid var(--border);">📝</span>
+            <span class="icon-option" onclick="if(window.selectIcon)selectIcon(this,'⭐')" style="cursor:pointer;font-size:20px;padding:4px 8px;border-radius:6px;border:0.5px solid var(--border);">⭐</span>
+          </div>
+          <input type="hidden" id="createPanelIcon" value="💰">
+        </div>
+
+        <!-- ★ 2026-08-08: 统计选项 -->
+        <div class="panel-field" style="margin-bottom:10px;">
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);cursor:pointer;">
+            <input type="checkbox" id="createPanelChart" checked style="cursor:pointer;">
+            <span>📊 生成统计图表（汇总卡片+分类柱状图）</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);cursor:pointer;margin-top:4px;">
+            <input type="checkbox" id="createPanelSearch" checked style="cursor:pointer;">
+            <span>🔍 生成搜索筛选功能</span>
+          </label>
+        </div>
+
+        <div style="margin-bottom:10px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <span style="font-size:12px;color:var(--text-secondary);font-weight:500;">字段定义</span>
+            <button onclick="if(window.addCreateField)addCreateField()" style="background:var(--bg-hover);border:0.5px solid var(--border);border-radius:4px;color:var(--text-secondary);cursor:pointer;font-size:11px;padding:2px 10px;">+ 添加字段</button>
+          </div>
+          <div id="createFieldsList" style="margin-top:8px;">
+            <!-- JS动态添加 -->
+          </div>
+        </div>
+
+        <div style="display:flex;gap:8px;margin-top:8px;">
+          <button onclick="if(window.doCreatePanel)doCreatePanel()"
+            style="flex:1;background:var(--accent);border:none;border-radius:6px;padding:10px;color:#fff;cursor:pointer;font-size:13px;">创建面板</button>
+          <button onclick="if(window.previewPanel)previewPanel()"
+            style="background:var(--bg-hover);border:0.5px solid var(--border);border-radius:6px;padding:10px 16px;color:var(--text-secondary);cursor:pointer;font-size:13px;">👁 预览</button>
+        </div>
+        <div id="createFeedback" style="margin-top:10px;text-align:center;font-size:12px;"></div>
+        <div id="previewArea" style="display:none;margin-top:12px;border:0.5px solid var(--border);border-radius:8px;padding:12px;background:var(--bg-secondary);"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+.panel-tab.active { color: var(--accent) !important; border-bottom-color: var(--accent) !important; }
+.panel-tab:hover { background: var(--bg-hover); }
+</style>
+
+<script>
+// 初始化面板管理模态框
+(function() {
+  // 点击遮罩关闭
+  document.getElementById('panelManagerOverlay').addEventListener('click', function(e) {
+    if (e.target === this && window.closePanelManager) closePanelManager();
+  });
+})();
+</script>

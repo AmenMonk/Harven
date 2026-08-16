@@ -1,0 +1,265 @@
+<!-- Tab: 模型配置（通用模型 + 垂直模型，统一管理） -->
+<div class="tab-panel" id="modelTabContentDualConfig" style="display:none;">
+    <div class="settings-grid">
+        <div style="background:linear-gradient(135deg,#1a1a3e,#2d2d5e);border-radius:12px;padding:16px;margin-bottom:16px;border:1px solid #667eea;">
+            <div style="font-weight:600;color:#667eea;margin-bottom:6px;">⚙️ 模型配置</div>
+            <div style="font-size:12px;color:#94a3b8;">
+                通用模型（大脑）用于对话/推理，垂直模型（工具）用于音乐/图片/语音等特定任务。根据查询模式自动适配。
+            </div>
+        </div>
+
+        <!-- 大脑模型 -->
+        <div style="margin-bottom:16px;">
+            <label style="font-size:13px;font-weight:600;color:#4ade80;display:block;margin-bottom:6px;" data-i18n="web.localdual.label_1">🧠 本地通用模型（对话/推理用）</label>
+            <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">作为协作的大脑，分析用户意图并调度工具模型</div>
+            <select id="dualBrainSelect" style="width:100%;padding:10px;border-radius:8px;border:2px solid #2a2a4a;background:#1a1a3e;color:#e2e8f0;font-size:13px;" onchange="saveDualBrain()">
+                <option value="" data-i18n="web.localdual.option_1">-- 自动使用当前模型 --</option>
+            </select>
+            <div id="dualBrainHint" style="font-size:11px;color:#888;margin-top:4px;display:none;"></div>
+            <div style="display:flex;gap:8px;margin-top:8px;">
+                <button id="btnStopBrain" style="flex:1;padding:8px 14px;border-radius:6px;border:1px solid #ef4444;background:#1a1a3e;color:#ef4444;cursor:pointer;font-size:12px;" data-i18n="web.localdual.button_1">⏹️ 停止通用模型</button>
+                <button id="btnStartBrain" style="flex:1;padding:8px 14px;border-radius:6px;border:1px solid #4ade80;background:#1a1a3e;color:#4ade80;cursor:pointer;font-size:12px;" data-i18n="web.localdual.button_2">▶️ 启动通用模型</button>
+            </div>
+        </div>
+
+        <!-- 工具模型 -->
+        <div style="margin-bottom:16px;">
+            <label style="font-size:13px;font-weight:600;color:#f59e0b;display:block;margin-bottom:6px;" data-i18n="web.localdual.label_2">🎨 工具模型（垂直任务用）</label>
+            <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">勾选的垂直模型将被哈文自动调度执行音乐/图片/语音任务</div>
+            <div id="dualToolsGrid" style="display:grid;grid-template-columns:1fr;gap:6px;max-height:300px;overflow-y:auto;"></div>
+            <div style="display:flex;gap:8px;margin-top:8px;">
+                <button onclick="toggleAllVertical(true)" style="flex:1;padding:6px 14px;border-radius:6px;border:1px solid #4ade80;background:#1a1a3e;color:#4ade80;cursor:pointer;font-size:12px;" data-i18n="web.localdual.button_3">✅ 全部启用</button>
+                <button onclick="toggleAllVertical(false)" style="flex:1;padding:6px 14px;border-radius:6px;border:1px solid #ef4444;background:#1a1a3e;color:#ef4444;cursor:pointer;font-size:12px;" data-i18n="web.localdual.button_4">🚫 全部停用</button>
+            </div>
+            <div style="font-size:11px;color:#94a3b8;margin-top:6px;">提示：每个垂直模型可单独勾选，只需勾选你要用的。</div>
+        </div>
+    </div>
+</div>
+
+<script>
+let _dualToolsChecked = {};
+
+// 加载本地双模配置
+async function loadDualModelConfig() {
+    try {
+        // 加载可用模型列表
+        const r = await fetch('/api/models/local-all');
+        const d = await r.json();
+        const models = d.models || [];
+
+        // 分类逻辑：
+        //   通用模型 = 对话/推理用（deepseek/qwen/llama 等）→ 大脑下拉框
+        //   垂直工具 = 纯生成工具（musicgen/bark/sd 等）→ 工具多选框
+        //   排除 = 嵌入模型(bge/nomic) + 视觉模型(minicpm-vl/llava) + 其他非工具模型
+        const _EMBEDDING = ['bge','nomic','gte','text-embedding','embed'];
+        const _VISION_VLM = ['minicpm','qwen2.5-vl','internvl','llava','cogvlm'];  // 视觉/多模态
+        const _GENERATION_TOOLS = ['musicgen','bark','riffusion','audiocraft','suno',
+                                    'stable-diffusion','sdxl','sd3','flux','kolors','lcm',
+                                    'cogvideo','animatediff','opensora','huatuo'];  // ★ 加了huatuo
+        const isEmbedding = name => _EMBEDDING.some(k => (name||'').toLowerCase().indexOf(k) > -1);
+        const isVisionVLM = name => _VISION_VLM.some(k => (name||'').toLowerCase().indexOf(k) > -1);
+        const isGenerationTool = name => _GENERATION_TOOLS.some(k => (name||'').toLowerCase().indexOf(k) > -1);
+        const isChat = name => !isEmbedding(name) && !isVisionVLM(name) && !isGenerationTool(name);
+        
+        // 通用 = 非嵌入非视觉非工具；垂直 = 明确的生成工具
+        let chatModels = models.filter(m => isChat(m.name));
+        let verticalModels = models.filter(m => isGenerationTool(m.name));
+
+        // ★ 2026-07-12: 也加载内置垂直模型（如华佗），但跳过跟local-all重复的
+        try {
+            const vr = await fetch('/api/vertical/models');
+            const vd = await vr.json();
+            const builtInVerticals = (vd.models || []).filter(m => !m.is_discovered);
+            builtInVerticals.forEach(m => {
+                // 避免重复：检查名字/ID是否已在verticalModels里
+                const mNameLower = (m.name || '').toLowerCase();
+                const mIdLower = (m.id || '').toLowerCase();
+                const isDup = verticalModels.some(v => 
+                    (v.name || '').toLowerCase().indexOf(mNameLower) > -1 ||
+                    mNameLower.indexOf((v.name || '').toLowerCase()) > -1 ||
+                    (v.id || '').toLowerCase() === mIdLower
+                );
+                // 也跳过local-all里已有的（如musicgen-small）
+                const isInLocalAll = models.some(la => 
+                    (la.name || '').toLowerCase().indexOf(mNameLower) > -1 ||
+                    mNameLower.indexOf((la.name || '').toLowerCase()) > -1
+                );
+                if (!isDup && !isInLocalAll) {
+                    verticalModels.push({
+                        id: m.id,
+                        name: m.name,
+                        icon: m.icon,
+                        source: '内置',
+                        size_gb: 0
+                    });
+                }
+            });
+        } catch(e) { /* 静默 */ }
+
+        // 填充大脑模型下拉
+        const brainSel = document.getElementById('dualBrainSelect');
+        if (brainSel) {
+            brainSel.innerHTML = '<option value="" data-i18n="web.localdual.option_2">-- 自动使用当前模型 --</option>' +
+                chatModels.map(m => `<option value="${m.name}">${m.icon || ''} ${m.name} — ${m.source} · ${m.size_gb}GB</option>`).join('');
+        }
+
+        // 填充工具模型多选
+        const toolsGrid = document.getElementById('dualToolsGrid');
+        if (toolsGrid) {
+            if (verticalModels.length === 0) {
+                toolsGrid.innerHTML = '<div style="color:#888;font-size:12px;padding:8px;">暂未检测到垂直模型（MusicGen/Bark/SD 等）</div>';
+            } else {
+                toolsGrid.innerHTML = verticalModels.map(m => {
+                    const checked = _dualToolsChecked[m.id] ? 'checked' : '';
+                    return `<label style="display:flex;align-items:center;gap:8px;padding:8px;background:#1a1a3e;border-radius:6px;cursor:pointer;font-size:13px;color:#e2e8f0;">
+                        <input type="checkbox" value="${m.id}" ${checked} onchange="saveDualTools()" 
+                               style="accent-color:#f59e0b;width:16px;height:16px;">
+                        ${m.icon || '🔧'} ${m.name} <span style="color:#888;font-size:11px;">${m.source} · ${m.size_gb}GB</span>
+                    </label>`;
+                }).join('');
+            }
+        }
+
+        // 加载已保存的配置
+        const cr = await fetch('/api/collab/dual-config');
+        const cd = await cr.json();
+        if (cd.success) {
+            if (cd.brain && brainSel) {
+                for (let i = 0; i < brainSel.options.length; i++) {
+                    if (brainSel.options[i].value === cd.brain) {
+                        brainSel.selectedIndex = i;
+                        break;
+                    }
+                }
+                document.getElementById('dualBrainHint').textContent = '已配置: ' + cd.brain;
+                document.getElementById('dualBrainHint').style.display = 'block';
+            }
+            if (cd.tools && Array.isArray(cd.tools)) {
+                cd.tools.forEach(t => { _dualToolsChecked[t] = true; });
+                // 重新勾选 checkboxes
+                document.querySelectorAll('#dualToolsGrid input[type=checkbox]').forEach(cb => {
+                    if (cd.tools.includes(cb.value)) cb.checked = true;
+                });
+            }
+        }
+    } catch(e) {
+        console.warn('[DualConfig] 加载失败:', e);
+    }
+}
+
+async function saveDualBrain() {
+    const sel = document.getElementById('dualBrainSelect');
+    const brain = sel ? sel.value : '';
+    try {
+        const r = await fetch('/api/collab/dual-config', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ brain: brain || '' })
+        });
+        const d = await r.json();
+        if (d.success) {
+            const hint = document.getElementById('dualBrainHint');
+            hint.textContent = brain ? '✅ 大脑: ' + sel.options[sel.selectedIndex].text : '✅ 自动使用当前模型';
+            hint.style.color = '#4ade80';
+            hint.style.display = 'block';
+        }
+    } catch(e) { console.warn('[DualConfig] 保存大脑失败:', e); }
+}
+
+async function saveDualTools() {
+    const checked = [];
+    document.querySelectorAll('#dualToolsGrid input[type=checkbox]:checked').forEach(cb => checked.push(cb.value));
+    try {
+        const r = await fetch('/api/collab/dual-config', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ tools: checked })
+        });
+        const d = await r.json();
+        if (d.success) {
+            checked.forEach(v => { _dualToolsChecked[v] = true; });
+            toast('✅ 工具模型已保存（' + checked.length + ' 个）');
+        }
+    } catch(e) { console.warn('[DualConfig] 保存工具失败:', e); }
+}
+
+// 暴露到全局
+window.loadDualModelConfig = loadDualModelConfig;
+window.saveDualBrain = saveDualBrain;
+window.saveDualTools = saveDualTools;
+window.toggleBrainModel = toggleBrainModel;
+window.toggleAllVertical = toggleAllVertical;
+
+// ★ 事件监听：等 DOM 就绪后绑定大脑启停按钮
+(function(){
+    function _bind() {
+        var btnStartBrain = document.getElementById('btnStartBrain');
+        var btnStopBrain = document.getElementById('btnStopBrain');
+        if (btnStartBrain) btnStartBrain.addEventListener('click', function(){ toggleBrainModel('start'); });
+        if (btnStopBrain) btnStopBrain.addEventListener('click', function(){ toggleBrainModel(); });
+        console.log('[DualConfig] 大脑启停按钮已绑定');
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _bind);
+    else setTimeout(_bind, 100);
+})();
+
+// 本地通用模型启停（直接调本地引擎 API，带按钮反馈）
+async function toggleBrainModel(action) {
+    const sel = document.getElementById('dualBrainSelect');
+    const modelName = sel ? sel.value : '';
+    if (!modelName) { toast('⚠️ 请先在下拉框中选择通用模型'); return; }
+
+    const isStart = action === 'start';
+    const btnId = isStart ? 'btnStartBrain' : 'btnStopBrain';
+    const otherBtnId = isStart ? 'btnStopBrain' : 'btnStartBrain';
+    const btn = document.getElementById(btnId);
+    const otherBtn = document.getElementById(otherBtnId);
+    const origText = btn ? btn.textContent : '';
+
+    // 视觉反馈：高亮当前按钮，禁用两个按钮
+    if (btn) { btn.textContent = '⏳ 执行中…'; btn.style.opacity = '0.7'; btn.disabled = true; }
+    if (otherBtn) { otherBtn.disabled = true; otherBtn.style.opacity = '0.5'; }
+
+    const ollamaUrl = 'http://localhost:11434/api/generate';
+
+    try {
+        const r = await fetch(ollamaUrl, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ model: modelName, prompt: '', stream: false, keep_alive: isStart ? -1 : 0 })
+        });
+        if (r.ok) {
+            toast(isStart ? '✅ ' + modelName + ' 已启动' : '✅ ' + modelName + ' 已停止，内存已释放');
+            refreshOllamaStatus();
+        } else {
+            toast('⚠️ ' + (isStart ? '启动' : '停止') + '失败 (HTTP ' + r.status + ')');
+        }
+    } catch(e) {
+        toast('⚠️ 连接本地引擎失败，请确认引擎正在运行');
+    }
+
+    // 恢复按钮
+    if (btn) { btn.textContent = origText; btn.style.opacity = '1'; btn.disabled = false; }
+    if (otherBtn) { otherBtn.disabled = false; otherBtn.style.opacity = '1'; }
+}
+
+// ★ 刷新本地引擎状态（更新底部状态栏）
+async function refreshOllamaStatus() {
+    try {
+        const r = await fetch('/api/ollama/status');
+        const d = await r.json();
+        if (d.connected && typeof updateModelStatus === 'function') {
+            updateModelStatus(localStorage.getItem('harven_query_mode') || 'kb_only');
+        }
+    } catch(e) {}
+}
+
+// ★ 2026-07-12: 改成全选/全不选+单独勾选
+async function toggleAllVertical(enable) {
+    const checkboxes = document.querySelectorAll('#dualToolsGrid input[type=checkbox]');
+    if (checkboxes.length === 0) { toast('⚠️ 暂无可用的垂直模型'); return; }
+    checkboxes.forEach(cb => { cb.checked = enable; });
+    await saveDualTools();
+    toast(enable ? '✅ 已启用全部 ' + checkboxes.length + ' 个垂直模型' : '✅ 已停用全部垂直模型');
+}
+</script>

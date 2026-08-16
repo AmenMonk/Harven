@@ -1,0 +1,52 @@
+<!-- Tab: 个人画像 -->
+                <div class="tab-panel" id="tab-profile">
+                    <!-- 子导航 -->
+                    <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;padding:0 2px;">
+                        <button class="btn-secondary btn-sm profile-sub-btn active" onclick="switchProfileSubTab('profile',this)" data-i18n="web.profile.button_1">👤 用户信息</button>
+                    </div>
+                    <div class="settings-grid">
+                        <div class="setting-group">
+                            <label data-i18n="web.profile.label_1">兴趣标签</label>
+                            <div class="tags-input" id="interestTags">
+                                <input type="text" id="setInterests" data-i18n-ph="web.profile.placeholder_1" placeholder="输入兴趣，回车添加（如：自驾、编程、美食）" onkeydown="if(event.key==='Enter'){event.preventDefault();addInterestTag()}">
+                            </div>
+                            <div id="interestTagsList" class="tags-list"></div>
+                            <div class="setting-desc" data-i18n="web.profile.desc_1">AI会根据你的兴趣优化回答方向</div>
+                        </div>
+                        <div class="setting-group">
+                            <label data-i18n="web.profile.label_2">职业背景</label>
+                            <input type="text" id="setProfession" data-i18n-ph="web.profile.placeholder_2" placeholder="你的职业或专业领域">
+                            <div class="setting-desc" data-i18n="web.profile.desc_2">帮助AI理解你的专业视角</div>
+                        </div>
+                        <div class="setting-group">
+                            <label data-i18n="web.profile.label_3">回答偏好</label>
+                            <select id="setAnswerPref">
+                                <option value="concise" data-i18n="web.profile.option_1">简洁 — 回答精炼、直奔主题</option>
+                                <option value="detailed" selected data-i18n="web.profile.option_2">详细 — 充分解释、附带示例</option>
+                                <option value="professional" data-i18n="web.profile.option_3">专业 — 技术术语、深度分析</option>
+                            </select>
+                        </div>
+                    </div>
+                    <!-- AI 自动分析 -->
+                    <div style="margin-top:20px;border-top:1px solid var(--border);padding-top:14px;">
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+                            <span style="font-weight:600;font-size:14px;" data-i18n="web.profile.span_1">🔬 AI 自动分析</span>
+                            <span id="profileAutoStats" style="font-size:11px;color:#888;"></span>
+                            <button class="btn-secondary btn-sm" onclick="profileTriggerAnalyze()" style="margin-left:auto;" data-i18n="web.profile.button_2">🔄 立即分析</button>
+                            <button class="btn-secondary btn-sm" onclick="profileForceAnalyze()" data-i18n="web.profile.button_3">🔬 深度分析</button>
+                        </div>
+                        <div id="profileAutoResult" style="font-size:12px;color:#888;">
+                            <span data-i18n="web.profile.span_2">⏳ 点击"立即分析"开始...</span>
+                        </div>
+                        <div id="profileSuggestions" style="margin-top:12px;display:none;">
+                            <div style="font-weight:600;font-size:13px;margin-bottom:6px;">💡 待审核建议</div>
+                            <div id="profileSuggestionsList"></div>
+                            <div style="display:flex;gap:8px;margin-top:6px;">
+                                <button class="btn-secondary btn-sm" onclick="profileClearSuggestions()" data-i18n="web.profile.button_4">🗑️ 清空建议</button>
+                            </div>
+                        </div>
+                        <div style="margin-top:12px;display:flex;gap:8px;">
+                            <button class="btn-danger btn-sm" onclick="profileResetAuto()" data-i18n="web.profile.button_5">⚠️ 重置自动画像</button>
+                        </div>
+                    </div>
+                </div>

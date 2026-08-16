@@ -1,0 +1,148 @@
+<!-- Tab: 硬件检测 -->
+                <div class="tab-panel" id="tab-hardware">
+                    <div class="settings-grid">
+                        <div class="setting-section-title" data-i18n="web.hardware.title_1">🖥️ 硬件自检 & 模型推荐</div>
+                        <div class="setting-group">
+                            <label data-i18n="web.hardware.label_1">本机配置 & 推荐模型</label>
+                            <div id="hardwareReport">
+                                <p style="color:var(--text-secondary); font-size:13px;" data-i18n="web.hardware.p_1">点击"检测硬件"按钮开始分析...</p>
+                            </div>
+                            <div style="margin-top:10px; display:flex; gap:8px;">
+                                <button class="btn btn-primary btn-sm" id="btnHardwareDetect" onclick="loadHardwareReport()" data-i18n="web.hardware.button_1">🔍 检测硬件</button>
+                            </div>
+                            <div id="hardwareProgress" style="display:none; margin-top:10px;"></div>
+                            <div class="setting-desc" data-i18n="web.hardware.desc_1">根据你的硬件配置，自动推荐最适合的本地模型。</div>
+                        </div>
+
+                        <!-- ===== 🎯 AI 需求提问 ===== -->
+                        <div class="setting-section-title" style="margin-top:24px;" data-i18n="web.hardware.title_2">🎯 你希望 AI 帮你做什么？</div>
+                        <div class="setting-group" style="background:linear-gradient(135deg,#1a1a3e,#2d2d5e);border-radius:10px;padding:16px;border:1px solid #667eea;">
+                            <div style="font-size:12px;color:#94a3b8;margin-bottom:10px;">
+                                💡 简单描述你的需求，哈文会根据你的硬件配置给出双路径推荐<br>
+                                例如：「我需要生成本地音乐」「我想处理图片」「写代码聊天就行」
+                            </div>
+                            <div style="display:flex;gap:8px;">
+                                <input type="text" id="userNeedInput"
+                                    data-i18n-ph="web.hardware.placeholder_1" placeholder="例如：我想生成本地音乐🎵"
+                                    style="flex:1;padding:10px 14px;background:#1e1e2e;color:#e0e0f0;border:1px solid #6366f1;border-radius:8px;font-size:14px;"
+                                    onkeydown="if(event.key==='Enter')getModelRecommendations()">
+                                <button class="btn-primary" onclick="getModelRecommendations()"
+                                    style="padding:10px 20px;white-space:nowrap;font-size:14px;" data-i18n="web.hardware.button_2">
+                                    🚀 获取推荐
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- ===== 双路径推荐结果 ===== -->
+                        <div id="recommendResult" style="display:none;">
+                            <div class="setting-section-title" style="margin-top:20px;" id="recommendTitle" data-i18n="web.hardware.title_3">📊 推荐结果</div>
+
+                            <!-- 路径 A：最佳匹配 -->
+                            <div style="background:linear-gradient(135deg,#1a2e1a,#1a3e2a);border:2px solid #22c55e;border-radius:10px;padding:14px;margin-bottom:12px;">
+                                <div style="font-weight:700;color:#4ade80;font-size:14px;margin-bottom:8px;">✅ 路径 1：最佳匹配 — 硬件满足</div>
+                                <div id="pathA" style="display:flex;flex-direction:column;gap:6px;"></div>
+                            </div>
+
+                            <!-- 路径 B：妥协方案 -->
+                            <div id="pathBWrapper" style="background:linear-gradient(135deg,#2e1a1a,#3e2a1a);border:2px solid #f59e0b;border-radius:10px;padding:14px;">
+                                <div style="font-weight:700;color:#fbbf24;font-size:14px;margin-bottom:8px;">⚠️ 路径 2：妥协方案 — 硬件不足时的降级建议</div>
+                                <div id="pathB" style="display:flex;flex-direction:column;gap:6px;"></div>
+                                <div id="pathWarnings" style="margin-top:10px;font-size:11px;color:#f87171;line-height:1.6;"></div>
+                            </div>
+                        </div>
+
+                        <div class="setting-section-title" style="margin-top:20px;" data-i18n="web.hardware.title_4">💡 模型策略说明</div>
+                        <div class="setting-group" style="font-size:12px; color:var(--text-secondary); line-height:1.8;">
+                            <div>🧠 <b>模型是底座</b>：本地大模型决定基础智能水平</div>
+                            <div>🧩 <b>Skill 是工具</b>：扩展模型能力（计算、绘图、搜索等）</div>
+                            <div>📚 <b>知识库是记忆</b>：注入专业领域知识，让小模型也能干大事</div>
+                            <div style="margin-top:8px; padding:8px; background:var(--bg-hover); border-radius:6px;">
+                                ✅ 3B 模型 + 丰富 Skill + 完善知识库 = 可媲美 14B 的体验
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+<script>
+// ═══ 模型推荐（双路径） ═══
+async function getModelRecommendations() {
+    var input = document.getElementById('userNeedInput');
+    var userText = (input ? input.value.trim() : '') || getFirstRunUserNeed();
+    if (!userText) {
+        alert('请输入你的需求，比如「我需要生成本地音乐」');
+        return;
+    }
+
+    // 显示加载中
+    var resultDiv = document.getElementById('recommendResult');
+    resultDiv.style.display = 'block';
+    document.getElementById('pathA').innerHTML = '<span style="color:#888;" data-i18n="web.hardware.span_1">⏳ 正在分析...</span>';
+    document.getElementById('pathB').innerHTML = '';
+    document.getElementById('pathWarnings').innerHTML = '';
+    document.getElementById('recommendTitle').textContent = '📊 推荐结果 — 「' + userText + '」';
+
+    try {
+        // 获取硬件信息
+        var hw = await fetch('/api/hardware/info').then(r => r.json());
+        var resp = await fetch('/api/models/catalog/recommend', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ hardware: hw, user_text: userText })
+        });
+        var data = await resp.json();
+
+        // 渲染路径 A
+        var pathA = document.getElementById('pathA');
+        if (data.path_a && data.path_a.length > 0) {
+            pathA.innerHTML = data.path_a.map(function(m, i) {
+                var tags = (m.tags||[]).join(' · ');
+                return '<div style="background:#1a2e1a;border-radius:8px;padding:10px;border:1px solid #22c55e;">' +
+                    '<span style="color:#4ade80;font-weight:600;">' + (i+1) + '. ' + m.name + '</span>' +
+                    '<span style="color:#888;font-size:11px;margin-left:8px;" data-i18n="web.hardware.span_2">' + m.vram_gb + 'GB VRAM · ' + m.size_gb + 'GB 下载</span>' +
+                    '<div style="color:#94a3b8;font-size:11px;margin-top:4px;">' + m.description + '</div>' +
+                    '<div style="color:#666;font-size:10px;margin-top:3px;">' + tags + '</div>' +
+                    (m.download && m.download.modelscope ? '<button onclick="downloadModel(\''+m.id+'\')" style="margin-top:6px;padding:4px 12px;background:#22c55e;color:#fff;border:none;border-radius:4px;font-size:11px;cursor:pointer;" data-i18n="web.hardware.button_3">📥 从魔搭下载</button>' : '') +
+                    '</div>';
+            }).join('');
+        } else {
+            pathA.innerHTML = '<span style="color:#f87171;" data-i18n="web.hardware.span_3">你的硬件不足以运行此类模型的推荐版本</span>';
+        }
+
+        // 渲染路径 B
+        var pathB = document.getElementById('pathB');
+        if (data.path_b && data.path_b.length > 0) {
+            pathB.innerHTML = data.path_b.map(function(m, i) {
+                return '<div style="background:#2e1a1a;border-radius:8px;padding:10px;border:1px solid #f59e0b;">' +
+                    '<span style="color:#fbbf24;font-weight:600;">' + (i+1) + '. ' + m.name + '</span>' +
+                    '<span style="color:#888;font-size:11px;margin-left:8px;" data-i18n="web.hardware.span_4">需 ' + m.vram_gb + 'GB VRAM</span>' +
+                    '<div style="color:#94a3b8;font-size:11px;margin-top:4px;">' + m.description + '</div>' +
+                    '</div>';
+            }).join('');
+        } else {
+            pathB.innerHTML = '<span style="color:#94a3b8;" data-i18n="web.hardware.span_5">暂无降级方案</span>';
+        }
+
+        // 渲染警告
+        var warnings = document.getElementById('pathWarnings');
+        if (data.warnings && data.warnings.length > 0) {
+            warnings.innerHTML = data.warnings.join('<br>');
+        }
+
+        // 隐藏路径B如果不需要
+        var pathBWrapper = document.getElementById('pathBWrapper');
+        pathBWrapper.style.display = (data.path_b && data.path_b.length > 0) ? 'block' : 'none';
+
+    } catch(e) {
+        document.getElementById('pathA').innerHTML = '<span style="color:#f87171;" data-i18n="web.hardware.span_6">❌ 获取推荐失败: ' + e.message + '</span>';
+    }
+}
+
+// 从首页 first_run 页面获取用户需求（如果在首次运行流程中）
+function getFirstRunUserNeed() {
+    var el = document.getElementById('firstRunUserNeed');
+    return el ? el.value : '';
+}
+
+// 全局暴露
+window.getModelRecommendations = getModelRecommendations;
+</script>

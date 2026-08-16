@@ -1,0 +1,195 @@
+Harven AI
+Copyright 2026 AmenMonk
+
+This product is licensed under the Apache License, Version 2.0.
+You may obtain a copy of the License at:
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+===========================================================================
+
+This product bundles or depends on the following third-party components.
+Each component is provided under its own license as noted below.
+
+---------------------------------------------------------------------------
+APACHE LICENSE 2.0 COMPONENTS
+---------------------------------------------------------------------------
+
+The following components are licensed under the Apache License, Version 2.0:
+
+  * requests (https://github.com/psf/requests)
+    Copyright 2019 Kenneth Reitz
+
+  * openai-python (https://github.com/openai/openai-python)
+    Copyright OpenAI
+
+  * litellm (https://github.com/BerriAI/litellm)
+    Copyright BerriAI
+
+  * apscheduler (https://github.com/agronholm/apscheduler)
+    Copyright Alex Gronholm
+
+  * sentence-transformers (https://github.com/UKPLab/sentence-transformers)
+    Copyright UKPLab
+
+  * transformers (https://github.com/huggingface/transformers)
+    Copyright 2018 The Hugging Face Team
+
+  * huggingface-hub (https://github.com/huggingface/huggingface_hub)
+    Copyright 2019 The Hugging Face Team
+
+  * opencv-python-headless (https://github.com/opencv/opencv-python)
+    Copyright Intel Corporation, Willow Garage Inc.
+
+  * playwright (https://github.com/microsoft/playwright-python)
+    Copyright Microsoft Corporation
+
+  * faiss (https://github.com/facebookresearch/faiss)
+    Copyright Facebook, Inc.
+
+  * modelscope (https://github.com/modelscope/modelscope)
+    Copyright Alibaba Group
+
+You may obtain a copy of the Apache License, Version 2.0 at:
+    http://www.apache.org/licenses/LICENSE-2.0
+
+---------------------------------------------------------------------------
+MIT LICENSE COMPONENTS
+---------------------------------------------------------------------------
+
+The following components are licensed under the MIT License:
+
+  * Flask (https://github.com/pallets/flask)
+    Copyright 2010 Pallets
+
+  * Werkzeug (https://github.com/pallets/werkzeug)
+    Copyright 2007 Pallets
+
+  * flask-cors (https://github.com/corydolphin/flask-cors)
+    Copyright 2016 Cory Dolphin
+
+  * PyYAML (https://github.com/yaml/pyyaml)
+    Copyright 2017-2021 Ingy döt Net; Copyright 2006-2016 Kirill Simonov
+
+  * Pillow (https://github.com/python-pillow/Pillow)
+    Copyright 2010-2023 Alex Clark and contributors
+    (Based on PIL, Copyright 1995-2011 Fredrik Lundh and contributors)
+
+  * tiktoken (https://github.com/openai/tiktoken)
+    Copyright OpenAI
+
+  * faster-whisper (https://github.com/guillaumekln/faster-whisper)
+    Copyright 2022 Guillaume Klein
+
+  * pypdf (https://github.com/py-pdf/pypdf)
+    Copyright 2006-2008 Mathieu Fenniak
+
+  * pdfplumber (https://github.com/jsvine/pdfplumber)
+    Copyright 2015 Jeremy Singer-Vine
+
+  * python-dotenv (https://github.com/theskumar/python-dotenv)
+    Copyright 2014 Saurabh Kumar
+
+  * tqdm (https://github.com/tqdm/tqdm) [MIT portion]
+    Copyright 2013 noamraph; Copyright 2015 Casper da Costa-Luis
+
+  * faiss-cpu (https://github.com/facebookresearch/faiss)
+    Copyright Facebook, Inc.
+
+  * cryptography (https://github.com/pyca/cryptography)
+    Copyright 2013-2023 The cryptography authors
+
+The MIT License text is as follows:
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+
+---------------------------------------------------------------------------
+BSD LICENSE COMPONENTS
+---------------------------------------------------------------------------
+
+The following components are licensed under BSD-3-Clause or BSD-2-Clause:
+
+  * numpy (https://github.com/numpy/numpy)
+    Copyright 2005-2023 NumPy Developers
+
+  * python-dotenv (see MIT section above; dual-licensed)
+
+  * Werkzeug (see MIT/BSD dual license)
+
+BSD-3-Clause License text:
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are met:
+    1. Redistributions of source code must retain the above copyright notice,
+       this list of conditions and the following disclaimer.
+    2. Redistributions in binary form must reproduce the above copyright notice,
+       this list of conditions and the following disclaimer in the documentation
+       and/or other materials provided with the distribution.
+    3. Neither the name of the copyright holder nor the names of its contributors
+       may be used to endorse or promote products derived from this software
+       without specific prior written permission.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+    AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+    IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+    ARE DISCLAIMED.
+
+---------------------------------------------------------------------------
+LGPL v3 COMPONENTS
+---------------------------------------------------------------------------
+
+The following components are licensed under the GNU Lesser General Public
+License, Version 3 (LGPL-3.0):
+
+  * PySide6 (https://wiki.qt.io/Qt_for_Python)
+    Copyright The Qt Company Ltd.
+
+    PySide6 is used as a dynamically-linked library. The LGPL v3 license
+    permits use in non-GPL applications provided that:
+      1. The application is dynamically linked against PySide6 (default).
+      2. Users can re-link the application against a modified PySide6.
+      3. The PySide6 source code remains freely available at:
+         https://code.qt.io/cgit/pyside/pyside-setup.git/
+
+    The full text of the LGPL v3 license is available at:
+    https://www.gnu.org/licenses/lgpl-3.0.html
+
+---------------------------------------------------------------------------
+EXTERNAL TOOLS (NOT BUNDLED — USER-PROVIDED)
+---------------------------------------------------------------------------
+
+  * FFmpeg (https://ffmpeg.org)
+    FFmpeg is NOT bundled with this software. Users must install FFmpeg
+    separately and ensure compliance with FFmpeg's license terms.
+    FFmpeg may be licensed under LGPL v2.1+, GPL v2+, or other terms
+    depending on the build configuration.
+    Harven AI only invokes the `ffmpeg` command-line tool as a subprocess;
+    no FFmpeg source code or binaries are distributed herein.
+
+  * Ollama (https://ollama.com)
+    Ollama is NOT bundled with this software. Users must install Ollama
+    separately. Ollama is licensed under the MIT License.
+
+  * AI Models (e.g., Qwen, Llama, etc.)
+    AI model weights are NOT bundled. Users download and run models
+    locally via Ollama. Each model has its own license; please review
+    model-specific terms before use.
+
+===========================================================================
+END OF NOTICE
+===========================================================================

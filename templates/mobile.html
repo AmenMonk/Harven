@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/duck_32.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/duck_192.png">
+    <link rel="apple-touch-icon" href="/static/icons/duck_180.png">
+    <title>Harven AI</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+            justify-content: center; background: #0f0f1a;
+            font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+            padding: 20px; color: #e0e0f0;
+        }
+        .logo { font-size: 48px; margin-bottom: 12px; }
+        h1 { font-size: 24px; font-weight: 700; margin-bottom: 8px; color: #7c7cff; }
+        .subtitle { color: #6b6b8a; font-size: 14px; margin-bottom: 32px; text-align: center; }
+        .card {
+            background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 16px;
+            padding: 32px 28px; width: 100%; max-width: 360px; text-align: center;
+        }
+        .status { font-size: 13px; color: #6b6b8a; margin-bottom: 24px; padding: 12px;
+                  background: #0f0f1a; border-radius: 8px; }
+        .status.connected { color: #22c55e; }
+        .status.disconnected { color: #ef4444; }
+        .btn {
+            display: block; width: 100%; padding: 14px; margin-top: 12px;
+            background: #5a5aff; color: #fff; border: none; border-radius: 10px;
+            font-size: 16px; font-weight: 600; cursor: pointer;
+            text-decoration: none; text-align: center;
+            transition: background .2s;
+        }
+        .btn:hover { background: #4444dd; }
+        .btn-secondary { background: #2a2a4a; color: #a0a0c0; }
+        .btn-secondary:hover { background: #3a3a5a; }
+        .btn-chat {
+            background: linear-gradient(135deg, #5a5aff, #7c7cff);
+            font-size: 18px;
+            padding: 16px;
+            margin-top: 16px;
+        }
+        .btn-chat:hover { background: linear-gradient(135deg, #4444dd, #5a5aff); }
+        .info {
+            margin-top: 24px; font-size: 12px; color: #44445a;
+            line-height: 1.6; text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="logo"><img src="/static/icon-duck.png" style="width:48px;height:48px;border-radius:10px;"></div>
+    <h1>Harven AI</h1>
+    <p class="subtitle">你的个人专属AI助手</p>
+
+    <div class="card" id="mainCard">
+        <div class="status" id="connStatus">🔍 正在检测连接状态...</div>
+        <a class="btn btn-chat" href="/mobile/chat?token={{ token or '' }}" id="openBtn">💬 开始聊天</a>
+        <button class="btn btn-secondary" onclick="location.reload()">🔄 重新检测</button>
+    </div>
+
+    <p class="info">
+        请确保手机与 Harven AI 在同一局域网<br>
+        Token: <code id="tokenDisplay" style="word-break:break-all;font-size:11px;color:#5a5aff;">{{ token or '无' }}</code>
+    </p>
+
+    <script>
+        // 自动检测服务连接状态
+        (async function() {
+            const statusEl = document.getElementById('connStatus');
+            try {
+                const res = await fetch('/api/server/info');
+                if (res.ok) {
+                    const data = await res.json();
+                    statusEl.className = 'status connected';
+                    statusEl.textContent = '✅ 已连接 — Harven AI ' + (data.version || '');
+                } else {
+                    throw new Error('Server returned ' + res.status);
+                }
+            } catch (e) {
+                statusEl.className = 'status disconnected';
+                statusEl.textContent = '❌ 无法连接到 Harven AI';
+                document.getElementById('openBtn').textContent = '⚠️ 服务未启动';
+                document.getElementById('openBtn').style.background = '#444';
+            }
+        })();
+    </script>
+</body>
+</html>

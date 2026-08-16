@@ -1,0 +1,124 @@
+<!-- Agent 管理面板 -->
+<div class="tab-panel" id="tab-agents" style="display:none;">
+    <div class="settings-grid">
+        <div style="background:linear-gradient(135deg,#1a1a3e,#2d2d5e);border-radius:12px;padding:16px;margin-bottom:16px;border:1px solid #a78bfa;">
+            <div style="font-weight:600;color:#a78bfa;margin-bottom:8px;">🧩 Agent 注册中心</div>
+            <div style="font-size:12px;color:#94a3b8;line-height:1.6;">
+                内置 <span id="agentBuiltinCount">-</span> 个 + 自定义 <span id="agentCustomCount">-</span> 个<br>
+                <b>Harness 自动路由</b>：你说"审查代码"→ 代码审查员自动接手<br>
+                每个 Agent 有独立 system_prompt + 模型偏好 + Skills 库
+            </div>
+        </div>
+        
+        <div style="display:flex;gap:8px;margin-bottom:12px;">
+            <button class="btn-primary btn-sm" onclick="showAgentCreateForm()" data-i18n="web.agents.button_1">➕ 新建 Agent</button>
+            <button class="btn-secondary btn-sm" onclick="loadAgentList()" data-i18n="web.agents.button_2">🔄 刷新</button>
+        </div>
+
+        <div id="agentCreateForm" style="display:none;background:#1a1a2e;border-radius:8px;padding:16px;margin-bottom:12px;border:1px solid #a78bfa;">
+            <div class="setting-group">
+                <label data-i18n="web.agents.label_1">Agent ID（英文，唯一）</label>
+                <input type="text" id="newAgentId" placeholder="my_agent" style="width:100%;box-sizing:border-box;">
+            </div>
+            <div class="setting-group">
+                <label data-i18n="web.agents.label_2">名称</label>
+                <input type="text" id="newAgentName" data-i18n-ph="web.agents.placeholder_1" placeholder="我的助手" style="width:100%;box-sizing:border-box;">
+            </div>
+            <div class="setting-group">
+                <label data-i18n="web.agents.label_3">角色</label>
+                <input type="text" id="newAgentRole" placeholder="custom" style="width:100%;box-sizing:border-box;">
+            </div>
+            <div class="setting-group">
+                <label data-i18n="web.agents.label_4">系统提示词</label>
+                <textarea id="newAgentPrompt" rows="5" placeholder="你是哈文AI的专项子Agent..." style="width:100%;box-sizing:border-box;font-family:monospace;font-size:12px;"></textarea>
+            </div>
+            <div class="setting-group">
+                <label data-i18n="web.agents.label_5">模型偏好</label>
+                <select id="newAgentModelPref">
+                    <option value="local" data-i18n="web.agents.option_1">🏠 本地引擎</option>
+                    <option value="external" data-i18n="web.agents.option_2">🤖 外脑</option>
+                    <option value="collab" data-i18n="web.agents.option_3">🤝 协作</option>
+                </select>
+            </div>
+            <div class="setting-group">
+                <label data-i18n="web.agents.label_6">触发词（逗号分隔）</label>
+                <input type="text" id="newAgentTriggers" data-i18n-ph="web.agents.placeholder_2" placeholder="触发词1, 触发词2" style="width:100%;box-sizing:border-box;">
+            </div>
+            <div style="display:flex;gap:8px;margin-top:12px;">
+                <button class="btn-primary btn-sm" onclick="createAgent()" data-i18n="web.agents.button_3">✅ 创建</button>
+                <button class="btn-secondary btn-sm" onclick="document.getElementById('agentCreateForm').style.display='none'" data-i18n="web.agents.button_4">取消</button>
+            </div>
+        </div>
+
+        <div id="agentList" style="font-size:12px;color:#999;">⏳ 加载中...</div>
+    </div>
+</div>
+
+<script>
+window.showAgentCreateForm = function() {
+    document.getElementById('agentCreateForm').style.display = 'block';
+    document.getElementById('newAgentId').value = '';
+    document.getElementById('newAgentName').value = '';
+    document.getElementById('newAgentRole').value = 'custom';
+    document.getElementById('newAgentPrompt').value = '';
+    document.getElementById('newAgentTriggers').value = '';
+};
+
+window.createAgent = async function() {
+    var data = {
+        id: document.getElementById('newAgentId').value.trim(),
+        name: document.getElementById('newAgentName').value.trim(),
+        role: document.getElementById('newAgentRole').value.trim(),
+        system_prompt: document.getElementById('newAgentPrompt').value.trim(),
+        model_pref: document.getElementById('newAgentModelPref').value,
+        triggers: document.getElementById('newAgentTriggers').value.split(',').map(function(s){return s.trim();}).filter(Boolean),
+        skills: []
+    };
+    if (!data.id || !data.name || !data.system_prompt) {
+        toast('请填写 Agent ID、名称和提示词', 'error'); return;
+    }
+    try {
+        var r = await fetch('/api/agents/register', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+        var d = await r.json();
+        if (d.success) { toast('✅ Agent 已注册'); document.getElementById('agentCreateForm').style.display='none'; loadAgentList(); }
+        else { toast('❌ ' + d.error, 'error'); }
+    } catch(e) { console.error('[createAgent] 失败:', e); toast('创建失败: ' + e.message, 'error'); }
+};
+
+window.deleteAgent = async function(id) {
+    if (!confirm('确定删除 Agent "' + id + '"？')) return;
+    try {
+        var r = await fetch('/api/agents/' + id, {method:'DELETE'});
+        var d = await r.json();
+        if (d.success) { toast('已删除'); loadAgentList(); }
+        else { toast(d.error, 'error'); }
+    } catch(e) { toast('删除失败', 'error'); }
+};
+
+window.loadAgentList = async function() {
+    try {
+        var r = await fetch('/api/agents');
+        var d = await r.json();
+        var agents = d.agents || [];
+        var builtin = 0, custom = 0;
+        var html = '';
+        agents.forEach(function(a){
+            if (!a.triggers || a.triggers.length === 0) { builtin++; } else { custom++; }
+            var badge = a.model_pref === 'external' ? '<span style="color:#667eea;" data-i18n="web.agents.span_1">🤖外脑</span>' : 
+                       a.model_pref === 'collab' ? '<span style="color:#a78bfa;" data-i18n="web.agents.span_2">🤝协作</span>' : '<span style="color:#999;" data-i18n="web.agents.span_3">🏠本地</span>';
+            var actions = (!a.triggers || a.triggers.length === 0) ? '' : '<button class="btn-sm btn-danger" style="font-size:10px;padding:1px 6px;" onclick="deleteAgent(\''+a.id+'\')">🗑️</button>';
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#1a1a2e;border-radius:6px;margin:4px 0;">' +
+                '<div><b>'+a.name+'</b> <span style="color:#666;font-size:10px;">'+a.id+'</span> '+badge+
+                '<br><span style="color:#888;font-size:10px;" data-i18n="web.agents.span_4">调用: '+a.call_count+'次 · 状态: '+(a.status==='idle'?'空闲':'忙碌')+' · 触发: '+(a.triggers||[]).join(', ')+'</span></div>' +
+                actions +
+                '</div>';
+        });
+        document.getElementById('agentList').innerHTML = html || '<div style="color:#666;">暂无 Agent</div>';
+        document.getElementById('agentBuiltinCount').textContent = builtin;
+        document.getElementById('agentCustomCount').textContent = custom;
+    } catch(e) { document.getElementById('agentList').innerHTML = '加载失败'; }
+};
+
+// 初始加载
+loadAgentList();
+</script>

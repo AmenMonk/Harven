@@ -1,0 +1,12 @@
+<!-- Tab: 手动拉取 -->
+                <div class="tab-panel" id="modelTabContentPull">
+                    <div class="setting-group">
+                        <label data-i18n="web.manualpull.label_1">模型名称</label>
+                        <div class="pull-input-row">
+                            <input type="text" id="pullModelInput" data-i18n-ph="web.manualpull.placeholder_1" placeholder="例如 qwen3:14b, deepseek-r1:7b" onkeydown="if(event.key==='Enter')pullNewModel()">
+                            <button class="btn-primary" id="pullModelBtn" onclick="pullNewModel()" data-i18n="web.manualpull.button_1">📥 拉取</button>
+                        </div>
+                        <div class="setting-desc" data-i18n="web.manualpull.desc_1">输入模型名称，从 Ollama 仓库拉取。常用：qwen2.5:14b, llama3.3:70b, deepseek-r1:32b</div>
+                    </div>
+                    <div id="pullProgress" class="pull-progress" style="display:none"></div>
+                </div>

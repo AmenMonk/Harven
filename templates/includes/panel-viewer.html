@@ -1,0 +1,17 @@
+<!-- 面板查看器：iframe容器，点击面板时替代对话区显示 -->
+<div id="panelViewer" style="display:none;flex:1;flex-direction:column;min-height:0;">
+  <div style="display:flex;align-items:center;gap:8px;padding:10px 16px;background:var(--bg-secondary);border-bottom:1px solid var(--border);flex-shrink:0;">
+    <button onclick="if(window.closePanel)closePanel()"
+      style="background:var(--accent);border:none;border-radius:6px;color:#fff;cursor:pointer;font-size:13px;padding:6px 14px;font-weight:500;transition:opacity 0.15s;white-space:nowrap;"
+      onmouseenter="this.style.opacity='0.85'"
+      onmouseleave="this.style.opacity='1'">← 返回对话</button>
+    <span id="panelViewerTitle" style="font-size:14px;font-weight:500;color:var(--text-primary);margin-left:4px;">面板</span>
+    <span style="flex:1"></span>
+    <button onclick="if(window.reloadPanel)reloadPanel()"
+      style="background:var(--bg-hover);border:1px solid var(--border);border-radius:6px;color:var(--text-secondary);cursor:pointer;font-size:12px;padding:5px 12px;transition:background 0.15s;"
+      onmouseenter="this.style.background='var(--bg-primary)'"
+      onmouseleave="this.style.background='var(--bg-hover)'">🔄 刷新</button>
+  </div>
+  <iframe id="panelFrame" src="" style="flex:1;border:none;width:100%;"
+    sandbox="allow-scripts allow-forms allow-modals"></iframe>
+</div>

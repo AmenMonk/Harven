@@ -1,0 +1,90 @@
+# HarvenAI .gitignore
+
+# === 敏感文件 ===
+config.yaml
+config.example.yaml.bak
+*.env
+.env
+
+# === 数据库 ===
+data/sqlite/*.db
+data/sqlite/*.db-journal
+
+# === 用户数据 ===
+data/media/*
+data/downloads/*
+data/reports/*
+data/tmp/*
+data/knowledge/*.faiss
+data/knowledge/*.pkl
+
+# === Python ===
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# === IDE ===
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# === OS ===
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# === 日志 ===
+*.log
+logs/
+
+# === 临时文件 ===
+*.tmp
+*.bak
+*.orig
+
+# === 打包 ===
+_package_staging/
+installer_output/
+*.exe
+*.msi
+
+# === 模型缓存 ===
+data/models/
+*.gguf
+*.bin
+*.safetensors
+
+# === 测试文件 ===
+check_*.py
+test_*.py
+list_skills.py
+
+# === 安装包/压缩包（不进 git，用 Release 发布）===
+*.zip
+*.tar.gz
+*.7z
+
+# === 第三方/存档代码 ===
+archive/
+
+# === 下载的 portable Python ===
+downloads/
+
+# === 调试/临时 HTML ===
+debug_page*.html
+flask_*.log
+harven*.log
+start_log*.txt
+flask_*.log
+check_*.txt
+run_result.txt
+import_result.txt
+
+# === Windows 保留文件名（无法删除，只能排除）===
+NUL
+NULL

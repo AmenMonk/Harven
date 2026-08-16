@@ -1,0 +1,276 @@
+<!-- Tab: Skill 制作向导（内嵌在插件管理 → skills 旁边） -->
+<div class="tab-panel" id="tab-skill-builder">
+    <div class="settings-grid">
+        <div class="setting-section-title" data-i18n="web.skillbuilder.title_1">🔮 Skill 制作向导</div>
+        <div class="setting-desc" style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;" data-i18n="web.skillbuilder.desc_1">
+            用自然语言描述你想要的 Skill，Harven AI 自动生成代码 → 预览 → 测试 → 一键保存
+        </div>
+
+        <!-- Step 1: 描述 Skill -->
+        <div class="setting-group" id="sb-step-1">
+            <label>📝 Skill 名称 <span style="color:var(--primary);font-size:11px;" data-i18n="web.skillbuilder.span_1">（必填）</span></label>
+            <input type="text" id="sbName" data-i18n-ph="web.skillbuilder.placeholder_1" placeholder="例如：唐诗三百首、股票查询、邮件提醒..." style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-main);color:var(--text-primary);font-size:14px;">
+
+            <label style="margin-top:12px;">💬 功能描述 <span style="color:var(--primary);font-size:11px;" data-i18n="web.skillbuilder.span_2">（必填，用自然语言描述）</span></label>
+            <textarea id="sbDesc" rows="4" placeholder="例如：帮助用户搜索并朗读唐诗，支持按作者、朝代、主题筛选..." style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-main);color:var(--text-primary);font-size:14px;resize:vertical;"></textarea>
+
+            <label style="margin-top:12px;" data-i18n="web.skillbuilder.label_1">🏷️ 类别</label>
+            <select id="sbCategory" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-main);color:var(--text-primary);font-size:14px;">
+                <option value="" data-i18n="web.skillbuilder.option_1">🤖 自动检测（推荐）</option>
+            </select>
+
+            <label style="margin-top:12px;">📎 额外信息 <span style="color:var(--text-secondary);font-size:11px;" data-i18n="web.skillbuilder.span_3">（可选，API、参数说明等）</span></label>
+            <input type="text" id="sbExtraInfo" data-i18n-ph="web.skillbuilder.placeholder_2" placeholder="例如：使用 xxx API，需要 API key..." style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-main);color:var(--text-primary);font-size:14px;">
+
+            <button class="btn-primary" onclick="skillBuilderGenerate()" style="margin-top:16px;width:100%;padding:12px;font-size:15px;font-weight:600;" data-i18n="web.skillbuilder.button_1">
+                ✨ AI 生成 Skill 代码
+            </button>
+        </div>
+
+        <!-- Step 2: 预览 & 编辑代码 -->
+        <div class="setting-group" id="sb-step-2" style="display:none;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                <span style="font-weight:600;" data-i18n="web.skillbuilder.span_4">📄 生成的代码</span>
+                <div style="display:flex;gap:6px;">
+                    <button class="btn-secondary btn-sm" onclick="skillBuilderBack()" data-i18n="web.skillbuilder.button_2">⬅ 返回修改</button>
+                    <button class="btn-secondary btn-sm" onclick="skillBuilderCopyCode()" data-i18n="web.skillbuilder.button_3">📋 复制</button>
+                    <button class="btn-secondary btn-sm" onclick="skillBuilderValidate()" data-i18n="web.skillbuilder.button_4">🔍 验证</button>
+                </div>
+            </div>
+            <div style="position:relative;">
+                <textarea id="sbCode" rows="18" style="width:100%;padding:12px;border:1px solid var(--primary);border-radius:8px;background:#0d1117;color:#c9d1d9;font-size:12px;font-family:'Consolas','Courier New',monospace;resize:vertical;line-height:1.5;"></textarea>
+                <span id="sbValidateResult" style="display:block;margin-top:4px;font-size:12px;"></span>
+            </div>
+
+            <div style="margin-top:14px;display:flex;gap:10px;">
+                <button class="btn-primary" onclick="skillBuilderSave()" style="flex:1;padding:12px;font-size:14px;font-weight:600;" data-i18n="web.skillbuilder.button_5">💾 保存到 skills/</button>
+                <button class="btn-secondary" onclick="skillBuilderRegenerate()" style="padding:12px 20px;" data-i18n="web.skillbuilder.button_6">🔄 重新生成</button>
+            </div>
+            <div id="sbSaveResult" style="margin-top:8px;font-size:13px;"></div>
+        </div>
+
+        <!-- Step 3: 测试结果（展开在保存后） -->
+        <div class="setting-group" id="sb-step-3" style="display:none;">
+            <div style="text-align:center;padding:20px;">
+                <div style="font-size:48px;margin-bottom:12px;" id="sbResultIcon">✅</div>
+                <div style="font-size:16px;font-weight:600;margin-bottom:6px;" id="sbResultTitle">Skill 创建成功！</div>
+                <div style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;" id="sbResultMsg"></div>
+                <div style="display:flex;gap:10px;justify-content:center;">
+                    <button class="btn-primary" onclick="skillBuilderNew()" data-i18n="web.skillbuilder.button_7">➕ 再创建一个</button>
+                    <button class="btn-secondary" onclick="if(typeof loadSkills==='function'){switchSettingsTab('plugins');setTimeout(function(){switchSubTabInPlugins&&switchSubTabInPlugins('skills')},200)}" data-i18n="web.skillbuilder.button_8">📋 查看所有 Skills</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════
+// Skill Builder Wizard Logic
+// ═══════════════════════════════════════════════
+
+// 加载类别列表
+async function loadSkillCategories() {
+    const sel = document.getElementById('sbCategory');
+    if (!sel) return;
+    try {
+        const r = await fetch('/api/skills/builder/categories');
+        const data = await r.json();
+        if (data.success && data.categories) {
+            sel.innerHTML = '<option value="" data-i18n="web.skillbuilder.option_2">🤖 自动检测（推荐）</option>';
+            data.categories.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c.id;
+                opt.textContent = c.name + ' — ' + c.description;
+                if (c.id === 'auto') return; // skip duplicate
+                sel.appendChild(opt);
+            });
+        }
+    } catch (e) {
+        console.warn('加载类别列表失败:', e);
+    }
+}
+
+// Step 1 → Step 2: AI 生成代码
+async function skillBuilderGenerate() {
+    const nameEl = document.getElementById('sbName');
+    const descEl = document.getElementById('sbDesc');
+    const catEl = document.getElementById('sbCategory');
+    const extraEl = document.getElementById('sbExtraInfo');
+
+    const name = nameEl.value.trim();
+    const description = descEl.value.trim();
+
+    if (!name) { toast('请输入 Skill 名称'); nameEl.focus(); return; }
+    if (!description) { toast('请描述 Skill 的功能'); descEl.focus(); return; }
+
+    // 显示 loading
+    const btn = document.querySelector('#sb-step-1 .btn-primary');
+    const origText = btn.textContent;
+    btn.textContent = '⏳ AI 正在生成代码...';
+    btn.disabled = true;
+
+    try {
+        const body = {
+            name: name,
+            description: description,
+            category: catEl.value || null,
+            extra_info: extraEl.value.trim() || '',
+        };
+
+        const r = await fetch('/api/skills/builder/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+
+        const data = await r.json();
+        if (!data.success) {
+            toast('❌ 生成失败: ' + (data.error || '未知错误'));
+            return;
+        }
+
+        // 填入代码编辑器
+        document.getElementById('sbCode').value = data.code;
+
+        // 显示验证结果
+        const vr = document.getElementById('sbValidateResult');
+        if (data.valid) {
+            vr.innerHTML = '<span style="color:#22c55e;" data-i18n="web.skillbuilder.span_5">✅ ' + data.validation_msg + ' | 检测类别: ' + (data.detected_category || '未知') + '</span>';
+        } else {
+            vr.innerHTML = '<span style="color:#f59e0b;">⚠️ ' + data.validation_msg + '</span>';
+        }
+
+        // 切换到 Step 2
+        document.getElementById('sb-step-1').style.display = 'none';
+        document.getElementById('sb-step-2').style.display = '';
+        document.getElementById('sb-step-3').style.display = 'none';
+
+    } catch (e) {
+        toast('❌ 网络错误: ' + e.message);
+    } finally {
+        btn.textContent = origText;
+        btn.disabled = false;
+    }
+}
+
+// 返回修改
+function skillBuilderBack() {
+    document.getElementById('sb-step-1').style.display = '';
+    document.getElementById('sb-step-2').style.display = 'none';
+    document.getElementById('sb-step-3').style.display = 'none';
+}
+
+// 复制代码
+function skillBuilderCopyCode() {
+    const code = document.getElementById('sbCode').value;
+    navigator.clipboard.writeText(code).then(() => {
+        toast('📋 代码已复制到剪贴板');
+    }).catch(() => {
+        toast('❌ 复制失败，请手动选中复制');
+    });
+}
+
+// 验证代码
+async function skillBuilderValidate() {
+    const code = document.getElementById('sbCode').value.trim();
+    if (!code) { toast('代码为空'); return; }
+
+    try {
+        const r = await fetch('/api/skills/builder/validate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code: code })
+        });
+        const data = await r.json();
+        const vr = document.getElementById('sbValidateResult');
+        if (data.valid) {
+            vr.innerHTML = '<span style="color:#22c55e;" data-i18n="web.skillbuilder.span_6">✅ ' + (data.message || '验证通过') + '</span>';
+        } else {
+            vr.innerHTML = '<span style="color:#ef4444;" data-i18n="web.skillbuilder.span_7">❌ ' + (data.message || '验证失败') + '</span>';
+        }
+    } catch (e) {
+        toast('验证失败: ' + e.message);
+    }
+}
+
+// 保存 Skill
+async function skillBuilderSave() {
+    const code = document.getElementById('sbCode').value.trim();
+    const name = document.getElementById('sbName').value.trim();
+    if (!code || !name) { toast('代码或名称为空'); return; }
+
+    const btn = document.querySelector('#sb-step-2 .btn-primary');
+    const origText = btn.textContent;
+    btn.textContent = '⏳ 保存中...';
+    btn.disabled = true;
+
+    try {
+        const r = await fetch('/api/skills/builder/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code: code, name: name })
+        });
+        const data = await r.json();
+
+        // 显示结果
+        document.getElementById('sb-step-2').style.display = 'none';
+        document.getElementById('sb-step-3').style.display = '';
+        document.getElementById('sbSaveResult').innerHTML = '';
+
+        const icon = document.getElementById('sbResultIcon');
+        const title = document.getElementById('sbResultTitle');
+        const msg = document.getElementById('sbResultMsg');
+
+        if (data.success) {
+            icon.textContent = '✅';
+            title.textContent = 'Skill 创建成功！';
+            msg.textContent = '文件已保存: skills/' + (data.skill_id || '') + '.py | ' + (data.message || '');
+            toast('✅ Skill 已保存并激活');
+        } else {
+            icon.textContent = '❌';
+            title.textContent = '保存失败';
+            msg.textContent = data.error || '未知错误';
+        }
+
+    } catch (e) {
+        toast('❌ 网络错误: ' + e.message);
+    } finally {
+        btn.textContent = origText;
+        btn.disabled = false;
+    }
+}
+
+// 重新生成
+function skillBuilderRegenerate() {
+    document.getElementById('sb-step-1').style.display = '';
+    document.getElementById('sb-step-2').style.display = 'none';
+    document.getElementById('sb-step-3').style.display = 'none';
+    document.getElementById('sbCode').value = '';
+    document.getElementById('sbValidateResult').innerHTML = '';
+}
+
+// 创建新的
+function skillBuilderNew() {
+    document.getElementById('sbName').value = '';
+    document.getElementById('sbDesc').value = '';
+    document.getElementById('sbCategory').value = '';
+    document.getElementById('sbExtraInfo').value = '';
+    skillBuilderRegenerate();
+}
+
+// 初始化
+document.addEventListener('DOMContentLoaded', function() {
+    loadSkillCategories();
+});
+
+// 暴露到全局
+window.loadSkillCategories = loadSkillCategories;
+window.skillBuilderGenerate = skillBuilderGenerate;
+window.skillBuilderBack = skillBuilderBack;
+window.skillBuilderCopyCode = skillBuilderCopyCode;
+window.skillBuilderValidate = skillBuilderValidate;
+window.skillBuilderSave = skillBuilderSave;
+window.skillBuilderRegenerate = skillBuilderRegenerate;
+window.skillBuilderNew = skillBuilderNew;
+</script>

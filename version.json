@@ -1,0 +1,7 @@
+{
+  "version": "0.3.0",
+  "release_date": "2026-08-09",
+  "url": "https://harvenhub.com/releases/HarvenAI_v0.3.0.zip",
+  "changelog": "v0.3.0 更新内容:\n\n🔄 新增功能:\n- Skill系统v2：10个Skill（6脚本+4提示词）+ _helpers.py 7函数 + 沙箱300秒超时\n- song_production编排Skill：通用模型写词→MusicGen作曲→Bark配声→FFmpeg合成\n- 流程编辑器UI：可视化创建多模型流程（8种模型可选，拖拽排序，预览代码）\n- 面板系统v2：7种字段（+多行文本/时间/图片）+ 卡片视图 + 5种模板 + 统计图表\n- 智能消息拆分：复杂消息自动拆成多个操作\n- 协作模式v2：安全开关+垂直Skill阻止+多外脑支持+ask_user交互\n- 高级功能面板：触发词管理+定时任务+Obsidian同步+AI生成Skill+AirLLM+硬件检测\n- 定时任务调度器：后台线程每60秒检查\n- AirLLM集成：低显存跑大模型（可选）\n- 流式进度显示：Skill执行时每行stdout实时显示\n- ask_user沙箱交互：Skill执行中能问用户问题\n- GitHub开源准备：.gitignore+README+CONTRIBUTING+config.example.yaml\n- 文档中心HTML：技术详解v7+安装详解v2.0（暗色主题+侧边栏）\n- 20+API端点：accounting/flows/panels/skills/scheduler/hub/airllm/multi-model/ask_user/hardware\n\n🔧 修复:\n- 🔴 安全：Cookie加HMAC签名（防伪造）\n- 🔴 安全：改密验证旧密码+最少8位\n- 🔴 安全：删除?real=1明文返回密码\n- 🟠 SQLite写锁重试机制（3次重试+退避）\n- 消息存储修复：快速命令/Skill执行也存消息到数据库\n- 协作OFF阻止垂直Skill\n- 触发词严格化（20个危险词改严格匹配）\n- 智能拆分阈值≥1\n- Skill名称动态显示（不再硬编码代码审计）\n- 面板重新生成panel.js（加卡片视图）\n- 流程编辑器Tab显示修复（settings-subpanel→tab-panel）\n- 多外脑UI下拉切换\n- 版本号同步（version.json 0.2.1→0.3.0）\n\n📦 优化:\n- 协作帮助文案更新（准确描述多模型协作）\n- 旧逻辑fallback提示增强\n- 模型卸载/安装API\n- _package_staging同步",
+  "min_harven_version": "0.2.0"
+}

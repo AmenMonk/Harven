@@ -1,0 +1,31 @@
+<!-- Tab: 保底状态 -->
+                <div id="tab-fallback">
+                    <div class="settings-grid">
+                        <div class="setting-section-title" data-i18n="web.fallback.title_1">🛡️ 保底状态</div>
+                        <div class="setting-desc" style="margin-bottom:12px;" data-i18n="web.fallback.desc_1">当 本地引擎或其他核心服务不可用时，Harven 会自动进入保底模式，保证基本功能可用。</div>
+
+                        <!-- 系统健康 -->
+                        <div class="setting-group" style="background:var(--bg-secondary);padding:16px;border-radius:8px;border:1px solid var(--border);margin-bottom:16px;">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                                <div class="setting-section-title" style="font-size:13px;margin-bottom:0;" data-i18n="web.fallback.title_2">💚 系统健康检查</div>
+                                <button class="btn-secondary btn-sm" onclick="window.HarvenFallback && HarvenFallback.checkHealth()" data-i18n="web.fallback.button_1">🔍 检查</button>
+                            </div>
+                            <div id="fallbackHealthList" style="display:flex;flex-direction:column;gap:6px;">
+                                <div style="color:var(--text-secondary);font-size:13px;">点击「检查」按钮查看健康状态...</div>
+                            </div>
+                        </div>
+
+                        <!-- 保底模式状态 -->
+                        <div class="setting-group" style="background:var(--bg-secondary);padding:16px;border-radius:8px;border:1px solid var(--border);margin-bottom:16px;">
+                            <div class="setting-section-title" style="font-size:13px;margin-bottom:12px;" data-i18n="web.fallback.title_3">⚡ 保底模式</div>
+                            <div id="fallbackModeStatus" style="font-size:14px;padding:8px 12px;border-radius:6px;background:var(--bg-primary);margin-bottom:12px;">
+                                状态加载中...
+                            </div>
+                            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                                <button class="btn-secondary btn-sm" onclick="window.HarvenFallback && HarvenFallback.autoCheck()" data-i18n="web.fallback.button_2">🤖 自动检查</button>
+                                <button class="btn-secondary btn-sm" onclick="window.HarvenFallback && HarvenFallback.tryFix()" data-i18n="web.fallback.button_3">🔧 自动修复</button>
+                                <button class="btn-secondary btn-sm" id="fallbackToggleBtn" onclick="window.HarvenFallback && HarvenFallback.toggleMode()" data-i18n="web.fallback.button_4">进入保底模式</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>

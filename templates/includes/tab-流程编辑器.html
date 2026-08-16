@@ -1,0 +1,190 @@
+<!-- ★ 2026-08-09: 流程编辑器UI — 可视化创建多模型流程 -->
+<div id="tabFlowEditor" class="tab-panel" style="display:none;">
+  <h3 style="margin:0 0 16px 0;font-size:15px;color:var(--text-primary);" data-i18n="web.floweditor.heading_1">📋 流程编辑器</h3>
+  <p style="font-size:12px;color:var(--text-tertiary);margin-bottom:16px;" data-i18n="web.floweditor.p_1">可视化创建多模型协作流程：通用模型思考 → 垂直模型执行 → 工具合成</p>
+
+  <!-- 流程基本信息 -->
+  <div style="display:flex;gap:8px;margin-bottom:12px;">
+    <input type="text" id="flowName" data-i18n-ph="web.floweditor.placeholder_1" placeholder="流程名称（如：写歌+配乐）" style="flex:1;padding:8px;border-radius:6px;border:0.5px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);font-size:13px;">
+    <input type="text" id="flowTrigger" data-i18n-ph="web.floweditor.placeholder_2" placeholder="触发词（如：写一首歌）" style="flex:1;padding:8px;border-radius:6px;border:0.5px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);font-size:13px;">
+  </div>
+
+  <!-- 步骤列表 -->
+  <div style="margin-bottom:12px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <span style="font-size:12px;color:var(--text-secondary);font-weight:500;" data-i18n="web.floweditor.span_1">步骤</span>
+      <button onclick="window.addFlowStep()" style="background:var(--bg-hover);border:0.5px solid var(--border);border-radius:4px;color:var(--text-secondary);cursor:pointer;font-size:11px;padding:4px 10px;" data-i18n="web.floweditor.button_1">+ 添加步骤</button>
+    </div>
+    <div id="flowSteps" style="min-height:60px;background:var(--bg-secondary);border-radius:8px;padding:12px;">
+      <p style="color:var(--text-tertiary);font-size:12px;text-align:center;" data-i18n="web.floweditor.p_2">点击"+ 添加步骤"开始</p>
+    </div>
+  </div>
+
+  <!-- 按钮组 -->
+  <div style="display:flex;gap:8px;">
+    <button onclick="window.saveFlow()" style="flex:1;padding:10px;border-radius:6px;border:none;background:var(--accent);color:#fff;cursor:pointer;font-size:13px;" data-i18n="web.floweditor.button_2">保存流程</button>
+    <button onclick="window.testFlow()" style="padding:10px 16px;border-radius:6px;border:0.5px solid var(--border);background:var(--bg-hover);color:var(--text-secondary);cursor:pointer;font-size:13px;" data-i18n="web.floweditor.button_3">测试运行</button>
+    <button onclick="window.previewFlowCode()" style="padding:10px 16px;border-radius:6px;border:0.5px solid var(--border);background:var(--bg-hover);color:var(--text-secondary);cursor:pointer;font-size:13px;" data-i18n="web.floweditor.button_4">👁 预览代码</button>
+  </div>
+  <div id="flowFeedback" style="margin-top:10px;text-align:center;font-size:12px;"></div>
+  <div id="flowCodePreview" style="display:none;margin-top:12px;border:0.5px solid var(--border);border-radius:8px;padding:12px;background:var(--bg-secondary);max-height:300px;overflow-y:auto;"></div>
+
+  <!-- 已保存的流程 -->
+  <div style="margin-top:20px;">
+    <h4 style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;" data-i18n="web.floweditor.heading_2">已保存的流程</h4>
+    <div id="savedFlows" style="background:var(--bg-secondary);border-radius:8px;padding:12px;">
+      <p style="color:var(--text-tertiary);font-size:12px;text-align:center;" data-i18n="web.floweditor.p_3">加载中...</p>
+    </div>
+  </div>
+</div>
+
+<script>
+// ★ 流程编辑器
+window._flowSteps = [];
+window._flowModels = {
+  'call_model': {name: '🤖 通用模型', desc: '写词/分析/总结', params: 'prompt: 提示词, model: 外脑(可选)'},
+  'call_vertical_musicgen': {name: '🎵 MusicGen', desc: '生成音乐', params: 'genre: 风格, duration: 秒数'},
+  'call_vertical_bark': {name: '🎤 Bark语音', desc: '文字转语音', params: 'text: 文本'},
+  'call_vertical_sd': {name: '🎨 Stable Diffusion', desc: '生成图片', params: 'prompt: 描述'},
+  'call_vertical_huatuo': {name: '🏥 华佗', desc: '医疗问答', params: 'question: 问题'},
+  'ffmpeg_merge': {name: '🎬 FFmpeg合成', desc: '合并音频/视频', params: 'inputs: 文件列表'},
+  'sqlite_query': {name: '💾 SQLite查询', desc: '查数据库', params: 'sql: SQL语句'},
+  'write_file': {name: '📝 写文件', desc: '保存到文件', params: 'path: 路径, content: 内容'},
+};
+
+window.addFlowStep = function() {
+  var idx = window._flowSteps.length;
+  window._flowSteps.push({model: 'call_model', params: ''});
+  window._renderFlowSteps();
+};
+
+window._renderFlowSteps = function() {
+  var container = document.getElementById('flowSteps');
+  if (!container) return;
+  if (window._flowSteps.length === 0) {
+    container.innerHTML = '<p style="color:var(--text-tertiary);font-size:12px;text-align:center;" data-i18n="web.floweditor.p_4">点击"+ 添加步骤"开始</p>';
+    return;
+  }
+  var html = '';
+  window._flowSteps.forEach(function(step, idx) {
+    var modelOptions = Object.keys(window._flowModels).map(function(key) {
+      var m = window._flowModels[key];
+      return '<option value="' + key + '"' + (step.model === key ? ' selected' : '') + '>' + m.name + ' — ' + m.desc + '</option>';
+    }).join('');
+    html += '<div style="background:var(--bg-primary);border:0.5px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px;">';
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">';
+    html += '<span style="flex:0 0 24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;">' + (idx+1) + '</span>';
+    html += '<select onchange="window._flowSteps[' + idx + '].model=this.value;window._renderFlowSteps()" style="flex:1;padding:4px 6px;border-radius:4px;border:0.5px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);font-size:12px;">' + modelOptions + '</select>';
+    if (idx > 0) {
+      html += '<button onclick="window._moveStep(' + idx + ',-1)" style="padding:2px 6px;border:0.5px solid var(--border);border-radius:4px;background:var(--bg-hover);color:var(--text-secondary);cursor:pointer;font-size:11px;">↑</button>';
+    }
+    if (idx < window._flowSteps.length - 1) {
+      html += '<button onclick="window._moveStep(' + idx + ',1)" style="padding:2px 6px;border:0.5px solid var(--border);border-radius:4px;background:var(--bg-hover);color:var(--text-secondary);cursor:pointer;font-size:11px;">↓</button>';
+    }
+    html += '<button onclick="window._delStep(' + idx + ')" style="padding:2px 6px;border:0.5px solid #f85149;border-radius:4px;background:transparent;color:#f85149;cursor:pointer;font-size:11px;">✕</button>';
+    html += '</div>';
+    var modelInfo = window._flowModels[step.model] || {};
+    if (modelInfo.params) {
+      html += '<div style="font-size:10px;color:var(--text-tertiary);margin-left:32px;">参数：' + modelInfo.params + '</div>';
+    }
+    html += '<input type="text" value="' + (step.params || '') + '" data-i18n-ph="web.floweditor.placeholder_3" placeholder="参数（如：genre=country,duration=30）" oninput="window._flowSteps[' + idx + '].params=this.value" style="width:100%;margin-top:4px;margin-left:32px;padding:4px 6px;border-radius:4px;border:0.5px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);font-size:11px;box-sizing:border-box;">';
+    html += '</div>';
+    if (idx < window._flowSteps.length - 1) {
+      html += '<div style="text-align:center;color:var(--text-tertiary);font-size:14px;margin:-4px 0 4px 0;">↓</div>';
+    }
+  });
+  container.innerHTML = html;
+};
+
+window._moveStep = function(idx, dir) {
+  var newIdx = idx + dir;
+  if (newIdx < 0 || newIdx >= window._flowSteps.length) return;
+  var tmp = window._flowSteps[idx];
+  window._flowSteps[idx] = window._flowSteps[newIdx];
+  window._flowSteps[newIdx] = tmp;
+  window._renderFlowSteps();
+};
+
+window._delStep = function(idx) {
+  window._flowSteps.splice(idx, 1);
+  window._renderFlowSteps();
+};
+
+window._generateFlowCode = function() {
+  var name = document.getElementById('flowName').value || 'custom_flow';
+  var trigger = document.getElementById('flowTrigger').value || name;
+  var steps = window._flowSteps;
+  if (steps.length === 0) return null;
+  var code = '#!/usr/bin/env python3\n';
+  code += '"""\n' + name + ' — 由流程编辑器生成\n触发词：' + trigger + '\n"""\n\n';
+  code += 'import os, sys, json, argparse\nfrom pathlib import Path\n';
+  code += 'PROJECT_ROOT = Path(os.environ.get("HARVEN_PROJECT_ROOT", str(Path(__file__).parent.parent.parent.parent)))\n';
+  code += 'sys.path.insert(0, str(PROJECT_ROOT))\n';
+  code += 'from data.skills._helpers import call_vertical, call_model, get_db_path, get_media_dir, get_reports_dir\n\n';
+  steps.forEach(function(step, idx) {
+    var num = idx + 1;
+    var info = window._flowModels[step.model] || {name: step.model};
+    code += '# Step ' + num + ': ' + info.name + '\n';
+    if (step.model === 'call_model') {
+      code += 'result_' + num + ' = call_model("' + (step.params || '请分析') + '")\nprint("Step ' + num + ':", str(result_' + num + ')[:100])\n\n';
+    } else if (step.model.startsWith('call_vertical_')) {
+      var mid = step.model.replace('call_vertical_', '');
+      code += 'result_' + num + ' = call_vertical("' + mid + '", {' + (step.params || '') + '})\nprint("Step ' + num + ':", result_' + num + ')\n\n';
+    } else if (step.model === 'ffmpeg_merge') {
+      code += 'import subprocess\noutput_' + num + ' = os.path.join(get_media_dir(), "flow_output.wav")\nsubprocess.run(["ffmpeg","-y","-i",str(result_1),"-i",str(result_2),"-filter_complex","amix=inputs=2:duration=longest",output_' + num + '])\n\n';
+    } else {
+      code += 'result_' + num + ' = None\nprint("Step ' + num + ': skipped")\n\n';
+    }
+  });
+  code += 'print("\\n✅ 流程「' + name + '」执行完成！")\n';
+  return {code: code, name: name, trigger: trigger};
+};
+
+window.saveFlow = function() {
+  var result = window._generateFlowCode();
+  if (!result) { toast('请添加至少一个步骤', 2000); return; }
+  var fb = document.getElementById('flowFeedback');
+  fb.innerHTML = '<span style="color:var(--accent);" data-i18n="web.floweditor.span_2">保存中...</span>';
+  var skillName = result.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+  fb.innerHTML = '<span style="color:#3fb950;" data-i18n="web.floweditor.span_3">✅ 代码已生成！Skill名：' + skillName + '</span><br><small style="color:var(--text-tertiary);">请在高级功能面板使用"AI自动生成Skill"创建完整Skill</small>';
+};
+
+window.testFlow = function() {
+  var result = window._generateFlowCode();
+  if (!result) { toast('请添加步骤', 2000); return; }
+  document.getElementById('flowFeedback').innerHTML = '<span style="color:#3fb950;" data-i18n="web.floweditor.span_4">✅ 代码生成成功（需先保存才能执行）</span>';
+};
+
+window.previewFlowCode = function() {
+  var result = window._generateFlowCode();
+  if (!result) { toast('请添加步骤', 2000); return; }
+  var area = document.getElementById('flowCodePreview');
+  area.innerHTML = '<pre style="font-size:11px;color:var(--text-primary);white-space:pre-wrap;">' + result.code.replace(/</g, '&lt;') + '</pre>';
+  area.style.display = 'block';
+};
+
+window.loadSavedFlows = function() {
+  var el = document.getElementById('savedFlows');
+  if (!el) return;
+  fetch('/api/hub/flows').then(r=>r.json()).then(d=>{
+    var html = '';
+    var count = 0;
+    (d.flows||[]).forEach(function(f) {
+      if (f.has_script) {
+        count++;
+        html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:0.5px solid var(--border);">';
+        html += '<span style="flex:1;font-size:12px;color:var(--text-primary);">' + f.name + '</span>';
+        html += '<span style="font-size:10px;color:var(--text-tertiary);" data-i18n="web.floweditor.span_5">' + (f.trigger || '无触发词') + '</span>';
+        html += '<span style="font-size:10px;color:#3fb950;" data-i18n="web.floweditor.span_6">✅可执行</span>';
+        html += '</div>';
+      }
+    });
+    el.innerHTML = html || '<p style="color:var(--text-tertiary);font-size:12px;" data-i18n="web.floweditor.p_5">无可执行流程</p>';
+  }).catch(e=>{
+    var el2 = document.getElementById('savedFlows');
+    if (el2) el2.innerHTML = '<p style="color:var(--text-tertiary);font-size:12px;" data-i18n="web.floweditor.p_6">加载失败: ' + e + '</p>';
+  });
+};
+
+setTimeout(function() { window.loadSavedFlows(); }, 1000);
+</script>

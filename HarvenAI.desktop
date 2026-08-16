@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Harven AI
+Name[zh_CN]=哈文 AI
+Comment=个人专属AI大脑 — 纯本地运行，隐私安全
+Comment[zh_CN]=个人专属AI大脑 — 纯本地运行，隐私安全
+Exec=bash -c 'cd "$(dirname %k)" && bash start.sh'
+Icon=icon-duck
+Terminal=true
+Categories=Utility;Office;
+StartupNotify=true

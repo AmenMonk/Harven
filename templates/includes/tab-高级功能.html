@@ -1,0 +1,188 @@
+<!-- ★ 2026-08-09: 高级功能管理面板 -->
+<div id="tabAdvancedFeatures" class="tab-panel" style="display:none;">
+  <h3 style="margin:0 0 16px 0;font-size:15px;color:var(--text-primary);" data-i18n="web.advanced.heading_1">⚙️ 高级功能</h3>
+
+  <!-- 触发词管理 -->
+  <div style="margin-bottom:20px;">
+    <h4 style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;" data-i18n="web.advanced.heading_2">📋 Skill触发词管理</h4>
+    <div id="triggerList" style="background:var(--bg-secondary);border-radius:8px;padding:12px;">
+      <p style="color:var(--text-tertiary);font-size:12px;text-align:center;" data-i18n="web.advanced.p_1">加载中...</p>
+    </div>
+  </div>
+
+  <!-- 定时任务 -->
+  <div style="margin-bottom:20px;">
+    <h4 style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;" data-i18n="web.advanced.heading_3">⏰ 定时任务</h4>
+    <div style="display:flex;gap:8px;margin-bottom:8px;">
+      <input type="text" id="schedName" data-i18n-ph="web.advanced.placeholder_1" placeholder="任务名称" style="flex:1;padding:6px;border-radius:6px;border:0.5px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:12px;">
+      <select id="schedSkill" style="padding:6px;border-radius:6px;border:0.5px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:12px;"></select>
+      <input type="time" id="schedTime" style="padding:6px;border-radius:6px;border:0.5px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:12px;">
+      <button onclick="window.addSchedTask()" style="padding:6px 12px;border-radius:6px;border:none;background:var(--accent);color:#fff;cursor:pointer;font-size:12px;" data-i18n="web.advanced.button_1">添加</button>
+    </div>
+    <div id="schedList" style="background:var(--bg-secondary);border-radius:8px;padding:12px;">
+      <p style="color:var(--text-tertiary);font-size:12px;text-align:center;" data-i18n="web.advanced.p_2">加载中...</p>
+    </div>
+  </div>
+
+  <!-- Obsidian同步 -->
+  <div style="margin-bottom:20px;">
+    <h4 style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;" data-i18n="web.advanced.heading_4">📝 Obsidian目录同步</h4>
+    <div style="display:flex;gap:8px;">
+      <input type="text" id="obsidianPath" data-i18n-ph="web.advanced.placeholder_2" placeholder="Obsidian vault路径（如 H:\MyNotes）" style="flex:1;padding:6px;border-radius:6px;border:0.5px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:12px;">
+      <button onclick="window.syncObsidian()" style="padding:6px 12px;border-radius:6px;border:none;background:var(--accent);color:#fff;cursor:pointer;font-size:12px;" data-i18n="web.advanced.button_2">同步</button>
+    </div>
+    <div id="obsidianResult" style="margin-top:8px;font-size:12px;color:var(--text-tertiary);"></div>
+  </div>
+
+  <!-- AI生成Skill -->
+  <div style="margin-bottom:20px;">
+    <h4 style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;" data-i18n="web.advanced.heading_5">🤖 AI自动生成Skill</h4>
+    <div style="display:flex;gap:8px;margin-bottom:8px;">
+      <input type="text" id="genSkillName" data-i18n-ph="web.advanced.placeholder_3" placeholder="Skill名称（英文）" style="flex:1;padding:6px;border-radius:6px;border:0.5px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:12px;">
+    </div>
+    <textarea id="genSkillDesc" placeholder="描述这个Skill做什么（如：每天查询天气并生成日报）" style="width:100%;padding:6px;border-radius:6px;border:0.5px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:12px;height:60px;resize:vertical;"></textarea>
+    <button onclick="window.generateSkill()" style="margin-top:4px;padding:6px 12px;border-radius:6px;border:none;background:var(--accent);color:#fff;cursor:pointer;font-size:12px;" data-i18n="web.advanced.button_3">生成Skill</button>
+    <div id="genSkillResult" style="margin-top:8px;font-size:12px;color:var(--text-tertiary);"></div>
+  </div>
+
+  <!-- AirLLM状态 -->
+  <div style="margin-bottom:20px;">
+    <h4 style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;" data-i18n="web.advanced.heading_6">💨 AirLLM（低显存跑大模型）</h4>
+    <div id="airllmStatus" style="background:var(--bg-secondary);border-radius:8px;padding:12px;">
+      <p style="color:var(--text-tertiary);font-size:12px;" data-i18n="web.advanced.p_3">加载中...</p>
+    </div>
+  </div>
+
+  <!-- 硬件信息 -->
+  <div style="margin-bottom:20px;">
+    <h4 style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;" data-i18n="web.advanced.heading_7">🖥️ 硬件信息</h4>
+    <div id="gpuInfo" style="background:var(--bg-secondary);border-radius:8px;padding:12px;">
+      <p style="color:var(--text-tertiary);font-size:12px;" data-i18n="web.advanced.p_4">加载中...</p>
+    </div>
+  </div>
+</div>
+
+<script>
+// ★ 触发词管理
+async function loadTriggers() {
+  try {
+    const r = await fetch('/api/skills/triggers').then(r=>r.json());
+    var html = '';
+    (r.skills||[]).forEach(function(s) {
+      html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;padding:6px 0;border-bottom:0.5px solid var(--border);">';
+      html += '<span style="flex:0 0 120px;font-size:12px;color:var(--text-primary);">' + (s.name||s.id) + '</span>';
+      html += '<span style="flex:0 0 60px;font-size:10px;color:' + (s.has_script?'#3fb950':'#8b949e') + ';" data-i18n="web.advanced.span_1">' + (s.has_script?'脚本':'提示词') + '</span>';
+      html += '<input type="text" value="' + (s.trigger||'') + '" onchange="window.updateTrigger(\'' + s.id + '\', this.value)" style="flex:1;padding:4px 6px;border-radius:4px;border:0.5px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:11px;">';
+      html += '</div>';
+    });
+    document.getElementById('triggerList').innerHTML = html || '<p style="color:var(--text-tertiary);font-size:12px;" data-i18n="web.advanced.p_5">无Skill</p>';
+  } catch(e) {
+    document.getElementById('triggerList').innerHTML = '<p style="color:#f85149;font-size:12px;" data-i18n="web.advanced.p_6">加载失败</p>';
+  }
+}
+window.updateTrigger = function(id, trigger) {
+  fetch('/api/skills/triggers/' + id, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({trigger:trigger})})
+    .then(r=>r.json()).then(d=>{ if(d.success) toast('触发词已更新',2000); });
+};
+
+// ★ 定时任务
+async function loadSchedTasks() {
+  try {
+    const [tasks, skills] = await Promise.all([
+      fetch('/api/scheduler/list').then(r=>r.json()),
+      fetch('/api/skills/triggers').then(r=>r.json())
+    ]);
+    // 填充Skill下拉
+    var sel = document.getElementById('schedSkill');
+    sel.innerHTML = (skills.skills||[]).map(s=>'<option value="'+s.id+'">'+(s.name||s.id)+'</option>').join('');
+    // 显示任务列表
+    var html = '';
+    (tasks.tasks||[]).forEach(function(t) {
+      html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">';
+      html += '<span style="flex:1;font-size:12px;">' + t.name + ' → ' + t.skill + ' @ ' + t.time + '</span>';
+      html += '<span style="font-size:10px;color:' + (t.enabled?'#3fb950':'#8b949e') + ';" data-i18n="web.advanced.span_2">' + (t.enabled?'启用':'禁用') + '</span>';
+      html += '<button onclick="window.delSchedTask(\'' + t.id + '\')" style="padding:2px 8px;border-radius:4px;border:0.5px solid #f85149;background:transparent;color:#f85149;cursor:pointer;font-size:11px;" data-i18n="web.advanced.button_4">删除</button>';
+      html += '</div>';
+    });
+    document.getElementById('schedList').innerHTML = html || '<p style="color:var(--text-tertiary);font-size:12px;" data-i18n="web.advanced.p_7">无定时任务</p>';
+  } catch(e) {}
+}
+window.addSchedTask = function() {
+  var name = document.getElementById('schedName').value;
+  var skill = document.getElementById('schedSkill').value;
+  var time = document.getElementById('schedTime').value;
+  if (!name || !skill || !time) { toast('请填写完整',2000); return; }
+  fetch('/api/scheduler/add', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,skill:skill,time:time})})
+    .then(r=>r.json()).then(d=>{ if(d.success){ toast('任务已添加',2000); loadSchedTasks(); } });
+};
+window.delSchedTask = function(id) {
+  fetch('/api/scheduler/' + id, {method:'DELETE'}).then(r=>r.json()).then(d=>{ if(d.success) loadSchedTasks(); });
+};
+
+// ★ Obsidian同步
+window.syncObsidian = function() {
+  var path = document.getElementById('obsidianPath').value;
+  if (!path) { toast('请输入路径',2000); return; }
+  document.getElementById('obsidianResult').textContent = '同步中...';
+  fetch('/api/knowledge/obsidian', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:path})})
+    .then(r=>r.json()).then(d=>{
+      if (d.success) {
+        document.getElementById('obsidianResult').innerHTML = '<span style="color:#3fb950;" data-i18n="web.advanced.span_3">同步完成：导入' + d.imported + '个文件，' + d.errors + '个失败</span>';
+      } else {
+        document.getElementById('obsidianResult').innerHTML = '<span style="color:#f85149;">' + d.error + '</span>';
+      }
+    });
+};
+
+// ★ AI生成Skill
+window.generateSkill = function() {
+  var name = document.getElementById('genSkillName').value;
+  var desc = document.getElementById('genSkillDesc').value;
+  if (!name || !desc) { toast('请填写名称和描述',2000); return; }
+  document.getElementById('genSkillResult').textContent = '生成中...（可能需要30秒）';
+  fetch('/api/skills/generate', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,description:desc})})
+    .then(r=>r.json()).then(d=>{
+      if (d.success) {
+        document.getElementById('genSkillResult').innerHTML = '<span style="color:#3fb950;" data-i18n="web.advanced.span_4">✅ Skill "' + d.skill_name + '" 已生成！</span><br><pre style="margin-top:4px;font-size:10px;color:var(--text-tertiary);">' + d.code_preview + '</pre>';
+      } else {
+        document.getElementById('genSkillResult').innerHTML = '<span style="color:#f85149;">' + d.error + '</span>';
+      }
+    });
+};
+
+// ★ AirLLM状态
+async function loadAirllm() {
+  try {
+    const r = await fetch('/api/airllm/status').then(r=>r.json());
+    var html = '';
+    if (r.installed) {
+      html = '<p style="color:#3fb950;font-size:12px;" data-i18n="web.advanced.p_8">✅ 已安装</p>';
+      html += '<p style="font-size:11px;color:var(--text-tertiary);">' + r.description + '</p>';
+    } else {
+      html = '<p style="color:#8b949e;font-size:12px;" data-i18n="web.advanced.p_9">❌ 未安装</p>';
+      html += '<p style="font-size:11px;color:var(--text-tertiary);">' + r.description + '</p>';
+      html += '<p style="font-size:11px;color:var(--text-tertiary);" data-i18n="web.advanced.p_10">安装：' + r.install_cmd + '</p>';
+      html += '<p style="font-size:11px;color:#d29922;">⚠️ ' + r.warning + '</p>';
+    }
+    document.getElementById('airllmStatus').innerHTML = html;
+  } catch(e) {}
+}
+
+// ★ 硬件信息
+async function loadGpuInfo() {
+  try {
+    const r = await fetch('/api/hardware/gpu').then(r=>r.json());
+    var html = '';
+    if (r.available) {
+      html = '<p style="font-size:12px;color:var(--text-primary);">🎮 ' + r.gpu_name + '</p>';
+      html += '<p style="font-size:11px;color:var(--text-tertiary);" data-i18n="web.advanced.p_11">显存：' + r.vram_gb + 'GB（空闲' + r.free_gb + 'GB）</p>';
+    } else {
+      html = '<p style="font-size:12px;color:#8b949e;" data-i18n="web.advanced.p_12">未检测到GPU</p>';
+    }
+    document.getElementById('gpuInfo').innerHTML = html;
+  } catch(e) {}
+}
+
+// 初始化
+setTimeout(function() { loadTriggers(); loadSchedTasks(); loadAirllm(); loadGpuInfo(); }, 1000);
+</script>

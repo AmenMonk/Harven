@@ -1,0 +1,430 @@
+<!-- Tab: 安全隐私 -->
+                <div class="tab-panel" id="tab-security">
+                    <!-- 子导航 -->
+                    <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;padding:0 2px;">
+                        <button class="btn-secondary btn-sm sec-sub-btn active" onclick="switchSecSubTab('security',this)" data-i18n="web.security.button_1">🔒 安全设置</button>
+                        <button class="btn-secondary btn-sm sec-sub-btn" onclick="switchSecSubTab('sandbox',this)" data-i18n="web.security.button_2">🐳 代码沙箱</button>
+                    </div>
+                    <div class="security-layout"><!-- 单栏干净布局 -->
+
+                        <!-- 🔒 远程访问 -->
+                        <div class="setting-section-title" data-i18n="web.security.title_1">🔑 远程访问</div>
+                        <div class="setting-group" style="background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.3);border-radius:8px;padding:14px;">
+                            <div style="font-size:13px;color:#94a3b8;margin-bottom:8px;">
+                                ⚡ 本机访问免登录 · 远程设备需账号密码
+                            </div>
+                            <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+                                <span style="font-size:13px;color:#94a3b8;" data-i18n="web.security.span_1">账号：</span>
+                                <span style="font-family:monospace;font-size:18px;color:#e2e8f0;">admin</span>
+                            </div>
+                            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                                <span style="font-size:13px;color:#94a3b8;" data-i18n="web.security.span_2">密码：</span>
+                                <span id="remotePwdShow" style="font-family:monospace;font-size:18px;color:#22c55e;">••••••</span>
+                                <button class="btn-secondary btn-sm" id="remotePwdToggle" onclick="toggleRemotePwd()" data-i18n="web.security.button_3">👁️ 显示</button>
+                            </div>
+                            <div style="display:flex;gap:8px;margin-top:10px;">
+                                <input type="text" id="remotePwdInput" data-i18n-ph="web.security.placeholder_1" placeholder="新密码（至少4位）" style="flex:1;padding:6px 10px;border-radius:6px;border:1px solid #475569;background:#0f172a;color:#e2e8f0;font-size:13px;">
+                                <button class="btn-primary btn-sm" onclick="updateRemotePwd()" style="background:#22c55e;border-color:#22c55e;" data-i18n="web.security.button_4">修改</button>
+                            </div>
+                            <div id="remotePwdMsg" style="font-size:12px;margin-top:6px;"></div>
+                        </div>
+                        <script>
+                        var _remotePwdMask = '';
+                        var _realPwd = '';
+                        var _showingPwd = false;
+                        (async function(){
+                            try { var r = await fetch('/api/auth/remote-password'); var d = await r.json(); _remotePwdMask = d.hidden || '**********'; document.getElementById('remotePwdShow').textContent = _remotePwdMask; } catch(e) {}
+                        })();
+                        function toggleRemotePwd(){
+                            var el = document.getElementById('remotePwdShow');
+                            var btn = document.getElementById('remotePwdToggle');
+                            if (_showingPwd) {
+                                el.textContent = _remotePwdMask;
+                                btn.textContent = '👁️ 显示';
+                                _showingPwd = false;
+                            } else {
+                                if (_realPwd) {
+                                    el.textContent = _realPwd;
+                                    btn.textContent = '🙈 隐藏';
+                                    _showingPwd = true;
+                                } else {
+                                    fetch('/api/auth/remote-password?real=1').then(r=>r.json()).then(d=>{
+                                        _realPwd = d.real || _remotePwdMask;
+                                        el.textContent = _realPwd;
+                                        btn.textContent = '🙈 隐藏';
+                                        _showingPwd = true;
+                                    });
+                                }
+                            }
+                        }
+                        async function updateRemotePwd(){
+                            var inp = document.getElementById('remotePwdInput');
+                            var msg = document.getElementById('remotePwdMsg');
+                            var pwd = inp.value.trim();
+                            if (pwd.length < 4) { msg.textContent = '❌ 至少4位'; msg.style.color='#ef4444'; return; }
+                            try {
+                                var r = await fetch('/api/auth/remote-password', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({password:pwd}) });
+                                var d = await r.json();
+                                if (d.success) {
+                                    msg.textContent='✅ 已更新'; msg.style.color='#22c55e'; inp.value='';
+                                    _realPwd = pwd;
+                                    _remotePwdMask = '*'.repeat(pwd.length);
+                                    document.getElementById('remotePwdShow').textContent = _showingPwd ? pwd : _remotePwdMask;
+                                }
+                                else { msg.textContent='❌ '+(d.error||'失败'); msg.style.color='#ef4444'; }
+                            } catch(e) { msg.textContent='❌ 网络错误'; msg.style.color='#ef4444'; }
+                        }
+                        </script>
+
+                        <!-- 🛡️ 安全操作（2026-07-12） -->
+                        <div class="sec-card">
+                            <div class="sec-card-title">🛡️ 安全操作</div>
+                            <div class="sec-card-body">
+                                <div class="setting-group">
+                                    <label data-i18n="web.security.label_1">权限模式</label>
+                                    <div id="securityModeDisplay" style="padding:10px 12px;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.3);border-radius:8px;font-size:14px;color:#22c55e;margin-bottom:8px;">
+                                        🔒 安全模式（默认）
+                                    </div>
+                                    <div class="setting-desc" style="margin-bottom:8px;">
+                                        安全模式：拦截危险命令（rm/del/format）+ 限制路径（只能操作项目目录）<br>
+                                        全权模式：不拦截+不限制（需admin密码，重启自动回到安全）
+                                    </div>
+                                    <div id="securityFullAccessArea" style="display:none;">
+                                        <input type="password" id="securityPassword" data-i18n-ph="web.security.placeholder_2" placeholder="输入admin密码" style="width:60%;padding:6px 10px;border-radius:6px;border:1px solid #475569;background:#0f172a;color:#e2e8f0;font-size:13px;">
+                                        <button class="btn-primary btn-sm" onclick="enableFullAccess()" style="background:#f59e0b;border-color:#f59e0b;margin-left:6px;" data-i18n="web.security.button_5">确认开启</button>
+                                    </div>
+                                    <div id="securityBtnArea" style="margin-top:8px;">
+                                        <button class="btn-primary btn-sm" id="btnToggleSecurity" onclick="toggleSecurityMode()" style="background:#f59e0b;border-color:#f59e0b;" data-i18n="web.security.button_6">🔓 开启全权模式</button>
+                                    </div>
+                                </div>
+                                <div class="setting-group">
+                                    <label data-i18n="web.security.label_2">拦截规则</label>
+                                    <div style="padding:10px;background:rgba(100,116,139,0.08);border-radius:6px;font-size:12px;color:#94a3b8;line-height:1.8;">
+                                        🚫 危险命令：rm -rf / del /s / format / shutdown 等<br>
+                                        📂 路径限制：只能操作 H:/HarvenAI/ 等项目目录<br>
+                                        ⚠️ 破坏性操作：删除/覆盖/卸载 需确认
+                                    </div>
+                                </div>
+                                <div class="setting-group">
+                                    <label data-i18n="web.security.label_3">操作日志</label>
+                                    <div id="securityLog" style="max-height:200px;overflow-y:auto;padding:8px;background:rgba(100,116,139,0.08);border-radius:6px;font-size:11px;color:#94a3b8;font-family:monospace;">
+                                        加载中...
+                                    </div>
+                                    <button class="btn-secondary btn-sm" onclick="loadSecurityLog()" style="margin-top:6px;" data-i18n="web.security.button_7">🔄 刷新日志</button>
+                                </div>
+                            </div>
+                        </div>
+                        <script>
+                        async function loadSecurityMode() {
+                            try {
+                                var r = await fetch('/api/security/mode');
+                                var d = await r.json();
+                                var el = document.getElementById('securityModeDisplay');
+                                var btn = document.getElementById('btnToggleSecurity');
+                                if (d.mode === 'full') {
+                                    el.innerHTML = '🔓 全权模式（不限制）';
+                                    el.style.color = '#f59e0b';
+                                    el.style.borderColor = 'rgba(245,158,11,0.3)';
+                                    el.style.background = 'rgba(245,158,11,0.08)';
+                                    btn.textContent = '🔒 回到安全模式';
+                                    btn.style.background = '#22c55e';
+                                    btn.style.borderColor = '#22c55e';
+                                } else {
+                                    el.innerHTML = '🔒 安全模式（默认）';
+                                    el.style.color = '#22c55e';
+                                    btn.textContent = '🔓 开启全权模式';
+                                    btn.style.background = '#f59e0b';
+                                    btn.style.borderColor = '#f59e0b';
+                                }
+                            } catch(e) { console.warn('Security mode load failed:', e); }
+                        }
+                        function toggleSecurityMode() {
+                            var display = document.getElementById('securityModeDisplay');
+                            if (display.textContent.indexOf('全权') > -1) {
+                                // 当前是全权 → 关闭
+                                fetch('/api/security/disable', {method:'POST'}).then(r=>r.json()).then(d=>{
+                                    if (d.success) { loadSecurityMode(); toast('✅ 已回到安全模式'); }
+                                });
+                            } else {
+                                // 当前是安全 → 显示密码输入
+                                document.getElementById('securityFullAccessArea').style.display = 'block';
+                                document.getElementById('securityPassword').focus();
+                            }
+                        }
+                        async function enableFullAccess() {
+                            var pwd = document.getElementById('securityPassword').value.trim();
+                            if (!pwd) { toast('⚠️ 请输入密码'); return; }
+                            try {
+                                var r = await fetch('/api/security/full-access', {
+                                    method: 'POST',
+                                    headers: {'Content-Type': 'application/json'},
+                                    body: JSON.stringify({password: pwd})
+                                });
+                                var d = await r.json();
+                                if (d.success) {
+                                    document.getElementById('securityFullAccessArea').style.display = 'none';
+                                    document.getElementById('securityPassword').value = '';
+                                    loadSecurityMode();
+                                    toast('🔓 全权模式已开启');
+                                } else {
+                                    toast('❌ ' + (d.error || '密码错误'));
+                                }
+                            } catch(e) { toast('❌ 网络错误'); }
+                        }
+                        async function loadSecurityLog() {
+                            try {
+                                var r = await fetch('/api/security/log?limit=20');
+                                var d = await r.json();
+                                var el = document.getElementById('securityLog');
+                                if (d.logs && d.logs.length) {
+                                    el.innerHTML = d.logs.reverse().map(l =>
+                                        '<div style="padding:2px 0;border-bottom:1px solid rgba(100,116,139,0.1);">' +
+                                        '<span style="color:#64748b;">' + l.time + '</span> ' +
+                                        '<span style="color:' + (l.result.indexOf('拦截') > -1 ? '#ef4444' : '#22c55e') + ';">' +
+                                        l.tool + '</span> ' +
+                                        '<span style="color:#94a3b8;">' + l.result.substring(0, 60) + '</span></div>'
+                                    ).join('');
+                                } else {
+                                    el.textContent = '暂无操作记录';
+                                }
+                            } catch(e) { console.warn(e); }
+                        }
+                        // 页面加载时自动获取
+                        if (document.readyState === 'loading') {
+                            document.addEventListener('DOMContentLoaded', function() { setTimeout(loadSecurityMode, 1000); setTimeout(loadSecurityLog, 1500); });
+                        } else {
+                            setTimeout(loadSecurityMode, 1000); setTimeout(loadSecurityLog, 1500);
+                        }
+                        </script>
+
+                        <!-- 🔒 隐私保护 -->
+                        <div class="sec-card">
+                            <div class="sec-card-title">🔒 隐私保护</div>
+                            <div class="sec-card-body">
+                                <div class="setting-group">
+                                    <label data-i18n="web.security.label_4">隐私库密码</label>
+                                    <input type="password" id="setPrivacyPwd" data-i18n-ph="web.security.placeholder_3" placeholder="设置隐私数据库密码（空=不设置）">
+                                    <div class="setting-desc" data-i18n="web.security.desc_1">保护你的私密对话和个人画像数据</div>
+                                    <button class="btn-secondary btn-sm" onclick="savePrivacyPassword()" style="margin-top:6px" data-i18n="web.security.button_8">设置/修改密码</button>
+                                </div>
+                                <div class="setting-group">
+                                    <label data-i18n="web.security.label_5">自动锁定时间</label>
+                                    <select id="setAutoLock">
+                                        <option value="0" selected data-i18n="web.security.option_1">不自动锁定</option>
+                                        <option value="5" data-i18n="web.security.option_2">5分钟不操作后锁定</option>
+                                        <option value="15" data-i18n="web.security.option_3">15分钟不操作后锁定</option>
+                                        <option value="30" data-i18n="web.security.option_4">30分钟不操作后锁定</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 🛡️ 安全防护 -->
+                        <div class="sec-card">
+                            <div class="sec-card-title">🛡️ 安全防护</div>
+                            <div class="sec-card-body">
+                                <div class="setting-group">
+                                    <label data-i18n="web.security.label_6">第三方杀毒软件</label>
+                                    <input type="text" id="setAntivirusPath" data-i18n-ph="web.security.placeholder_4" placeholder="杀毒软件可执行文件路径">
+                                    <div class="setting-desc" data-i18n="web.security.desc_2">挂载后所有外来文件和插件都会经过杀毒扫描</div>
+                                    <button class="btn-secondary btn-sm" onclick="testAntivirus()" style="margin-top:6px" data-i18n="web.security.button_9">测试连接</button>
+                                </div>
+                                <div class="setting-group">
+                                    <label class="setting-toggle">
+                                        <span data-i18n="web.security.span_3">启用杀毒扫描</span>
+                                        <input type="checkbox" id="setAntivirusEnabled">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 💾 数据管理 -->
+                        <div class="sec-card">
+                            <div class="sec-card-title">💾 数据管理</div>
+                            <div class="sec-card-body">
+                                <div class="setting-group">
+                                    <label data-i18n="web.security.label_7">数据操作</label>
+                                    <div class="btn-group" style="display:flex;gap:8px;flex-wrap:wrap;">
+                                        <button class="btn-secondary btn-sm" onclick="exportData()" data-i18n="web.security.button_10">📤 导出所有数据</button>
+                                        <button class="btn-danger btn-sm" onclick="clearAllData()" data-i18n="web.security.button_11">🗑️ 清除所有数据</button>
+                                    </div>
+                                    <div class="setting-desc" style="margin-top:8px" data-i18n="web.security.desc_3">⚠️ 清除数据操作不可逆，建议先导出备份</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 🔑 密码保护的操作 -->
+                        <div class="sec-card">
+                            <div class="sec-card-title">🔑 密码保护的操作</div>
+                            <div class="sec-card-body">
+                                <div class="setting-desc" style="margin-bottom:12px" data-i18n="web.security.desc_4">勾选后，执行对应操作前必须验证管理员密码。建议对高风险操作开启保护。</div>
+
+                                <!-- 数据操作 -->
+                                <div class="pwd-group-label">📂 数据操作</div>
+                                <div class="pwd-toggle-row">
+                                    <label class="setting-toggle"><span data-i18n="web.security.span_4">清除所有数据</span><input type="checkbox" id="pwdProtect-clearAllData" onchange="savePwdProtectAction('clearAllData', this.checked)"><span class="toggle-slider"></span></label>
+                                    <label class="setting-toggle"><span data-i18n="web.security.span_5">恢复默认设置</span><input type="checkbox" id="pwdProtect-resetSettings" onchange="savePwdProtectAction('resetSettings', this.checked)"><span class="toggle-slider"></span></label>
+                                    <label class="setting-toggle"><span data-i18n="web.security.span_6">重置风格包</span><input type="checkbox" id="pwdProtect-resetStylePack" onchange="savePwdProtectAction('resetStylePack', this.checked)"><span class="toggle-slider"></span></label>
+                                </div>
+
+                                <!-- 模型 & 知识库 -->
+                                <div class="pwd-group-label">🤖 模型 & 知识库</div>
+                                <div class="pwd-toggle-row">
+                                    <label class="setting-toggle"><span data-i18n="web.security.span_7">删除模型</span><input type="checkbox" id="pwdProtect-deleteModel" onchange="savePwdProtectAction('deleteModel', this.checked)"><span class="toggle-slider"></span></label>
+                                    <label class="setting-toggle"><span data-i18n="web.security.span_8">删除自定义模型</span><input type="checkbox" id="pwdProtect-deleteCustomModel" onchange="savePwdProtectAction('deleteCustomModel', this.checked)"><span class="toggle-slider"></span></label>
+                                    <label class="setting-toggle"><span data-i18n="web.security.span_9">删除已萃取知识</span><input type="checkbox" id="pwdProtect-deleteExtractedKnowledge" onchange="savePwdProtectAction('deleteExtractedKnowledge', this.checked)"><span class="toggle-slider"></span></label>
+                                </div>
+
+                                <!-- 插件 & 设备 -->
+                                <div class="pwd-group-label">🔌 插件 & 设备</div>
+                                <div class="pwd-toggle-row">
+                                    <label class="setting-toggle"><span data-i18n="web.security.span_10">删除技能</span><input type="checkbox" id="pwdProtect-deleteSkill" onchange="savePwdProtectAction('deleteSkill', this.checked)"><span class="toggle-slider"></span></label>
+                                    <label class="setting-toggle"><span data-i18n="web.security.span_11">删除/卸载插件</span><input type="checkbox" id="pwdProtect-uninstallPlugin" onchange="savePwdProtectAction('uninstallPlugin', this.checked)"><span class="toggle-slider"></span></label>
+                                    <label class="setting-toggle"><span data-i18n="web.security.span_12">删除 IoT 设备</span><input type="checkbox" id="pwdProtect-deleteDevice" onchange="savePwdProtectAction('deleteDevice', this.checked)"><span class="toggle-slider"></span></label>
+                                </div>
+
+                                <!-- 网络 & 自动化 -->
+                                <div class="pwd-group-label">📡 网络 & 自动化</div>
+                                <div class="pwd-toggle-row">
+                                    <label class="setting-toggle"><span data-i18n="web.security.span_13">删除 IM 渠道</span><input type="checkbox" id="pwdProtect-deleteChannel" onchange="savePwdProtectAction('deleteChannel', this.checked)"><span class="toggle-slider"></span></label>
+                                    <label class="setting-toggle"><span data-i18n="web.security.span_14">删除定时任务</span><input type="checkbox" id="pwdProtect-deleteSchedulerTask" onchange="savePwdProtectAction('deleteSchedulerTask', this.checked)"><span class="toggle-slider"></span></label>
+                                    <label class="setting-toggle"><span data-i18n="web.security.span_15">删除工作流</span><input type="checkbox" id="pwdProtect-deleteWorkflow" onchange="savePwdProtectAction('deleteWorkflow', this.checked)"><span class="toggle-slider"></span></label>
+                                    <label class="setting-toggle"><span data-i18n="web.security.span_16">清除访问码</span><input type="checkbox" id="pwdProtect-clearAccessCode" onchange="savePwdProtectAction('clearAccessCode', this.checked)"><span class="toggle-slider"></span></label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 🌐 网络安全 -->
+                        <div class="sec-card">
+                            <div class="sec-card-title">🌐 网络安全</div>
+                            <div class="sec-card-body">
+                                <div class="setting-desc" style="margin-bottom:12px" data-i18n="web.security.desc_5">控制 Harven 的网络请求范围，防止 SSRF 攻击和未授权的外部访问。</div>
+                                <div style="margin-bottom:10px;">
+                                    <label class="setting-toggle">
+                                        <span data-i18n="web.security.span_17">启用 SSRF 防护</span>
+                                        <input type="checkbox" id="setSsrfEnabled" checked onchange="saveSecuritySetting('ssrf_protection', this.checked)">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                    <div class="setting-desc" data-i18n="web.security.desc_6">阻止 AI 工具/插件发起内网 IP 请求（10.x / 192.168.x / 127.x / ::1）</div>
+                                </div>
+                                <div style="margin-bottom:10px;">
+                                    <label class="setting-toggle">
+                                        <span data-i18n="web.security.span_18">插件网络访问白名单模式</span>
+                                        <input type="checkbox" id="setPluginNetWhitelist" onchange="saveSecuritySetting('plugin_network_whitelist', this.checked)">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                    <div class="setting-desc" data-i18n="web.security.desc_7">开启后插件只能访问白名单内的域名（更严格，建议生产环境开启）</div>
+                                </div>
+                                <div>
+                                    <label style="font-size:12px;color:var(--text-secondary);" data-i18n="web.security.label_8">插件允许访问的域名（每行一个）</label>
+                                    <textarea id="setPluginAllowedDomains" rows="3" placeholder="例如：&#10;api.openai.com&#10;api.deepseek.com" style="width:100%;box-sizing:border-box;font-size:12px;margin-top:4px;" onblur="saveSecuritySetting('plugin_allowed_domains', this.value)"></textarea>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ⏱️ 速率限制 -->
+                        <div class="sec-card">
+                            <div class="sec-card-title">⏱️ 速率限制</div>
+                            <div class="sec-card-body">
+                                <div class="setting-desc" style="margin-bottom:12px" data-i18n="web.security.desc_8">防止恶意用户高频刷接口，保护 Harven 稳定运行。</div>
+                                <div style="margin-bottom:12px;">
+                                    <label class="setting-toggle">
+                                        <span data-i18n="web.security.span_19">启用速率限制</span>
+                                        <input type="checkbox" id="setRateLimitEnabled" checked onchange="saveSecuritySetting('rate_limit_enabled', this.checked)">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                                    <div>
+                                        <label style="font-size:12px;color:var(--text-secondary);" data-i18n="web.security.label_9">每分钟最大请求数（/api/chat）</label>
+                                        <input type="number" id="setRateLimitChat" value="30" min="5" max="300" style="width:100%;box-sizing:border-box;" onblur="saveSecuritySetting('rate_limit_chat', parseInt(this.value)||30)">
+                                    </div>
+                                    <div>
+                                        <label style="font-size:12px;color:var(--text-secondary);" data-i18n="web.security.label_10">每分钟最大请求数（全局）</label>
+                                        <input type="number" id="setRateLimitGlobal" value="120" min="10" max="1000" style="width:100%;box-sizing:border-box;" onblur="saveSecuritySetting('rate_limit_global', parseInt(this.value)||120)">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 🐳 代码沙箱 -->
+                        <div class="sec-card">
+                            <div class="sec-card-title">🐳 代码沙箱安全</div>
+                            <div class="sec-card-body">
+                                <div class="setting-desc" style="margin-bottom:12px" data-i18n="web.security.desc_9">控制 Harven 的代码执行环境，防止 AI 生成的代码对系统造成危害。</div>
+                                <div style="margin-bottom:10px;">
+                                    <label class="setting-toggle">
+                                        <span data-i18n="web.security.span_20">沙箱代码执行（Docker 隔离）</span>
+                                        <input type="checkbox" id="setSandboxEnabled" onchange="saveSecuritySetting('sandbox_enabled', this.checked)">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                    <div class="setting-desc" data-i18n="web.security.desc_10">AI 生成的代码在 Docker 容器中运行，与宿主机完全隔离（需提前安装 Docker）</div>
+                                </div>
+                                <div style="margin-bottom:10px;">
+                                    <label class="setting-toggle">
+                                        <span data-i18n="web.security.span_21">沙箱网络隔离（默认开启）</span>
+                                        <input type="checkbox" id="setSandboxNetIsolate" checked onchange="saveSecuritySetting('sandbox_network_isolate', this.checked)">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                    <div class="setting-desc" data-i18n="web.security.desc_11">容器内代码无法访问外部网络</div>
+                                </div>
+                                <div>
+                                    <label style="font-size:12px;color:var(--text-secondary);" data-i18n="web.security.label_11">单次执行超时（秒）</label>
+                                    <input type="number" id="setSandboxTimeout" value="30" min="5" max="300" style="width:100px;box-sizing:border-box;" onblur="saveSecuritySetting('sandbox_timeout', parseInt(this.value)||30)">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 🔗 设备绑定 -->
+                        <div class="sec-card">
+                            <div class="sec-card-title">🔗 设备绑定策略</div>
+                            <div class="sec-card-body">
+                                <div class="setting-desc" style="margin-bottom:12px" data-i18n="web.security.desc_12">控制 Harven 如何处理硬件变更。方案A（推荐）：不锁死，仅记录指纹日志。</div>
+                                <div style="margin-bottom:10px;">
+                                    <label style="font-size:12px;color:var(--text-secondary);" data-i18n="web.security.label_12">绑定策略</label>
+                                    <select id="setDeviceBindPolicy" style="width:100%;box-sizing:border-box;margin-top:4px;" onchange="saveSecuritySetting('device_bind_policy', this.value)">
+                                        <option value="none" data-i18n="web.security.option_5">🟢 不绑定 — 任意设备均可运行（默认）</option>
+                                        <option value="log_only" data-i18n="web.security.option_6">🟡 方案A — 记录指纹日志，不阻止启动（推荐）</option>
+                                        <option value="warn" data-i18n="web.security.option_7">🟠 方案B — 硬件变更时警告，不阻止</option>
+                                        <option value="strict" data-i18n="web.security.option_8">🔴 方案C — 严格绑定，硬件变更后拒绝启动</option>
+                                    </select>
+                                </div>
+                                <div id="deviceFingerprintInfo" style="font-size:12px;color:var(--text-secondary);background:var(--bg-primary);padding:10px;border-radius:6px;">
+                                    <button class="btn-secondary btn-sm" onclick="loadDeviceFingerprint()" data-i18n="web.security.button_12">🔍 查看当前设备指纹</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 🔍 内容安全 -->
+                        <div class="sec-card">
+                            <div class="sec-card-title">🔍 内容安全</div>
+                            <div class="sec-card-body">
+                                <div style="margin-bottom:10px;">
+                                    <label class="setting-toggle">
+                                        <span data-i18n="web.security.span_22">启用 Prompt 注入检测</span>
+                                        <input type="checkbox" id="setInjectionDetect" checked onchange="saveSecuritySetting('injection_detection', this.checked)">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                    <div class="setting-desc" data-i18n="web.security.desc_13">检测并过滤试图篡改 AI 系统提示词的恶意输入</div>
+                                </div>
+                                <div style="margin-bottom:10px;">
+                                    <label class="setting-toggle">
+                                        <span data-i18n="web.security.span_23">上传文件病毒扫描</span>
+                                        <input type="checkbox" id="setFileScanEnabled" onchange="saveSecuritySetting('file_scan_enabled', this.checked)">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                    <div class="setting-desc" data-i18n="web.security.desc_14">知识库上传文件时自动扫描（需配置杀毒软件路径）</div>
+                                </div>
+                                <div>
+                                    <label style="font-size:12px;color:var(--text-secondary);" data-i18n="web.security.label_13">杀毒软件路径</label>
+                                    <div style="display:flex;gap:8px;margin-top:4px;">
+                                        <input type="text" id="setAntivirusPath2" data-i18n-ph="web.security.placeholder_5" placeholder="例如：C:\Program Files\ClamWin\bin\clamscan.exe" style="flex:1;box-sizing:border-box;">
+                                        <button class="btn-secondary btn-sm" onclick="testAntivirus2()" data-i18n="web.security.button_13">测试</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div><!-- /security-layout -->
+                </div>

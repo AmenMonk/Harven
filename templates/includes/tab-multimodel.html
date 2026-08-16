@@ -1,0 +1,484 @@
+<!-- Tab: 多模型配置（外脑 API Key 设置）-->
+<div class="tab-panel" id="tab-multimodel">
+    <div class="settings-grid">
+        <div style="background:linear-gradient(135deg,#1a1a3e,#2d2d5e);border-radius:12px;padding:16px;margin-bottom:16px;border:1px solid #667eea;">
+            <div style="font-weight:600;color:#a78bfa;margin-bottom:8px;">💡 外脑模式怎么用？</div>
+            <div style="font-size:12px;color:#94a3b8;line-height:1.6;">
+                🤖<b>外脑</b> = 调用外部 AI 模型替你回答问题<br>
+                不需要下载本地模型，填 <b>API Key</b> 就行。<br>
+                已配置 <b id="connectedModelCount">0</b> 个外脑
+            </div>
+        </div>
+
+        <div class="setting-section-title" data-i18n="web.multimodel.title_1">🔑 外部模型 API 密钥</div>
+        
+        <!-- DeepSeek -->
+        <div class="setting-group provider-card" style="border-left:3px solid #667eea;padding:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <label style="margin:0;">🤖 DeepSeek 
+                    <a href="https://platform.deepseek.com/api_keys" target="_blank" style="font-size:11px;color:#667eea;">去获取 →</a>
+                </label>
+                <span id="statusDeepSeek" style="font-size:11px;color:#888;">⏳...</span>
+            </div>
+            <input type="password" id="setDeepSeekKey" class="form-input" placeholder="sk-xxxxxxxxxxxxxxxx" style="width:100%;box-sizing:border-box;font-family:monospace;margin-top:6px;">
+            <div style="display:flex;gap:6px;margin-top:4px;align-items:center;">
+                <span style="font-size:11px;color:#888;" data-i18n="web.multimodel.span_1">模型:</span>
+                <input type="text" id="setDeepSeekModel" list="deepseekModelList" onchange="saveApiKeys()" style="flex:1;font-size:11px;" data-i18n-ph="web.multimodel.placeholder_1" placeholder="输入或选择模型名" value="deepseek-v4-pro">
+                <datalist id="deepseekModelList">
+                    <option value="deepseek-v4-pro" data-i18n="web.multimodel.option_1">V4 Pro (最强)</option>
+                    <option value="deepseek-v4-flash" data-i18n="web.multimodel.option_2">V4 Flash (极速)</option>
+                    <option value="deepseek-chat">deepseek-chat (V3)</option>
+                    <option value="deepseek-reasoner">deepseek-reasoner (R1)</option>
+                </datalist>
+            </div>
+
+        <!-- 豆包 -->
+        <div class="setting-group provider-card" style="border-left:3px solid #00d2ff;padding:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <label style="margin:0;">🎈 豆包（火山引擎）
+                    <a href="https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey" target="_blank" style="font-size:11px;color:#00d2ff;">去获取 →</a>
+                </label>
+                <span id="statusDoubao" style="font-size:11px;color:#888;">⏳...</span>
+            </div>
+            <input type="password" id="setDoubaoKey" class="form-input" placeholder="ark-xxxxxxxx" style="width:100%;box-sizing:border-box;font-family:monospace;margin-top:6px;">
+            <div style="font-size:11px;color:#666;margin-top:4px;">📝 console.volcengine.com → API密钥管理 → 创建 → 复制粘贴</div>
+            <div style="display:flex;gap:6px;margin-top:4px;align-items:center;">
+                <span style="font-size:11px;color:#888;" data-i18n="web.multimodel.span_2">模型:</span>
+                <input type="text" id="setDoubaoModel" list="doubaoModelList" onchange="saveApiKeys()" style="flex:1;font-size:11px;" data-i18n-ph="web.multimodel.placeholder_2" placeholder="输入或选择模型名" value="doubao-seed-2-0-pro-260215">
+                <datalist id="doubaoModelList">
+                    <option value="doubao-seed-2-0-pro-260215">Seed 2.0 Pro</option>
+                    <option value="doubao-seed-2-0-mini-260215">Seed 2.0 Mini</option>
+                    <option value="doubao-1-5-pro-32k-250115">1.5 Pro 32K</option>
+                    <option value="doubao-1-5-lite-32k-250115">1.5 Lite 32K</option>
+                </datalist>
+            </div>
+        </div>
+
+        <!-- 千问 -->
+        <div class="setting-group provider-card" style="border-left:3px solid #22c55e;padding:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <label style="margin:0;">🧠 通义千问
+                    <a href="https://dashscope.console.aliyun.com/apiKey" target="_blank" style="font-size:11px;color:#22c55e;">去获取 →</a>
+                </label>
+                <span id="statusQwen" style="font-size:11px;color:#888;">⏳...</span>
+            </div>
+            <input type="password" id="setQwenKey" class="form-input" placeholder="sk-xxxxxxxxxxxxxxxx" style="width:100%;box-sizing:border-box;font-family:monospace;margin-top:6px;">
+            <div style="font-size:11px;color:#666;margin-top:4px;">📝 dashscope.aliyun.com → API-KEY管理 → 创建 → 复制粘贴</div>
+        </div>
+
+        <!-- Kimi -->
+        <div class="setting-group provider-card" style="border-left:3px solid #f59e0b;padding:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <label style="margin:0;">🌙 Moonshot/Kimi
+                    <a href="https://platform.moonshot.cn/console/api-keys" target="_blank" style="font-size:11px;color:#f59e0b;">去获取 →</a>
+                </label>
+                <span id="statusKimi" style="font-size:11px;color:#888;">⏳...</span>
+            </div>
+            <input type="password" id="setKimiKey" class="form-input" placeholder="sk-xxxxxxxxxxxxxxxx" style="width:100%;box-sizing:border-box;font-family:monospace;margin-top:6px;">
+            <div style="font-size:11px;color:#666;margin-top:4px;">📝 platform.moonshot.cn → API Keys → 新建 → 复制粘贴</div>
+        </div>
+
+        <!-- 智谱GLM -->
+        <div class="setting-group provider-card" style="border-left:3px solid #3b82f6;padding:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <label style="margin:0;">🧊 智谱AI (GLM)
+                    <a href="https://open.bigmodel.cn/usercenter/apikeys" target="_blank" style="font-size:11px;color:#3b82f6;">去获取 →</a>
+                </label>
+                <span id="statusZhipu" style="font-size:11px;color:#888;">⏳...</span>
+            </div>
+            <input type="password" id="setZhipuKey" class="form-input" placeholder="xxx.xxxxxxxxxxxxxxxx" style="width:100%;box-sizing:border-box;font-family:monospace;margin-top:6px;">
+            <div style="display:flex;gap:6px;margin-top:4px;align-items:center;">
+                <span style="font-size:11px;color:#888;" data-i18n="web.multimodel.span_3">模型:</span>
+                <input type="text" id="setZhipuModel" list="zhipuModelList" onchange="saveApiKeys()" style="flex:1;font-size:11px;" data-i18n-ph="web.multimodel.placeholder_3" placeholder="输入或选择模型名（如glm-5.2）" value="glm-4-plus">
+                <datalist id="zhipuModelList">
+                    <option value="glm-5.2" data-i18n="web.multimodel.option_3">GLM-5.2 (最新)</option>
+                    <option value="glm-4-plus">GLM-4-Plus</option>
+                    <option value="glm-4-air">GLM-4-Air</option>
+                    <option value="glm-4-flash" data-i18n="web.multimodel.option_4">GLM-4-Flash (免费)</option>
+                    <option value="glm-4-long" data-i18n="web.multimodel.option_5">GLM-4-Long (长文本)</option>
+                </datalist>
+            </div>
+            <div style="font-size:11px;color:#666;margin-top:4px;">📝 open.bigmodel.cn → API Keys → 创建 → 复制粘贴</div>
+        </div>
+
+        <!-- 零一万物 -->
+        <div class="setting-group provider-card" style="border-left:3px solid #10b981;padding:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <label style="margin:0;">🌟 零一万物 (Yi)
+                    <a href="https://platform.lingyiwanwu.com/apikeys" target="_blank" style="font-size:11px;color:#10b981;">去获取 →</a>
+                </label>
+                <span id="statusYi" style="font-size:11px;color:#888;">⏳...</span>
+            </div>
+            <input type="password" id="setYiKey" class="form-input" placeholder="sk-xxxxxxxxxxxxxxxx" style="width:100%;box-sizing:border-box;font-family:monospace;margin-top:6px;">
+            <div style="display:flex;gap:6px;margin-top:4px;align-items:center;">
+                <span style="font-size:11px;color:#888;" data-i18n="web.multimodel.span_4">模型:</span>
+                <input type="text" id="setYiModel" list="yiModelList" onchange="saveApiKeys()" style="flex:1;font-size:11px;" data-i18n-ph="web.multimodel.placeholder_4" placeholder="输入模型名" value="yi-lightning">
+                <datalist id="yiModelList">
+                    <option value="yi-lightning" data-i18n="web.multimodel.option_6">Yi Lightning (快)</option>
+                    <option value="yi-large" data-i18n="web.multimodel.option_7">Yi Large (强)</option>
+                    <option value="yi-medium">Yi Medium</option>
+                    <option value="yi-vision-plus" data-i18n="web.multimodel.option_8">Yi Vision (视觉)</option>
+                </datalist>
+            </div>
+        </div>
+
+        <!-- 百川 -->
+        <div class="setting-group provider-card" style="border-left:3px solid #ef4444;padding:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <label style="margin:0;">🏔️ 百川 (Baichuan)
+                    <a href="https://platform.baichuan-ai.com/console/apikey" target="_blank" style="font-size:11px;color:#ef4444;">去获取 →</a>
+                </label>
+                <span id="statusBaichuan" style="font-size:11px;color:#888;">⏳...</span>
+            </div>
+            <input type="password" id="setBaichuanKey" class="form-input" placeholder="sk-xxxxxxxxxxxxxxxx" style="width:100%;box-sizing:border-box;font-family:monospace;margin-top:6px;">
+            <div style="font-size:11px;color:#666;margin-top:4px;">📝 platform.baichuan-ai.com → API Key → 创建</div>
+        </div>
+
+        <!-- 阶跃星辰 -->
+        <div class="setting-group provider-card" style="border-left:3px solid #8b5cf6;padding:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <label style="margin:0;">⚡ 阶跃星辰 (Step)
+                    <a href="https://platform.stepfun.com/console/apikey" target="_blank" style="font-size:11px;color:#8b5cf6;">去获取 →</a>
+                </label>
+                <span id="statusStepfun" style="font-size:11px;color:#888;">⏳...</span>
+            </div>
+            <input type="password" id="setStepfunKey" class="form-input" placeholder="sk-xxxxxxxxxxxxxxxx" style="width:100%;box-sizing:border-box;font-family:monospace;margin-top:6px;">
+            <div style="font-size:11px;color:#666;margin-top:4px;">📝 platform.stepfun.com → API Key → 创建</div>
+        </div>
+
+        <!-- 当前外脑选择 -->
+        <div class="setting-group" style="border:2px dashed #667eea;border-radius:8px;padding:10px;margin-top:12px;background:#1a1a2e;">
+            <label style="font-weight:600;" data-i18n="web.multimodel.label_1">🤖 当前使用的外脑</label>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:6px;">
+                <select id="setForeignModel" onchange="switchForeignModel()" style="flex:1;">
+                    <option value="" data-i18n="web.multimodel.option_9">🏠 不用外脑（纯本地）</option>
+                    <option value="deepseek">DeepSeek</option>
+                    <option value="doubao" data-i18n="web.multimodel.option_10">豆包（火山引擎）</option>
+                    <option value="qwen" data-i18n="web.multimodel.option_11">通义千问</option>
+                    <option value="kimi">Kimi（Moonshot）</option>
+                    <option value="zhipu" data-i18n="web.multimodel.option_12">智谱AI (GLM)</option>
+                    <option value="yi" data-i18n="web.multimodel.option_13">零一万物 (Yi)</option>
+                    <option value="baichuan" data-i18n="web.multimodel.option_14">百川 (Baichuan)</option>
+                    <option value="stepfun" data-i18n="web.multimodel.option_15">阶跃星辰 (Step)</option>
+                </select>
+                <span id="foreignModelStatus" style="font-size:11px;color:#888;white-space:nowrap;"></span>
+            </div>
+            <!-- 协作外脑深度搜索开关 -->
+            <div style="margin-top:10px;display:flex;align-items:center;gap:8px;padding:8px;background:#1a1a3e;border-radius:6px;border:1px solid #2a2a4a;">
+                <label class="setting-toggle" style="flex-shrink:0;">
+                    <input type="checkbox" id="setDeepSearch" onchange="toggleDeepSearch()">
+                    <span class="toggle-slider"></span>
+                </label>
+                <div style="flex:1;">
+                    <div style="font-size:12px;font-weight:600;color:#c4a1ff;">🔍 深度搜索 <span id="deepSearchLabel" style="font-size:10px;color:#888;" data-i18n="web.multimodel.span_5">(关闭)</span></div>
+                    <div style="font-size:10px;color:#94a3b8;">外脑出搜索策略 · 每次查询额外 1 次 API 调用</div>
+                </div>
+            </div>
+        <!-- 按钮组 -->
+        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+            <button class="btn-primary" onclick="saveApiKeys()" data-i18n="web.multimodel.button_1">💾 保存</button>
+            <button class="btn-secondary" onclick="testApiConnection()" data-i18n="web.multimodel.button_2">🔌 全部检测</button>
+            <button class="btn-secondary" onclick="checkAllStatus()" data-i18n="web.multimodel.button_3">🔄 刷新状态</button>
+            <button class="btn-secondary" onclick="showAddProvider()" data-i18n="web.multimodel.button_4">➕ 添加新模型</button>
+        </div>
+        <div id="apiTestResult" style="font-size:12px;margin-top:8px;"></div>
+
+        <!-- 🔒 外脑隐私档位 -->
+        <div class="setting-section-title" style="margin-top:24px;" data-i18n="web.multimodel.title_2">🔒 外脑隐私档位</div>
+        <div class="setting-group" style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:14px;">
+            <div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px;">
+                控制使用外脑（直接模式 + 协作模式）时，传给外部 AI 的数据范围。
+                只要选了外脑就代表信任，默认全量传数据。
+            </div>
+            <select id="setPrivacyLevel" onchange="savePrivacyLevel()" style="width:100%;box-sizing:border-box;font-size:13px;">
+                <option value="full" data-i18n="web.multimodel.option_16">📤 全量 — 完整对话上下文（信任该外脑，传全部数据）</option>
+                <option value="balanced" data-i18n="web.multimodel.option_17">⚖️ 平衡 — 自动替换敏感字段（身份证号/手机号/邮箱/IP/金额）</option>
+                <option value="strict" data-i18n="web.multimodel.option_18">🔒 严格 — 仅传去敏后的问题摘要（不传任何个人信息）</option>
+            </select>
+        </div>
+
+        <!-- 添加自定义模型表单 -->
+        <div id="addProviderForm" style="background:#1a1a2e;padding:16px;border-radius:8px;margin-top:12px;border:1px solid #667eea;">
+            <div style="font-weight:600;color:#667eea;margin-bottom:8px;">➕ 添加自定义外部模型</div>
+            <div class="setting-group">
+                <label data-i18n="web.multimodel.label_2">模型名称（显示用）</label>
+                <input type="text" id="newProviderName" data-i18n-ph="web.multimodel.placeholder_5" placeholder="例如：硅基流动、OpenRouter" style="width:100%;box-sizing:border-box;">
+            </div>
+            <div class="setting-group">
+                <label data-i18n="web.multimodel.label_3">模型 ID（英文，唯一）</label>
+                <input type="text" id="newProviderId" data-i18n-ph="web.multimodel.placeholder_6" placeholder="例如：siliconflow" style="width:100%;box-sizing:border-box;">
+            </div>
+            <div class="setting-group">
+                <label data-i18n="web.multimodel.label_4">API 基础地址</label>
+                <input type="text" id="newProviderUrl" placeholder="https://api.siliconflow.cn/v1" style="width:100%;box-sizing:border-box;">
+            </div>
+            <div class="setting-group">
+                <label data-i18n="web.multimodel.label_5">模型名列表（逗号分隔）</label>
+                <input type="text" id="newProviderModels" placeholder="Qwen/Qwen2.5-7B-Instruct, deepseek-ai/DeepSeek-V2" style="width:100%;box-sizing:border-box;">
+            </div>
+            <div class="setting-group">
+                <label>API Key</label>
+                <input type="password" id="newProviderKey" placeholder="sk-xxxx" style="width:100%;box-sizing:border-box;font-family:monospace;">
+            </div>
+            <div style="display:flex;gap:8px;">
+                <button class="btn-primary btn-sm" onclick="addNewProvider()" data-i18n="web.multimodel.button_5">✅ 添加</button>
+            </div>
+        </div>
+    </div>
+    </div>
+</div>
+
+<script>
+// ═══ 函数 ═══
+window.saveApiKeys = async function() {
+    var keys = {
+        deepseek: document.getElementById('setDeepSeekKey')?.value || '',
+        doubao:   document.getElementById('setDoubaoKey')?.value || '',
+        qwen:     document.getElementById('setQwenKey')?.value || '',
+        kimi:     document.getElementById('setKimiKey')?.value || '',
+        zhipu:    document.getElementById('setZhipuKey')?.value || '',
+        yi:       document.getElementById('setYiKey')?.value || '',
+        baichuan: document.getElementById('setBaichuanKey')?.value || '',
+        stepfun:  document.getElementById('setStepfunKey')?.value || '',
+    };
+    // ★ 模型选择
+    var models = {
+        deepseek: document.getElementById('setDeepSeekModel')?.value || 'deepseek-v4-pro',
+        doubao:   document.getElementById('setDoubaoModel')?.value || 'doubao-seed-2-0-pro-260215',
+        zhipu:    document.getElementById('setZhipuModel')?.value || 'glm-4-plus',
+        yi:       document.getElementById('setYiModel')?.value || 'yi-lightning',
+    };
+    try {
+        var r = await fetch('/api/models/api-keys', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keys: keys, models: models})});
+        var d = await r.json();
+        if (d.success) { toast('✅ 已保存'); checkAllStatus(); loadForeignModelDropdown(); }
+        else toast('❌ 保存失败', 'error');
+    } catch(e) { toast('保存失败', 'error'); }
+};
+
+window.testApiConnection = async function() {
+    var res = document.getElementById('apiTestResult');
+    res.innerHTML = '<span style="color:#f59e0b;" data-i18n="web.multimodel.span_6">⏳ 正在逐个测试...</span>';
+    try {
+        var r = await fetch('/api/models/test-connect', {method:'POST'});
+        var d = await r.json();
+        if (d.success) { var NAMES={deepseek:'DeepSeek',doubao:'豆包',qwen:'通义千问',kimi:'Kimi',zhipu:'智谱AI (GLM)',yi:'零一万物',baichuan:'百川',stepfun:'阶跃星辰'}; res.innerHTML = '<span style="color:#0f0;">✅ ' + (NAMES[d.model]||d.model) + '</span>'; }
+        else res.innerHTML = '<span style="color:#f00;" data-i18n="web.multimodel.span_7">❌ ' + (d.error||'连接失败') + '</span>';
+    } catch(e) { res.innerHTML = '<span style="color:#f00;" data-i18n="web.multimodel.span_8">网络错误</span>'; }
+    checkAllStatus();
+};
+
+window.checkAllStatus = async function() {
+    // ★ 2026-08-09: 清旧检测结果（避免"✅ deepseek"残留）
+    var apiTest = document.getElementById('apiTestResult');
+    if (apiTest) apiTest.innerHTML = '';
+    var providers = {deepseek:'statusDeepSeek',doubao:'statusDoubao',qwen:'statusQwen',kimi:'statusKimi',zhipu:'statusZhipu',yi:'statusYi',baichuan:'statusBaichuan',stepfun:'statusStepfun'};
+    var NAMES = {deepseek:'DeepSeek',doubao:'豆包',qwen:'通义千问',kimi:'Kimi',zhipu:'智谱AI (GLM)',yi:'零一万物',baichuan:'百川',stepfun:'阶跃星辰'};
+    try {
+        var [keysResp, modelResp] = await Promise.all([
+            fetch('/api/models/api-keys').then(r=>r.json()),
+            fetch('/api/models/current-foreign').then(r=>r.json()).catch(()=>({model:''}))
+        ]);
+        var keys = keysResp.keys || {};
+        var currentModel = modelResp.model || '';
+        for (var pid in providers) {
+            var el = document.getElementById(providers[pid]);
+            if (!el) continue;
+            if (keys[pid] && keys[pid].configured) {
+                el.innerHTML = '<span style="color:#0f0;" data-i18n="web.multimodel.span_9">✅ 已配置</span>';
+            } else {
+                el.innerHTML = '<span style="color:#e53e3e;" data-i18n="web.multimodel.span_10">❌ 未配置</span>';
+            }
+        }
+        // ★ 底部只显示当前在用的模型
+        var countEl = document.getElementById('connectedModelCount');
+        if (countEl) {
+            if (currentModel) {
+                countEl.innerHTML = '🔵 <b>' + (NAMES[currentModel]||currentModel) + '</b>';
+                countEl.style.color = '#0f0';  // ★ 2026-08-09: 当前外脑用绿色
+            } else {
+                countEl.innerHTML = '🏠 纯本地模式';
+                countEl.style.color = '#888';
+            }
+        }
+    } catch(e) { console.log('状态检测失败', e); }
+};
+
+window.showAddProvider = function() {
+    var f = document.getElementById('addProviderForm');
+    f.scrollIntoView({behavior:'smooth'});
+    document.getElementById('newProviderName').focus();
+};
+
+window.addNewProvider = async function() {
+    var data = {
+        provider_id: document.getElementById('newProviderId').value.trim(),
+        name: document.getElementById('newProviderName').value.trim(),
+        base_url: document.getElementById('newProviderUrl').value.trim(),
+        api_key: document.getElementById('newProviderKey').value.trim(),
+        models: document.getElementById('newProviderModels').value.split(',').map(function(s){return s.trim();}).filter(Boolean),
+        model_name: document.getElementById('newProviderModels').value.split(',')[0]?.trim() || ''
+    };
+    if (!data.provider_id || !data.name || !data.base_url) { toast('请填写 ID、名称和地址', 'error'); return; }
+    try {
+        var r = await fetch('/api/models/custom-provider', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+        var d = await r.json();
+        if (d.success) { toast('✅ 已添加 ' + data.name); document.getElementById('addProviderForm').style.display='none'; loadForeignModelDropdown(); checkAllStatus(); }
+        else toast('❌ ' + (d.error||'失败'), 'error');
+    } catch(e) { toast('添加失败', 'error'); }
+};
+
+window.switchForeignModel = async function() {
+    var model = document.getElementById('setForeignModel').value;
+    var s = document.getElementById('foreignModelStatus');
+    // ★ ID→中文名映射
+    var NAMES = {deepseek:'DeepSeek',doubao:'豆包',qwen:'通义千问',kimi:'Kimi',zhipu:'智谱AI (GLM)',yi:'零一万物',baichuan:'百川',stepfun:'阶跃星辰'};
+    var dispName = NAMES[model] || model || '纯本地';
+    s.innerHTML = '<span style="color:#f59e0b;" data-i18n="web.multimodel.span_11">⏳ 切换中...</span>';
+    // ★ 2026-08-09: 清旧检测结果
+    var apiTest = document.getElementById('apiTestResult');
+    if (apiTest) apiTest.innerHTML = '';
+    try {
+        var r = await fetch('/api/models/switch-foreign', {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({model: model})
+        });
+        var d = await r.json();
+        if (d.success) {
+            var curName = NAMES[d.current] || d.current || '本地';
+            s.innerHTML = '<span style="color:#0f0;">✅ ' + curName + '</span>';
+            toast('🤖 外脑: ' + curName);
+            checkAllStatus();
+            loadForeignModel();  // ★ 2026-08-09: 刷新当前外脑显示
+        } else {
+            s.innerHTML = '<span style="color:#e53e3e;" data-i18n="web.multimodel.span_12">❌ ' + (d.error||'切换失败') + '</span>';
+        }
+    } catch(e) {
+        s.innerHTML = '<span style="color:#e53e3e;">❌</span>';
+    }
+};
+
+// ★ 2026-08-03: 动态加载外脑下拉框（含自定义模型）
+window.loadForeignModelDropdown = async function() {
+    var sel = document.getElementById('setForeignModel');
+    if (!sel) return;
+    var currentVal = sel.value;
+    try {
+        // 获取所有已配置的模型
+        var r = await fetch('/api/models/api-keys');
+        var d = await r.json();
+        var keys = d.keys || {};
+        var models = d.models || {};
+
+        // 内置模型列表
+        var builtIn = [
+            {id:'deepseek', name:'DeepSeek'},
+            {id:'doubao', name:'豆包（火山引擎）'},
+            {id:'qwen', name:'通义千问'},
+            {id:'kimi', name:'Kimi（Moonshot）'},
+            {id:'zhipu', name:'智谱AI (GLM)'},
+            {id:'yi', name:'零一万物 (Yi)'},
+            {id:'baichuan', name:'百川 (Baichuan)'},
+            {id:'stepfun', name:'阶跃星辰 (Step)'},
+        ];
+
+        var html = '<option value="" data-i18n="web.multimodel.option_19">🏠 不用外脑（纯本地）</option>';
+        // 内置模型
+        for (var p of builtIn) {
+            var configured = keys[p.id] && keys[p.id].configured;
+            var mark = configured ? ' ✅' : '';
+            html += '<option value="' + p.id + '">' + p.name + mark + '</option>';
+        }
+        // 自定义模型
+        for (var pid in keys) {
+            if (builtIn.find(function(b){return b.id===pid;})) continue;
+            var info = keys[pid];
+            var mark = info.configured ? ' ✅' : '';
+            html += '<option value="' + pid + '" data-i18n="web.multimodel.option_20">' + (info.name||pid) + ' (自定义)' + mark + '</option>';
+        }
+        sel.innerHTML = html;
+        // 恢复之前的选择
+        if (currentVal) sel.value = currentVal;
+    } catch(e) {
+        console.log('加载外脑列表失败', e);
+    }
+};
+
+async function loadForeignModel() {
+    var NAMES = {deepseek:'DeepSeek',doubao:'豆包',qwen:'通义千问',kimi:'Kimi',zhipu:'智谱AI (GLM)',yi:'零一万物',baichuan:'百川',stepfun:'阶跃星辰'};
+    try {
+        var r = await fetch('/api/models/current-foreign');
+        var d = await r.json();
+        if (d.model) {
+            document.getElementById('setForeignModel').value = d.model;
+            var dispName = NAMES[d.model] || d.model;
+            document.getElementById('foreignModelStatus').innerHTML =
+                '<span style="color:#0f0;">✅ ' + dispName + '</span>';
+        }
+    } catch(e) {}
+}
+
+// 初始化
+setTimeout(function(){ loadForeignModelDropdown(); checkAllStatus(); loadForeignModel(); loadPrivacyLevel(); }, 1500);
+
+// 隐私档位
+async function savePrivacyLevel() {
+    var level = document.getElementById('setPrivacyLevel').value;
+    try {
+        await fetch('/api/collab/config', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({privacy_level: level})
+        });
+        toast('🔒 隐私档位: ' + level);
+    } catch(e) { console.error(e); }
+}
+window.savePrivacyLevel = savePrivacyLevel;
+
+async function loadPrivacyLevel() {
+    try {
+        var r = await fetch('/api/collab/status');
+        var d = await r.json();
+        if (d && d.privacy_level) {
+            document.getElementById('setPrivacyLevel').value = d.privacy_level;
+        }
+    } catch(e) {}
+}
+
+// ★ 深度搜索开关
+async function toggleDeepSearch() {
+    var cb = document.getElementById('setDeepSearch');
+    var enabled = cb ? cb.checked : false;
+    var lbl = document.getElementById('deepSearchLabel');
+    if (lbl) { lbl.textContent = enabled ? '(开启)' : '(关闭)'; lbl.style.color = enabled ? '#4ade80' : '#888'; }
+    
+    try {
+        await fetch('/api/collab/config', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ deep_search: enabled })
+        });
+        if (enabled) {
+            toast('🔍 深度搜索已开启 · 外脑将生成搜索策略');
+        }
+    } catch(e) {}
+}
+
+async function loadDeepSearchSetting() {
+    try {
+        var r = await fetch('/api/collab/status');
+        var d = await r.json();
+        if (d.success && d.data) {
+            var deep = d.data.deep_search || false;
+            var cb = document.getElementById('setDeepSearch');
+            if (cb) cb.checked = deep;
+            var lbl = document.getElementById('deepSearchLabel');
+            if (lbl) { lbl.textContent = deep ? '(开启)' : '(关闭)'; lbl.style.color = deep ? '#4ade80' : '#888'; }
+        }
+    } catch(e) {}
+}
+window.toggleDeepSearch = toggleDeepSearch;
+setTimeout(loadDeepSearchSetting, 1000);
+</script>
+</div>

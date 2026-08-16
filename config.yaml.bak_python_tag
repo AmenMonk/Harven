@@ -1,0 +1,130 @@
+!!python/object/new:src.utils.config.Config
+dictitems:
+  advanced_model: qwen2.5:14b
+  ai:
+    temperature: 0.7
+  app:
+    language: zh-CN
+    name: Harven AI
+    version: 0.2.0
+  data_dir: data
+  hardware:
+    advanced_vram_gb: 12
+    min_ram_gb: 16
+    min_vram_gb: 6
+  image_gen:
+    dalle:
+      api_key: ''
+      base_url: https://api.openai.com/v1
+    hunyuan:
+      secret_id: ''
+      secret_key: ''
+    provider: auto
+    stable_diffusion:
+      base_url: http://localhost:7860
+  independence:
+    allowed_domains:
+    - ollama.ai
+    - huggingface.co
+    - modelscope.cn
+    - duckduckgo.com
+    - bing.com
+    - baidu.com
+    - exa.ai
+    - google.com
+    - api.deepseek.com
+    - dashscope.aliyuncs.com
+    - api.moonshot.cn
+    - api.openai.com
+    - api.anthropic.com
+    - api.groq.com
+    - generativelanguage.googleapis.com
+    - ark.cn-beijing.volces.com
+    blocked_protocols:
+    - gRPC集群
+    - 分布式张量
+  language:
+    auto_translate: true
+    display_mode: translate
+    main_language: zh-CN
+    other_language_mode: translate
+    primary: zh-CN
+    ui_language: follow
+  memory:
+    auto_save_interval: 30
+    max_history_rounds: 40
+    snapshot_interval: 5
+    working_context_turns: 20
+  morality:
+    answer_style: friend
+    conflict_mode: gentle
+    lockdown_threshold: 3
+    lockdown_triggers:
+    - 制造危险物品
+    - 恐怖袭击
+    - 反人类
+    morality_level: default
+    show_reminders: true
+    show_thinking: false
+    warn_triggers:
+    - 伤害他人
+    - 欺骗
+    - 造假
+  normal_model: qwen2.5:7b
+  ollama:
+    base_url: http://localhost:11434
+    default_model: qwen2.5:14b
+    model_name: deepseek-r1:14b
+    model_scheduling: auto
+    models:
+    - desc: 日常对话、快速响应
+      model_id: qwen2.5:7b
+      name: Qwen2.5-7B（轻量）
+      speed: 25-40字/秒
+      vram: 5GB
+    - desc: 深度思考、复杂推理
+      model_id: qwen2.5:14b
+      name: Qwen2.5-14B（推荐）
+      speed: 10-20字/秒
+      vram: 10GB
+    - desc: 深度推理、技术分析
+      model_id: deepseek-r1:14b
+      name: DeepSeek-R1-Distill-14B
+      speed: 8-15字/秒
+      vram: 9GB
+    num_gpu: 20
+    provider_id: ollama
+    reasoning_mode: standard
+  security:
+    admin_password: '123456'
+    antivirus_enabled: false
+    antivirus_path: ''
+    auto_lock_minutes: 0
+    injection_detection: true
+    password_protected_actions: []
+    plugin_allowed_domains: ''
+    privacy_password: null
+  storage:
+    config: data/config/
+    conversations: data/conversations/
+    faiss: data/faiss/
+    knowledge: data/knowledge/
+    snapshots: data/snapshots/
+    sqlite: data/sqlite/lingzhi.db
+  ui:
+    bubble_style: default
+    font_size: medium
+    theme: light
+  user:
+    answer_preference: detailed
+    avatar: ''
+    interests: []
+    nickname: 老谭
+    profession: ''
+  web_search:
+    auto_search: false
+    default_query_mode: auto
+    enabled: true
+    search_engine: bing
+state:
+  _config_path: H:\HarvenAI\config.yaml

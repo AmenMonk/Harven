@@ -1,0 +1,117 @@
+<!-- Tab: 模型市场 -->
+<div class="tab-panel" id="modelTabContentMarket">
+    <div class="settings-grid">
+        <div style="background:linear-gradient(135deg,#1a1a3e,#2d2d5e);border-radius:12px;padding:16px;margin-bottom:16px;border:1px solid #667eea;">
+            <div style="font-weight:600;color:#667eea;margin-bottom:6px;">📦 模型下载市场</div>
+            <div style="font-size:12px;color:#94a3b8;">除 Ollama 外，更多平台可直接下载模型加载到本地</div>
+        </div>
+        <!-- 🔍 模型搜索 -->
+        <div class="setting-group" style="border-left:3px solid #667eea;padding:12px;">
+            <b>🔍 搜索并下载模型</b> <span style="font-size:11px;color:#888;" data-i18n="web.market.span_1">输入模型名（如 qwen2.5-7b / acestep-v15-turbo），搜魔搭</span>
+            <div style="display:flex;gap:6px;margin-top:8px;">
+                <input type="text" id="modelSearchInput" data-i18n-ph="web.market.placeholder_1" placeholder="输入模型名称..." style="flex:1;padding:6px 10px;border:1px solid #444;border-radius:6px;background:#1a1a2e;color:#e2e8f0;font-size:13px;" onkeydown="if(event.key==='Enter')searchAndInstall()">
+                <button class="btn-primary btn-sm" onclick="searchAndInstall()" style="white-space:nowrap;" data-i18n="web.market.button_1">🔍 搜索</button>
+            </div>
+            <div id="modelSearchResults" style="margin-top:8px;font-size:12px;"></div>
+        </div>
+        <script>
+        async function searchAndInstall() {
+            var q = document.getElementById('modelSearchInput').value.trim();
+            var el = document.getElementById('modelSearchResults');
+            if (!q) { el.innerHTML = ''; return; }
+            el.innerHTML = '⏳ 搜索中...';
+            try {
+                var r = await fetch('/api/models/search?q=' + encodeURIComponent(q));
+                var d = await r.json();
+                if (!d.results || !d.results.length) { el.innerHTML = '<span style="color:#94a3b8;" data-i18n="web.market.span_2">未找到，试试其他关键词</span>'; return; }
+                el.innerHTML = d.results.map(function(m, i) {
+                    var btnHtml;
+                    if (m.dl_cmd) {
+                        btnHtml = '<button class="btn-secondary btn-sm" onclick="copyDownloadCmd(\'' + (m.name || m.model_id || '').replace(/'/g,"\\'") + '\', `' + (m.dl_cmd || '').replace(/`/g,'\\`') + '`, this)" style="white-space:nowrap;margin-left:8px;font-size:11px;" data-i18n="web.market.button_2">📋 复制命令</button>';
+                    } else if (m.url) {
+                        btnHtml = '<a href="' + m.url + '" target="_blank" class="btn-secondary btn-sm" style="white-space:nowrap;margin-left:8px;text-decoration:none;">🔗 打开</a>';
+                    } else {
+                        btnHtml = '<button class="btn-primary btn-sm" onclick="installFromSearch(\'' + (m.model_id || m.name || '').replace(/'/g,"\\'") + '\', this)" style="white-space:nowrap;margin-left:8px;" data-i18n="web.market.button_3">⬇ 安装</button>';
+                    }
+                    var srcTag = m.source ? ' <span style="font-size:10px;color:#666;">[' + m.source + ']</span>' : '';
+                    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid #2a2a4a;">' +
+                        '<div><b>' + (m.name || m.model_id || '') + '</b>' + srcTag + '<br><span style="font-size:11px;color:#94a3b8;">' + (m.desc || '') + '</span></div>' +
+                        btnHtml + '</div>';
+                }).join('');
+            } catch(e) { el.innerHTML = '<span style="color:#ef4444;" data-i18n="web.market.span_3">搜索失败: ' + e.message + '</span>'; }
+        }
+        async function installFromSearch(modelId, btn) {
+            btn.disabled = true; btn.textContent = '⏳ 安装中...';
+            try {
+                var r = await fetch('/api/models/install', { method: 'POST',
+                    headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({model_id: modelId}) });
+                var d = await r.json();
+                if (d.success) { btn.textContent = '✅ 已安装'; btn.style.background = '#22c55e'; }
+                else { btn.textContent = '❌ 失败'; btn.disabled = false; alert(d.error || '安装失败'); }
+            } catch(e) { btn.textContent = '❌ 错误'; btn.disabled = false; }
+        }
+        function copyDownloadCmd(name, cmd, btn) {
+            navigator.clipboard.writeText(cmd).then(function() {
+                var orig = btn.textContent;
+                btn.textContent = '✅ 已复制';
+                btn.style.background = '#22c55e';
+                setTimeout(function() { btn.textContent = orig; btn.style.background = ''; }, 2000);
+            }).catch(function() {
+                // fallback for older browsers
+                var ta = document.createElement('textarea');
+                ta.value = cmd; ta.style.position = 'fixed'; ta.style.left = '-9999px';
+                document.body.appendChild(ta); ta.select();
+                document.execCommand('copy'); document.body.removeChild(ta);
+                var orig = btn.textContent;
+                btn.textContent = '✅ 已复制';
+                btn.style.background = '#22c55e';
+                setTimeout(function() { btn.textContent = orig; btn.style.background = ''; }, 2000);
+            });
+        }
+        window.searchAndInstall = searchAndInstall;
+        </script>
+        <!-- Hugging Face -->
+        <div class="setting-group" style="border-left:3px solid #ffcc00;padding:12px;">
+            <b>🤗 Hugging Face</b> <span style="font-size:11px;color:#888;" data-i18n="web.market.span_4">全球最大 · 99% 开源模型首发</span>
+            <div style="font-size:11px;color:#94a3b8;margin:4px 0;">LLM · 绘图 · 语音 · 多模态 · Lora 全覆盖</div>
+            <div style="display:flex;gap:6px;margin-top:6px;">
+                <a href="https://huggingface.co/models" target="_blank" class="btn-primary btn-sm" style="text-decoration:none;font-size:11px;">🌐 官网</a>
+                <a href="https://hf-mirror.com" target="_blank" class="btn-secondary btn-sm" style="text-decoration:none;font-size:11px;">🇨🇳 国内镜像</a>
+                <span style="font-size:10px;color:#666;align-self:center;" data-i18n="web.market.span_5">支持 huggingface-cli 批量下载</span>
+            </div>
+        </div>
+        <!-- ModelScope -->
+        <div class="setting-group" style="border-left:3px solid #00b4d8;padding:12px;">
+            <b>🪞 ModelScope 魔搭</b> <span style="font-size:11px;color:#888;" data-i18n="web.market.span_6">阿里 · 国内满速 · 通义/百川/千问全量</span>
+            <div style="font-size:11px;color:#94a3b8;margin:4px 0;">国产 + 海外模型完整镜像，中文模型最全</div>
+            <div style="display:flex;gap:6px;margin-top:6px;">
+                <a href="https://modelscope.cn/models" target="_blank" class="btn-primary btn-sm" style="text-decoration:none;font-size:11px;">🌐 打开魔搭</a>
+                <span style="font-size:10px;color:#666;align-self:center;" data-i18n="web.market.span_7">支持 modelscope CLI 命令行下载</span>
+            </div>
+        </div>
+        <!-- LM Studio -->
+        <div class="setting-group" style="border-left:3px solid #e76f51;padding:12px;">
+            <b>🖥️ LM Studio</b> <span style="font-size:11px;color:#888;" data-i18n="web.market.span_8">桌面 GUI · 一键搜索下载 · 启动本地 API</span>
+            <div style="font-size:11px;color:#94a3b8;margin:4px 0;">可视化检索 HF 模型库，下载 GGUF 量化版，点一下跑 API</div>
+            <div style="display:flex;gap:6px;margin-top:6px;">
+                <a href="https://lmstudio.ai/" target="_blank" class="btn-primary btn-sm" style="text-decoration:none;font-size:11px;">⬇ 下载 LM Studio</a>
+                <span style="font-size:10px;color:#666;align-self:center;">Windows/macOS/Linux</span>
+            </div>
+        </div>
+        <!-- GPT4All -->
+        <div class="setting-group" style="border-left:3px solid #2a9d8f;padding:12px;">
+            <b>💡 GPT4All</b> <span style="font-size:11px;color:#888;" data-i18n="web.market.span_9">纯 CPU 轻量 · 低配电脑可用</span>
+            <div style="font-size:11px;color:#94a3b8;margin:4px 0;">主打轻量化 CPU 模型，离线隐私，开箱即用</div>
+            <a href="https://gpt4all.io/" target="_blank" class="btn-secondary btn-sm" style="text-decoration:none;font-size:11px;margin-top:6px;">🌐 官网下载</a>
+        </div>
+        <!-- Civitai -->
+        <div class="setting-group" style="border-left:3px solid #e53e3e;padding:12px;">
+            <b>🎨 Civitai</b> <span style="font-size:11px;color:#888;" data-i18n="web.market.span_10">Stable Diffusion 绘图模型仓库</span>
+            <div style="font-size:11px;color:#94a3b8;margin:4px 0;">SD 大模型 · LoRA · ControlNet · VAE 全覆盖</div>
+            <a href="https://civitai.com/models" target="_blank" class="btn-secondary btn-sm" style="text-decoration:none;font-size:11px;margin-top:6px;">🌐 打开 Civitai</a>
+        </div>
+        <hr style="border-color:#2a2a4a;margin:12px 0;">
+        <div id="modelRecommend" class="model-recommend" style="font-size:12px;">检测硬件中...</div>
+    </div>
+</div>

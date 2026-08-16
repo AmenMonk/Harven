@@ -1,0 +1,70 @@
+# HarvenAI 配置模板
+# 复制此文件为 config.yaml 并填入你自己的API Key
+
+# === 外脑模型API Key ===
+model_keys:
+  deepseek: ""        # DeepSeek API Key (https://platform.deepseek.com)
+  zhipu: ""           # 智谱GLM API Key (https://open.bigmodel.cn)
+  doubao: ""          # 豆包API Key (https://www.volcengine.com)
+  qwen: ""            # 通义千问API Key (https://dashscope.aliyun.com)
+  kimi: ""            # Kimi API Key (https://platform.moonshot.cn)
+  yi: ""              # 零一万物API Key (https://platform.lingyiwanwu.com)
+  baichuan: ""        # 百川API Key (https://platform.baichuan-ai.com)
+  step: ""            # 阶跃星辰API Key (https://platform.stepfun.com)
+
+# === 本地模型 ===
+ollama:
+  host: "http://localhost:11434"
+  default_model: "qwen2.5:14b"
+
+# === 协作模式 ===
+# off: 纯对话模式
+# cloud_local: 智能协作（Skill编排+外脑+垂直模型）
+# local_dual: 本地协作（Skill编排+本地模型+垂直模型）
+collab_mode: "off"
+
+# === 查询模式 ===
+# kb_only: 本地模式
+# direct: 外脑模式
+query_mode: "kb_only"
+
+# === 安全 ===
+admin_password: "harven2026"  # ⚠️ 初始密码！首次登录后强制修改
+security_mode: "safe"  # safe | full
+
+# === 服务端口 ===
+port: 7000
+host: "0.0.0.0"
+
+# === 出站控制 ===
+# ★ 默认不拦截（正常模式）——沙箱已防护恶意代码，正常使用不受限制
+# 想要更高安全：把 whitelist_enabled 改成 true
+independence:
+  whitelist_enabled: false  # false=正常模式(不拦) true=严格模式(只允许白名单)
+  allowed_domains:           # 严格模式下允许的域名（正常模式下不需要配）
+    # 外脑API
+    - "api.deepseek.com"
+    - "api.openai.com"
+    - "api.anthropic.com"
+    - "generativelanguage.googleapis.com"
+    - "open.bigmodel.cn"
+    - "ark.cn-beijing.volces.com"
+    - "dashscope.aliyuncs.com"
+    - "api.moonshot.cn"
+    - "api.lingyiwanwu.com"
+    - "api.baichuan-ai.com"
+    - "api.stepfun.com"
+    - "api.cohere.ai"
+    - "api.mistral.ai"
+    # Ollama + 模型下载
+    - "ollama.com"
+    - "registry.ollama.ai"
+    - "modelscope.cn"
+    - "hf-mirror.com"
+    - "huggingface.co"
+    # 联网搜索
+    - "cn.bing.com"
+    - "www.bing.com"
+    # pip安装
+    - "pypi.org"
+    - "files.pythonhosted.org"

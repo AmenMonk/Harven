@@ -1,0 +1,101 @@
+<!-- 本地模型推荐/下载面板（设置→模型管理→本地模型） -->
+<div class="tab-panel" id="tab-local-models" style="display:none;">
+    <div class="settings-grid">
+        <div style="background:linear-gradient(135deg,#1a3a1a,#2d5e2d);border-radius:12px;padding:16px;margin-bottom:16px;border:1px solid #22c55e;">
+            <div style="font-weight:600;color:#4ade80;margin-bottom:8px;">🧠 本地模型（无需 Ollama）</div>
+            <div style="font-size:12px;color:#94a3b8;line-height:1.6;">
+                Harven 内置 llama.cpp 推理引擎，直接下载 GGUF 模型就能用。<br>
+                从 ModelScope（魔搭社区）下载，国内满速。
+            </div>
+        </div>
+
+        <div class="setting-section-title" data-i18n="web.localrec.title_1">📦 可下载的本地模型</div>
+        <div id="localModelList" style="display:flex;flex-direction:column;gap:10px;">
+            <span style="color:#888;font-size:12px;" data-i18n="web.localrec.span_1">⏳ 加载中...</span>
+        </div>
+
+        <!-- 下载进度 -->
+        <div id="downloadProgress" style="display:none;margin-top:16px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:14px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                <span id="downloadModelName" style="font-weight:600;"></span>
+                <span id="downloadPercent" style="font-size:12px;color:#888;">0%</span>
+            </div>
+            <div style="background:var(--bg-hover);border-radius:4px;height:8px;overflow:hidden;">
+                <div id="downloadBar" style="background:linear-gradient(90deg,#22c55e,#4ade80);height:100%;width:0%;transition:width 0.3s;"></div>
+            </div>
+            <div id="downloadStatus" style="font-size:11px;color:#888;margin-top:6px;"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ── 加载本地模型列表 ──
+async function loadLocalModels() {
+    var list = document.getElementById('localModelList');
+    if (!list) return;
+    list.innerHTML = '<span style="color:#888;font-size:12px;" data-i18n="web.localrec.span_2">⏳ 加载中...</span>';
+    try {
+        var r = await fetch('/api/models/local-list');
+        var d = await r.json();
+        var models = d.models || [];
+        if (models.length === 0) {
+            list.innerHTML = '<span style="color:#888;" data-i18n="web.localrec.span_3">暂无可用模型</span>';
+            return;
+        }
+        list.innerHTML = models.map(function(m) {
+            var badge = m.installed ? '✅ 已安装' : (m.compatible ? '⬇️ 下载 (' + m.size_gb + 'GB)' : '⚠️ 显存不足');
+            var disabled = m.installed || !m.compatible ? 'disabled' : '';
+            var color = m.installed ? '#22c55e' : (m.compatible ? '#667eea' : '#888');
+            return '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;">' +
+                '<div>' +
+                    '<div style="font-weight:600;">' + m.name + '</div>' +
+                    '<div style="font-size:11px;color:#888;margin-top:2px;">' + m.description + '</div>' +
+                    '<div style="font-size:10px;color:#666;">' + m.size_gb + 'GB · 需 ' + m.vram_gb + 'GB 显存</div>' +
+                '</div>' +
+                '<button class="btn-primary btn-sm" style="background:' + color + ';border-color:' + color + ';font-size:12px;" ' +
+                    'onclick="downloadLocalModel(\'' + m.id + '\',\'' + m.name + '\')" ' + disabled + '>' +
+                    badge + '</button>' +
+            '</div>';
+        }).join('');
+    } catch(e) {
+        list.innerHTML = '<span style="color:#f87171;" data-i18n="web.localrec.span_4">加载失败: ' + e.message + '</span>';
+    }
+}
+window.loadLocalModels = loadLocalModels;
+
+// ── 下载模型 ──
+var _downloadInterval = null;
+async function downloadLocalModel(modelId, name) {
+    document.getElementById('downloadModelName').textContent = name;
+    document.getElementById('downloadProgress').style.display = 'block';
+    document.getElementById('downloadBar').style.width = '0%';
+    document.getElementById('downloadPercent').textContent = '0%';
+    document.getElementById('downloadStatus').textContent = '正在启动下载...';
+
+    try {
+        var r = await fetch('/api/models/local-download/' + modelId, {method:'POST'});
+        var d = await r.json();
+        // 轮询进度
+        if (_downloadInterval) clearInterval(_downloadInterval);
+        _downloadInterval = setInterval(async function() {
+            try {
+                var sr = await fetch('/api/models/local-download/' + modelId + '/status');
+                var sd = await sr.json();
+                var pct = sd.progress || 0;
+                document.getElementById('downloadBar').style.width = pct + '%';
+                document.getElementById('downloadPercent').textContent = pct + '%';
+                document.getElementById('downloadStatus').textContent = sd.status === 'completed' ? '✅ 下载完成！请刷新模型列表' :
+                    (sd.status === 'failed' ? '❌ 下载失败: ' + (sd.error || '未知错误') : '下载中...');
+                if (sd.status === 'completed' || sd.status === 'failed') {
+                    clearInterval(_downloadInterval);
+                    _downloadInterval = null;
+                    if (sd.status === 'completed') setTimeout(loadLocalModels, 1000);
+                }
+            } catch(e) {}
+        }, 2000);
+    } catch(e) {
+        document.getElementById('downloadStatus').textContent = '❌ 启动失败: ' + e.message;
+    }
+}
+window.downloadLocalModel = downloadLocalModel;
+</script>

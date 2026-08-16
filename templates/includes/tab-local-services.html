@@ -1,0 +1,133 @@
+<!-- 本地服务（脚本型 Agent 服务器状态）-->
+<div class="tab-panel" id="tab-local-services" style="display:none;">
+    <div class="settings-grid">
+        <div style="background:linear-gradient(135deg,#1a1a3e,#2d2d5e);border-radius:12px;padding:16px;margin-bottom:16px;border:1px solid #a78bfa;">
+            <div style="font-weight:600;color:#a78bfa;margin-bottom:8px;">🖥️ 本地 AI 服务</div>
+            <div style="font-size:12px;color:#94a3b8;line-height:1.6;">
+                非 本地模型通过 Python 库直接调用，无需启动独立服务。<br>
+                已安装的模型在对话中使用触发词即可自动调用。
+            </div>
+        </div>
+
+        <!-- ACE-Step（音乐生成模型）-->
+        <div class="setting-group" style="border-left:3px solid #22c55e;padding:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                <div>
+                    <b style="font-size:14px;">🎵 ACE-Step (acestep-v15-xl-turbo)</b>
+                    <span id="aceStepStatus" style="font-size:11px;color:#888;margin-left:8px;" data-i18n="web.localservices.span_1">⏳ 检测中...</span>
+                    <div style="font-size:11px;color:#888;margin-top:4px;">音乐生成 · 19GB · MIT 许可证</div>
+                </div>
+                <div style="display:flex;gap:6px;flex-shrink:0;">
+                    <a href="#" onclick="document.getElementById('modelSearchInput').value='acestep'; searchAndInstall()" class="btn-sm btn-secondary" style="font-size:11px;padding:4px 10px;text-decoration:none;">🔍 重新下载</a>
+                </div>
+            </div>
+            <div style="font-size:11px;color:#666;margin-top:4px;" id="aceStepPath">
+                检测中...
+            </div>
+        </div>
+
+        <div style="margin-top:8px;font-size:11px;color:#666;">
+            💡 专用模型（非 Ollama 引擎），由意图自动触发，无需手动选择。<br>
+            ✅ 已确认安装 → 在对话中输入"帮我作曲""生成音乐"即可自动调用。</div>
+    </div>
+</div>
+
+<script>
+// ═══ ACE-Step 状态 ═══
+var aceStepDir = '';
+
+async function findAceStepDir() {
+    var status = document.getElementById('aceStepStatus');
+    var pathEl = document.getElementById('aceStepPath');
+    try {
+        var r = await fetch('/api/models/check?path=data/models/acestep-v15-xl-turbo');
+        var d = await r.json();
+        if (d.exists) {
+            status.innerHTML = '<span style="color:#22c55e;" data-i18n="web.localservices.span_2">✅ 已安装</span>';
+            status.style.color = '#22c55e';
+            pathEl.innerHTML = '路径: data/models/acestep-v15-xl-turbo/ (' + ((d.size_mb || 19000) / 1024).toFixed(1) + 'GB, ' + (d.files || 14) + ' 个文件)';
+            document.querySelector('#tab-local-services .setting-group').style.borderLeftColor = '#22c55e';
+        } else {
+            status.innerHTML = '<span style="color:#888;" data-i18n="web.localservices.span_3">⚠️ 未安装</span>';
+            pathEl.innerHTML = '未安装 · <a href="#" onclick="checkModelStatus()" style="color:#667eea;">🔄 重新检测</a>';
+        }
+    } catch(e) {
+        status.innerHTML = '<span style="color:#888;" data-i18n="web.localservices.span_4">❓ 未知</span>';
+        pathEl.innerHTML = '无法检测';
+    }
+}
+setTimeout(findAceStepDir, 1500);
+
+async function testAceStep() {
+    var s = document.getElementById('aceStepStatus');
+    s.innerHTML = '<span style="color:#f59e0b;" data-i18n="web.localservices.span_5">⏳ 检测中...</span>';
+    try {
+        var r = await fetch('http://localhost:8001/health', {signal: AbortSignal.timeout(3000)});
+        if (r.ok) {
+            s.innerHTML = '<span style="color:#0f0;" data-i18n="web.localservices.span_6">✅ 运行中</span>';
+            document.getElementById('aceStepStartBtn').style.display = 'none';
+            document.getElementById('aceStepStopBtn').style.display = '';
+        } else {
+            s.innerHTML = '<span style="color:#e53e3e;" data-i18n="web.localservices.span_7">❌ 未启动</span>';
+            document.getElementById('aceStepStartBtn').style.display = '';
+            document.getElementById('aceStepStopBtn').style.display = 'none';
+        }
+    } catch(e) {
+        s.innerHTML = '<span style="color:#e53e3e;" data-i18n="web.localservices.span_8">❌ 未启动</span>';
+        document.getElementById('aceStepStartBtn').style.display = '';
+        document.getElementById('aceStepStopBtn').style.display = 'none';
+    }
+}
+
+async function startAceStep() {
+    var s = document.getElementById('aceStepStatus');
+    if (!aceStepDir) aceStepDir = await findAceStepDir();
+    if (!aceStepDir) {
+        s.innerHTML = '<span style="color:#e53e3e;" data-i18n="web.localservices.span_9">❌ 未安装</span>';
+        toast('ACE-Step 未安装，请先下载便携包', 'error');
+        return;
+    }
+    s.innerHTML = '<span style="color:#f59e0b;" data-i18n="web.localservices.span_10">⏳ 启动中...</span>';
+    try {
+        var r = await fetch('/api/local-service/start', {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({service: 'ace_step', dir: aceStepDir})
+        });
+        var d = await r.json();
+        if (d.success) {
+            s.innerHTML = '<span style="color:#0f0;" data-i18n="web.localservices.span_11">✅ 启动成功</span>';
+            document.getElementById('aceStepStartBtn').style.display = 'none';
+            document.getElementById('aceStepStopBtn').style.display = '';
+        } else {
+            s.innerHTML = '<span style="color:#e53e3e;" data-i18n="web.localservices.span_12">❌ 启动失败</span>';
+            toast(d.message || '启动失败，请手动双击 start_api_server.bat', 'error');
+        }
+    } catch(e) {
+        s.innerHTML = '<span style="color:#e53e3e;" data-i18n="web.localservices.span_13">❌ 网络错误</span>';
+    }
+}
+
+function stopAceStep() {
+    fetch('/api/local-service/stop', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({service: 'ace_step'})
+    });
+    document.getElementById('aceStepStatus').innerHTML = '<span style="color:#e53e3e;" data-i18n="web.localservices.span_14">❌ 已停止</span>';
+    document.getElementById('aceStepStartBtn').style.display = '';
+    document.getElementById('aceStepStopBtn').style.display = 'none';
+}
+
+function installAceStepPortable() {
+    window.open('https://files.acemusic.ai/acemusic/win/ACE-Step-1.5.7z', '_blank');
+    toast('正在打开下载页面...解压后回到这里点「🔌 检测」');
+}
+
+// 页面加载时检测
+setTimeout(async function(){
+    await findAceStepDir();
+    // ★ 新模型是 Python 库直接调用，不需要检测端口
+    // 已安装状态由 findAceStepDir 设置，不要覆盖
+}, 1000);
+</script>

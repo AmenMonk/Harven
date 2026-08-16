@@ -1,0 +1,33 @@
+<!-- Tab: 代码沙箱 -->
+                <div class="tab-panel" id="tab-sandbox">
+                    <div class="settings-grid">
+                        <div class="setting-section-title" data-i18n="web.sandbox.title_1">🐳 代码执行沙箱</div>
+                        <div class="setting-desc" style="margin-bottom:12px;" data-i18n="web.sandbox.desc_1">在隔离环境中安全运行 Python、JavaScript、Shell 代码。</div>
+                        <div class="setting-group" style="background:var(--bg-secondary);padding:16px;border-radius:8px;border:1px solid var(--border);margin-bottom:16px;">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                                <label style="font-size:13px;font-weight:600;" data-i18n="web.sandbox.label_1">代码编辑器</label>
+                                <select id="sandboxLang" style="padding:5px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:13px;">
+                                    <option value="python">🐍 Python</option>
+                                    <option value="javascript">🟡 JavaScript</option>
+                                    <option value="shell">🐚 Shell</option>
+                                </select>
+                            </div>
+                            <textarea id="sandboxCode" rows="10" placeholder="# 在这里输入代码，在沙箱中安全执行&#10;print('Hello from sandbox!')" style="width:100%;box-sizing:border-box;font-family:'Consolas','Courier New',monospace;font-size:13px;background:#1e1e2e;color:#cdd6f4;border:1px solid #313244;border-radius:6px;padding:12px;line-height:1.6;"></textarea>
+                            <div style="display:flex;gap:8px;margin-top:10px;align-items:center;">
+                                <button class="btn-primary btn-sm" onclick="runSandboxCode()" data-i18n="web.sandbox.button_1">▶ 运行</button>
+                                <button class="btn-secondary btn-sm" onclick="document.getElementById('sandboxCode').value='';document.getElementById('sandboxOutput').textContent='等待执行...'" data-i18n="web.sandbox.button_2">🗑 清空</button>
+                                <button class="btn-secondary btn-sm" onclick="fillSandboxExample()" data-i18n="web.sandbox.button_3">📋 示例</button>
+                                <span id="sandboxStatus" style="font-size:12px;color:var(--text-secondary);margin-left:auto;"></span>
+                            </div>
+                        </div>
+                        <div class="setting-group">
+                            <label data-i18n="web.sandbox.label_2">执行输出</label>
+                            <div id="sandboxOutput" style="background:#1e1e2e;color:#cdd6f4;border-radius:8px;padding:12px;font-family:'Consolas','Courier New',monospace;font-size:13px;min-height:80px;max-height:200px;overflow-y:auto;white-space:pre-wrap;border:1px solid #313244;">等待执行...</div>
+                        </div>
+                        <div class="setting-group">
+                            <div style="background:#fff3cd;border-radius:8px;padding:12px;border:1px solid #ffc107;font-size:12px;color:#856404;">
+                                <b>🔒 安全机制</b>：执行超时 15 秒自动终止 · 危险操作自动拦截 · 子进程隔离运行
+                            </div>
+                        </div>
+                    </div>
+                </div>

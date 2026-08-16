@@ -1,0 +1,361 @@
+tab-agent-工坊.html	web.agentworkshop.desc_1	给 Agent 起个名字，要简短
+tab-agent-工坊.html	web.agentworkshop.desc_2	描述这个 Agent 是干什么的、有什么特长
+tab-agent-工坊.html	web.agentworkshop.desc_3	用户说这些词时自动路由到此 Agent
+tab-agent-工坊.html	web.agentworkshop.title_1	🏭 Agent 工坊
+tab-agent-工坊.html	web.agentworkshop.title_2	📋 我的 Agent
+tab-agent-工坊.html	web.agentworkshop.button_1	
+                                🤖 AI 自动生成 system_prompt
+                            
+tab-agent-工坊.html	web.agentworkshop.button_2	
+                                ✅ 注册 Agent
+                            
+tab-agent-工坊.html	web.agentworkshop.button_3	🗑 删除
+tab-agent-工坊.html	web.agentworkshop.option_1	🏠 本地引擎
+tab-agent-工坊.html	web.agentworkshop.option_2	🤖 外脑 API
+tab-agent-工坊.html	web.agentworkshop.option_3	🤝 协作模式
+tab-agent-工坊.html	web.agentworkshop.placeholder_1	例如：文案大师、数据分析师、法律顾问
+tab-agent-工坊.html	web.agentworkshop.placeholder_2	例如：审查合同,起草律师函,法律意见
+tab-agent-工坊.html	web.agentworkshop.span_1	⏳ 加载中...
+tab-agent-工坊.html	web.agentworkshop.span_2	还没有自定义 Agent，用上面的表单创建一个吧
+tab-agent.html	web.agent.heading_1	🤖 系统 Agent
+tab-agent.html	web.agent.button_1	🖥️ 系统信息
+tab-agent.html	web.agent.button_2	📂 查看目录
+tab-agent.html	web.agent.button_3	📊 进程列表
+tab-agent.html	web.agent.button_4	🐍 执行代码
+tab-agents.html	web.agents.button_1	➕ 新建 Agent
+tab-agents.html	web.agents.option_1	🏠 本地引擎
+tab-agents.html	web.agents.placeholder_1	我的助手
+tab-agents.html	web.agents.placeholder_2	触发词1, 触发词2
+tab-agents.html	web.agents.span_4	调用: '+a.call_count+'次 · 状态: '+(a.status==='idle'?'空闲':'忙碌')+' · 触发: '+(a.triggers||[]).join(', ')+'
+tab-ai模型.html	web.aimodel.desc_1	标准=当前模型 / 快速=自动用轻量模型 / 深度=自动用高级模型
+tab-ai模型.html	web.aimodel.desc_2	保留最近N轮对话作为上下文（越多越占显存）
+tab-ai模型.html	web.aimodel.title_1	🤖 模型选择
+tab-ai模型.html	web.aimodel.title_3	🆚 获取模型方式
+tab-ai模型.html	web.aimodel.title_4	⚙️ 高级参数
+tab-ai模型.html	web.aimodel.button_1	⚙️ 模型设置
+tab-ai模型.html	web.aimodel.button_2	🔀 多模型
+tab-ai模型.html	web.aimodel.button_3	🖥️ 硬件
+tab-ai模型.html	web.aimodel.button_6	⬇️ 手动拉取
+tab-ai模型.html	web.aimodel.button_7	⚙️ 模型配置
+tab-ai模型.html	web.aimodel.option_1	⏳ 加载中...
+tab-ai模型.html	web.aimodel.option_2	标准模式
+tab-ai模型.html	web.aimodel.option_3	快速模式（轻量模型优先）
+tab-ai模型.html	web.aimodel.option_4	深度模式（高级模型优先）
+tab-ai模型.html	web.aimodel.option_5	自动调度（根据问题复杂度选模型）
+tab-ai模型.html	web.aimodel.option_6	手动指定（始终使用选中的模型）
+tab-ai模型.html	web.aimodel.placeholder_1	本地引擎 API 地址
+tab-ai模型.html	web.aimodel.span_1	（在 ⚙️ 模型配置 页面切换）
+tab-ai模型.html	web.aimodel.span_2	⏳ 加载中...
+tab-ai模型.html	web.aimodel.span_3	安装后重启 Harven 自动识别
+tab-ai模型.html	web.aimodel.span_4	精确严谨
+tab-ai模型.html	web.aimodel.span_5	创意发散
+tab-external-models.html	web.externalmodels.option_1	全部类别
+tab-external-models.html	web.externalmodels.option_2	🎵 音乐
+tab-external-models.html	web.externalmodels.option_3	🗣️ 语音
+tab-external-models.html	web.externalmodels.option_4	🖼️ 图像
+tab-external-models.html	web.externalmodels.option_5	🎬 视频
+tab-external-models.html	web.externalmodels.option_6	🤖 多模态
+tab-external-models.html	web.externalmodels.option_7	🔬 嵌入
+tab-external-models.html	web.externalmodels.option_8	💬 大语言
+tab-external-models.html	web.externalmodels.placeholder_1	🔍 搜索模型（如：音乐、图像、whisper...）
+tab-external-models.html	web.externalmodels.span_1	— 按需搜索安装，不自动推荐
+tab-external-models.html	web.externalmodels.span_2	⏳ 搜索中...
+tab-external-models.html	web.externalmodels.span_3	尝试其他关键词或浏览全部类别
+tab-external-models.html	web.externalmodels.span_5	通过 Ollama 安装
+tab-external-models.html	web.externalmodels.span_6	搜索失败: ' + e.message + '
+tab-external-models.html	web.externalmodels.span_7	网络错误: ' + e.message + '
+tab-local-services.html	web.localservices.span_1	⏳ 检测中...
+tab-local-services.html	web.localservices.span_4	❓ 未知
+tab-local-services.html	web.localservices.span_5	⏳ 检测中...
+tab-local-services.html	web.localservices.span_6	✅ 运行中
+tab-local-services.html	web.localservices.span_7	❌ 未启动
+tab-local-services.html	web.localservices.span_8	❌ 未启动
+tab-local-services.html	web.localservices.span_10	⏳ 启动中...
+tab-local-services.html	web.localservices.span_11	✅ 启动成功
+tab-local-services.html	web.localservices.span_12	❌ 启动失败
+tab-local-services.html	web.localservices.span_13	❌ 网络错误
+tab-local-services.html	web.localservices.span_14	❌ 已停止
+tab-multimodel.html	web.multimodel.title_1	🔑 外部模型 API 密钥
+tab-multimodel.html	web.multimodel.title_2	🔒 外脑隐私档位
+tab-multimodel.html	web.multimodel.button_2	🔌 全部检测
+tab-multimodel.html	web.multimodel.button_3	🔄 刷新状态
+tab-multimodel.html	web.multimodel.button_4	➕ 添加新模型
+tab-multimodel.html	web.multimodel.option_1	V4 Pro (最强)
+tab-multimodel.html	web.multimodel.option_2	V4 Flash (极速)
+tab-multimodel.html	web.multimodel.option_3	GLM-5.2 (最新)
+tab-multimodel.html	web.multimodel.option_4	GLM-4-Flash (免费)
+tab-multimodel.html	web.multimodel.option_5	GLM-4-Long (长文本)
+tab-multimodel.html	web.multimodel.option_6	Yi Lightning (快)
+tab-multimodel.html	web.multimodel.option_7	Yi Large (强)
+tab-multimodel.html	web.multimodel.option_8	Yi Vision (视觉)
+tab-multimodel.html	web.multimodel.option_9	🏠 不用外脑（纯本地）
+tab-multimodel.html	web.multimodel.option_10	豆包（火山引擎）
+tab-multimodel.html	web.multimodel.option_11	通义千问
+tab-multimodel.html	web.multimodel.option_12	智谱AI (GLM)
+tab-multimodel.html	web.multimodel.option_13	零一万物 (Yi)
+tab-multimodel.html	web.multimodel.option_14	百川 (Baichuan)
+tab-multimodel.html	web.multimodel.option_15	阶跃星辰 (Step)
+tab-multimodel.html	web.multimodel.option_16	📤 全量 — 完整对话上下文（信任该外脑，传全部数据）
+tab-multimodel.html	web.multimodel.option_17	⚖️ 平衡 — 自动替换敏感字段（身份证号/手机号/邮箱/IP/金额）
+tab-multimodel.html	web.multimodel.option_18	🔒 严格 — 仅传去敏后的问题摘要（不传任何个人信息）
+tab-multimodel.html	web.multimodel.option_19	🏠 不用外脑（纯本地）
+tab-multimodel.html	web.multimodel.option_20	' + (info.name||pid) + ' (自定义)' + mark + '
+tab-multimodel.html	web.multimodel.placeholder_1	输入或选择模型名
+tab-multimodel.html	web.multimodel.placeholder_2	输入或选择模型名
+tab-multimodel.html	web.multimodel.placeholder_3	输入或选择模型名（如glm-5.2）
+tab-multimodel.html	web.multimodel.placeholder_4	输入模型名
+tab-multimodel.html	web.multimodel.placeholder_5	例如：硅基流动、OpenRouter
+tab-multimodel.html	web.multimodel.placeholder_6	例如：siliconflow
+tab-multimodel.html	web.multimodel.span_1	模型:
+tab-multimodel.html	web.multimodel.span_2	模型:
+tab-multimodel.html	web.multimodel.span_3	模型:
+tab-multimodel.html	web.multimodel.span_4	模型:
+tab-multimodel.html	web.multimodel.span_5	(关闭)
+tab-multimodel.html	web.multimodel.span_6	⏳ 正在逐个测试...
+tab-multimodel.html	web.multimodel.span_7	❌ ' + (d.error||'连接失败') + '
+tab-multimodel.html	web.multimodel.span_8	网络错误
+tab-multimodel.html	web.multimodel.span_9	✅ 已配置
+tab-multimodel.html	web.multimodel.span_11	⏳ 切换中...
+tab-multimodel.html	web.multimodel.span_12	❌ ' + (d.error||'切换失败') + '
+tab-skill-builder.html	web.skillbuilder.desc_1	
+            用自然语言描述你想要的 Skill，Harven AI 自动生成代码 → 预览 → 测试 → 一键保存
+        
+tab-skill-builder.html	web.skillbuilder.title_1	🔮 Skill 制作向导
+tab-skill-builder.html	web.skillbuilder.button_1	
+                ✨ AI 生成 Skill 代码
+            
+tab-skill-builder.html	web.skillbuilder.button_2	⬅ 返回修改
+tab-skill-builder.html	web.skillbuilder.button_5	💾 保存到 skills/
+tab-skill-builder.html	web.skillbuilder.button_6	🔄 重新生成
+tab-skill-builder.html	web.skillbuilder.button_7	➕ 再创建一个
+tab-skill-builder.html	web.skillbuilder.button_8	📋 查看所有 Skills
+tab-skill-builder.html	web.skillbuilder.option_1	🤖 自动检测（推荐）
+tab-skill-builder.html	web.skillbuilder.option_2	🤖 自动检测（推荐）
+tab-skill-builder.html	web.skillbuilder.placeholder_1	例如：唐诗三百首、股票查询、邮件提醒...
+tab-skill-builder.html	web.skillbuilder.placeholder_2	例如：使用 xxx API，需要 API key...
+tab-skill-builder.html	web.skillbuilder.span_1	（必填）
+tab-skill-builder.html	web.skillbuilder.span_2	（必填，用自然语言描述）
+tab-skill-builder.html	web.skillbuilder.span_3	（可选，API、参数说明等）
+tab-skill-builder.html	web.skillbuilder.span_4	📄 生成的代码
+tab-skill-builder.html	web.skillbuilder.span_5	✅ ' + data.validation_msg + ' | 检测类别: ' + (data.detected_category || '未知') + '
+tab-skill-builder.html	web.skillbuilder.span_6	✅ ' + (data.message || '验证通过') + '
+tab-skill-builder.html	web.skillbuilder.span_7	❌ ' + (data.message || '验证失败') + '
+tab-skills.html	web.skills.desc_1	从以下平台浏览和导入 Skills，点击链接即可打开
+tab-skills.html	web.skills.desc_2	Skills 是 Markdown 格式的技能提示词，触发关键词匹配后自动注入对话。内置技能可禁用，自定义技能可编辑删除。
+tab-skills.html	web.skills.title_1	🔗 技能下载渠道
+tab-skills.html	web.skills.title_2	⚡ 技能列表
+tab-skills.html	web.skills.button_1	➕ 新建技能
+tab-个人画像.html	web.profile.desc_1	AI会根据你的兴趣优化回答方向
+tab-个人画像.html	web.profile.desc_2	帮助AI理解你的专业视角
+tab-个人画像.html	web.profile.button_1	👤 用户信息
+tab-个人画像.html	web.profile.button_2	🔄 立即分析
+tab-个人画像.html	web.profile.button_3	🔬 深度分析
+tab-个人画像.html	web.profile.button_4	🗑️ 清空建议
+tab-个人画像.html	web.profile.button_5	⚠️ 重置自动画像
+tab-个人画像.html	web.profile.option_1	简洁 — 回答精炼、直奔主题
+tab-个人画像.html	web.profile.option_2	详细 — 充分解释、附带示例
+tab-个人画像.html	web.profile.option_3	专业 — 技术术语、深度分析
+tab-个人画像.html	web.profile.placeholder_1	输入兴趣，回车添加（如：自驾、编程、美食）
+tab-个人画像.html	web.profile.placeholder_2	你的职业或专业领域
+tab-个人画像.html	web.profile.span_1	🔬 AI 自动分析
+tab-个人画像.html	web.profile.span_2	⏳ 点击"立即分析"开始...
+tab-代码沙箱.html	web.sandbox.desc_1	在隔离环境中安全运行 Python、JavaScript、Shell 代码。
+tab-代码沙箱.html	web.sandbox.title_1	🐳 代码执行沙箱
+tab-代码沙箱.html	web.sandbox.button_1	▶ 运行
+tab-代码沙箱.html	web.sandbox.button_2	🗑 清空
+tab-保底状态.html	web.fallback.desc_1	当 本地引擎或其他核心服务不可用时，Harven 会自动进入保底模式，保证基本功能可用。
+tab-保底状态.html	web.fallback.title_1	🛡️ 保底状态
+tab-保底状态.html	web.fallback.title_2	💚 系统健康检查
+tab-保底状态.html	web.fallback.title_3	⚡ 保底模式
+tab-保底状态.html	web.fallback.button_2	🤖 自动检查
+tab-保底状态.html	web.fallback.button_3	🔧 自动修复
+tab-保底状态.html	web.fallback.button_4	进入保底模式
+tab-分享联动.html	web.share.desc_1	确保手机和电脑在同一局域网
+tab-分享联动.html	web.share.desc_2	有效期 15 分钟，扫码即用
+tab-分享联动.html	web.share.button_1	📱 生成二维码
+tab-分享联动.html	web.share.span_1	⏳ 生成中...
+tab-分享联动.html	web.share.span_2	生成失败: ' + (d.error||'未知错误') + '
+tab-分享联动.html	web.share.span_3	网络错误，请确认服务运行中
+tab-分享联动.html	web.share.span_4	' + 
+                    (dev.last_seen||'刚刚') + '
+tab-分享联动.html	web.share.span_5	暂无设备连接
+tab-外观.html	web.appearance.desc_1	在聊天窗口底部显示模型状态和系统信息
+tab-外观.html	web.appearance.desc_2	自定义 Harven 的显示名称和应用图标，个性化你的 AI 助手。
+tab-外观.html	web.appearance.desc_3	将品牌定制数据导出为风格包，或导入他人分享的风格包。
+tab-外观.html	web.appearance.desc_4	清除本机的所有品牌定制数据，恢复 Harven AI 默认外观。
+tab-外观.html	web.appearance.title_1	🎨 品牌定制
+tab-外观.html	web.appearance.title_2	🎁 风格包管理
+tab-外观.html	web.appearance.button_1	🌙 深色
+tab-外观.html	web.appearance.button_2	☀️ 浅色
+tab-外观.html	web.appearance.button_3	💻 跟随系统
+tab-外观.html	web.appearance.button_6	📦 导出风格包 (.json)
+tab-外观.html	web.appearance.button_7	🗑️ 重置所有品牌定制
+tab-外观.html	web.appearance.option_1	小号字体
+tab-外观.html	web.appearance.option_2	中号字体（默认）
+tab-外观.html	web.appearance.option_3	大号字体
+tab-外观.html	web.appearance.option_4	默认 — 宽松舒适
+tab-外观.html	web.appearance.option_5	紧凑 — 更多内容
+tab-外观.html	web.appearance.placeholder_1	或输入任意 emoji
+tab-外观.html	web.appearance.span_1	显示系统状态栏
+tab-安全隐私.html	web.security.desc_1	保护你的私密对话和个人画像数据
+tab-安全隐私.html	web.security.desc_2	挂载后所有外来文件和插件都会经过杀毒扫描
+tab-安全隐私.html	web.security.desc_3	⚠️ 清除数据操作不可逆，建议先导出备份
+tab-安全隐私.html	web.security.desc_4	勾选后，执行对应操作前必须验证管理员密码。建议对高风险操作开启保护。
+tab-安全隐私.html	web.security.desc_5	控制 Harven 的网络请求范围，防止 SSRF 攻击和未授权的外部访问。
+tab-安全隐私.html	web.security.desc_6	阻止 AI 工具/插件发起内网 IP 请求（10.x / 192.168.x / 127.x / ::1）
+tab-安全隐私.html	web.security.desc_7	开启后插件只能访问白名单内的域名（更严格，建议生产环境开启）
+tab-安全隐私.html	web.security.desc_8	防止恶意用户高频刷接口，保护 Harven 稳定运行。
+tab-安全隐私.html	web.security.desc_9	控制 Harven 的代码执行环境，防止 AI 生成的代码对系统造成危害。
+tab-安全隐私.html	web.security.desc_10	AI 生成的代码在 Docker 容器中运行，与宿主机完全隔离（需提前安装 Docker）
+tab-安全隐私.html	web.security.desc_11	容器内代码无法访问外部网络
+tab-安全隐私.html	web.security.desc_12	控制 Harven 如何处理硬件变更。方案A（推荐）：不锁死，仅记录指纹日志。
+tab-安全隐私.html	web.security.desc_13	检测并过滤试图篡改 AI 系统提示词的恶意输入
+tab-安全隐私.html	web.security.desc_14	知识库上传文件时自动扫描（需配置杀毒软件路径）
+tab-安全隐私.html	web.security.title_1	🔑 远程访问
+tab-安全隐私.html	web.security.button_1	🔒 安全设置
+tab-安全隐私.html	web.security.button_2	🐳 代码沙箱
+tab-安全隐私.html	web.security.button_3	👁️ 显示
+tab-安全隐私.html	web.security.button_5	确认开启
+tab-安全隐私.html	web.security.button_6	🔓 开启全权模式
+tab-安全隐私.html	web.security.button_7	🔄 刷新日志
+tab-安全隐私.html	web.security.button_8	设置/修改密码
+tab-安全隐私.html	web.security.button_9	测试连接
+tab-安全隐私.html	web.security.button_10	📤 导出所有数据
+tab-安全隐私.html	web.security.button_11	🗑️ 清除所有数据
+tab-安全隐私.html	web.security.button_12	🔍 查看当前设备指纹
+tab-安全隐私.html	web.security.option_1	不自动锁定
+tab-安全隐私.html	web.security.option_2	5分钟不操作后锁定
+tab-安全隐私.html	web.security.option_3	15分钟不操作后锁定
+tab-安全隐私.html	web.security.option_4	30分钟不操作后锁定
+tab-安全隐私.html	web.security.option_5	🟢 不绑定 — 任意设备均可运行（默认）
+tab-安全隐私.html	web.security.option_6	🟡 方案A — 记录指纹日志，不阻止启动（推荐）
+tab-安全隐私.html	web.security.option_7	🟠 方案B — 硬件变更时警告，不阻止
+tab-安全隐私.html	web.security.option_8	🔴 方案C — 严格绑定，硬件变更后拒绝启动
+tab-安全隐私.html	web.security.placeholder_1	新密码（至少4位）
+tab-安全隐私.html	web.security.placeholder_2	输入admin密码
+tab-安全隐私.html	web.security.placeholder_3	设置隐私数据库密码（空=不设置）
+tab-安全隐私.html	web.security.placeholder_4	杀毒软件可执行文件路径
+tab-安全隐私.html	web.security.placeholder_5	例如：C:\Program Files\ClamWin\bin\clamscan.exe
+tab-安全隐私.html	web.security.span_1	账号：
+tab-安全隐私.html	web.security.span_2	密码：
+tab-安全隐私.html	web.security.span_3	启用杀毒扫描
+tab-安全隐私.html	web.security.span_4	清除所有数据
+tab-安全隐私.html	web.security.span_5	恢复默认设置
+tab-安全隐私.html	web.security.span_6	重置风格包
+tab-安全隐私.html	web.security.span_7	删除模型
+tab-安全隐私.html	web.security.span_8	删除自定义模型
+tab-安全隐私.html	web.security.span_9	删除已萃取知识
+tab-安全隐私.html	web.security.span_10	删除技能
+tab-安全隐私.html	web.security.span_11	删除/卸载插件
+tab-安全隐私.html	web.security.span_12	删除 IoT 设备
+tab-安全隐私.html	web.security.span_13	删除 IM 渠道
+tab-安全隐私.html	web.security.span_14	删除定时任务
+tab-安全隐私.html	web.security.span_15	删除工作流
+tab-安全隐私.html	web.security.span_16	清除访问码
+tab-安全隐私.html	web.security.span_17	启用 SSRF 防护
+tab-安全隐私.html	web.security.span_18	插件网络访问白名单模式
+tab-安全隐私.html	web.security.span_19	启用速率限制
+tab-安全隐私.html	web.security.span_20	沙箱代码执行（Docker 隔离）
+tab-安全隐私.html	web.security.span_21	沙箱网络隔离（默认开启）
+tab-安全隐私.html	web.security.span_22	启用 Prompt 注入检测
+tab-安全隐私.html	web.security.span_23	上传文件病毒扫描
+tab-已安装.html	web.installed.desc_1	从 HuggingFace/魔搭/任意位置下载的 .gguf 文件，选择后自动复制到 data/models/
+tab-已安装.html	web.installed.button_1	
+                            📁 选择 .gguf 文件
+                        
+tab-手动拉取.html	web.manualpull.desc_1	输入模型名称，从 Ollama 仓库拉取。常用：qwen2.5:14b, llama3.3:70b, deepseek-r1:32b
+tab-手动拉取.html	web.manualpull.button_1	📥 拉取
+tab-手动拉取.html	web.manualpull.placeholder_1	例如 qwen3:14b, deepseek-r1:7b
+tab-本地双模配置.html	web.localdual.button_1	⏹️ 停止通用模型
+tab-本地双模配置.html	web.localdual.button_2	▶️ 启动通用模型
+tab-本地双模配置.html	web.localdual.button_3	✅ 全部启用
+tab-本地双模配置.html	web.localdual.button_4	🚫 全部停用
+tab-本地双模配置.html	web.localdual.option_1	-- 自动使用当前模型 --
+tab-本地双模配置.html	web.localdual.option_2	-- 自动使用当前模型 --
+tab-本地模型推荐.html	web.localrec.title_1	📦 可下载的本地模型
+tab-本地模型推荐.html	web.localrec.span_1	⏳ 加载中...
+tab-本地模型推荐.html	web.localrec.span_2	⏳ 加载中...
+tab-本地模型推荐.html	web.localrec.span_3	暂无可用模型
+tab-本地模型推荐.html	web.localrec.span_4	加载失败: ' + e.message + '
+tab-模型市场.html	web.market.button_2	📋 复制命令
+tab-模型市场.html	web.market.button_3	⬇ 安装
+tab-模型市场.html	web.market.placeholder_1	输入模型名称...
+tab-模型市场.html	web.market.span_1	输入模型名（如 qwen2.5-7b / acestep-v15-turbo），搜魔搭
+tab-模型市场.html	web.market.span_2	未找到，试试其他关键词
+tab-模型市场.html	web.market.span_3	搜索失败: ' + e.message + '
+tab-模型市场.html	web.market.span_4	全球最大 · 99% 开源模型首发
+tab-模型市场.html	web.market.span_5	支持 huggingface-cli 批量下载
+tab-模型市场.html	web.market.span_6	阿里 · 国内满速 · 通义/百川/千问全量
+tab-模型市场.html	web.market.span_7	支持 modelscope CLI 命令行下载
+tab-模型市场.html	web.market.span_8	桌面 GUI · 一键搜索下载 · 启动本地 API
+tab-模型市场.html	web.market.span_9	纯 CPU 轻量 · 低配电脑可用
+tab-模型市场.html	web.market.span_10	Stable Diffusion 绘图模型仓库
+tab-流程编辑器.html	web.tab6664.heading_2	已保存的流程
+tab-流程编辑器.html	web.tab6664.button_1	+ 添加步骤
+tab-流程编辑器.html	web.tab6664.button_2	保存流程
+tab-流程编辑器.html	web.tab6664.button_3	测试运行
+tab-流程编辑器.html	web.tab6664.button_4	👁 预览代码
+tab-流程编辑器.html	web.tab6664.p_1	可视化创建多模型协作流程：通用模型思考 → 垂直模型执行 → 工具合成
+tab-流程编辑器.html	web.tab6664.p_2	点击"+ 添加步骤"开始
+tab-流程编辑器.html	web.tab6664.p_3	加载中...
+tab-流程编辑器.html	web.tab6664.p_4	点击"+ 添加步骤"开始
+tab-流程编辑器.html	web.tab6664.p_5	无可执行流程
+tab-流程编辑器.html	web.tab6664.p_6	加载失败: ' + e + '
+tab-流程编辑器.html	web.tab6664.placeholder_1	流程名称（如：写歌+配乐）
+tab-流程编辑器.html	web.tab6664.placeholder_2	触发词（如：写一首歌）
+tab-流程编辑器.html	web.tab6664.placeholder_3	参数（如：genre=country,duration=30）
+tab-流程编辑器.html	web.tab6664.span_1	步骤
+tab-流程编辑器.html	web.tab6664.span_2	保存中...
+tab-流程编辑器.html	web.tab6664.span_3	✅ 代码已生成！Skill名：' + skillName + '
+tab-流程编辑器.html	web.tab6664.span_4	✅ 代码生成成功（需先保存才能执行）
+tab-流程编辑器.html	web.tab6664.span_5	' + (f.trigger || '无触发词') + '
+tab-流程编辑器.html	web.tab6664.span_6	✅可执行
+tab-渠道接入.html	web.channels.desc_1	将 Harven AI 接入飞书、钉钉、Telegram 或自定义 Webhook，让 AI 在更多场景自动响应。
+tab-渠道接入.html	web.channels.title_1	📡 多渠道接入
+tab-渠道接入.html	web.channels.title_2	➕ 添加新渠道
+tab-渠道接入.html	web.channels.button_1	📡 添加渠道
+tab-渠道接入.html	web.channels.option_1	🌐 通用 Webhook
+tab-渠道接入.html	web.channels.option_2	🐦 飞书机器人
+tab-渠道接入.html	web.channels.option_3	🔔 钉钉机器人
+tab-渠道接入.html	web.channels.placeholder_1	例如：团队飞书群
+tab-硬件检测.html	web.hardware.desc_1	根据你的硬件配置，自动推荐最适合的本地模型。
+tab-硬件检测.html	web.hardware.title_1	🖥️ 硬件自检 & 模型推荐
+tab-硬件检测.html	web.hardware.title_2	🎯 你希望 AI 帮你做什么？
+tab-硬件检测.html	web.hardware.title_3	📊 推荐结果
+tab-硬件检测.html	web.hardware.title_4	💡 模型策略说明
+tab-硬件检测.html	web.hardware.button_1	🔍 检测硬件
+tab-硬件检测.html	web.hardware.button_2	
+                                    🚀 获取推荐
+                                
+tab-硬件检测.html	web.hardware.button_3	📥 从魔搭下载
+tab-硬件检测.html	web.hardware.p_1	点击"检测硬件"按钮开始分析...
+tab-硬件检测.html	web.hardware.placeholder_1	例如：我想生成本地音乐🎵
+tab-硬件检测.html	web.hardware.span_1	⏳ 正在分析...
+tab-硬件检测.html	web.hardware.span_2	' + m.vram_gb + 'GB VRAM · ' + m.size_gb + 'GB 下载
+tab-硬件检测.html	web.hardware.span_3	你的硬件不足以运行此类模型的推荐版本
+tab-硬件检测.html	web.hardware.span_4	需 ' + m.vram_gb + 'GB VRAM
+tab-硬件检测.html	web.hardware.span_5	暂无降级方案
+tab-硬件检测.html	web.hardware.span_6	❌ 获取推荐失败: ' + e.message + '
+tab-高级功能.html	web.advanced.heading_2	📋 Skill触发词管理
+tab-高级功能.html	web.advanced.heading_3	⏰ 定时任务
+tab-高级功能.html	web.advanced.heading_4	📝 Obsidian目录同步
+tab-高级功能.html	web.advanced.heading_5	🤖 AI自动生成Skill
+tab-高级功能.html	web.advanced.heading_6	💨 AirLLM（低显存跑大模型）
+tab-高级功能.html	web.advanced.heading_7	🖥️ 硬件信息
+tab-高级功能.html	web.advanced.button_3	生成Skill
+tab-高级功能.html	web.advanced.p_1	加载中...
+tab-高级功能.html	web.advanced.p_2	加载中...
+tab-高级功能.html	web.advanced.p_3	加载中...
+tab-高级功能.html	web.advanced.p_4	加载中...
+tab-高级功能.html	web.advanced.p_5	无Skill
+tab-高级功能.html	web.advanced.p_7	无定时任务
+tab-高级功能.html	web.advanced.p_10	安装：' + r.install_cmd + '
+tab-高级功能.html	web.advanced.p_11	显存：' + r.vram_gb + 'GB（空闲' + r.free_gb + 'GB）
+tab-高级功能.html	web.advanced.p_12	未检测到GPU
+tab-高级功能.html	web.advanced.placeholder_1	任务名称
+tab-高级功能.html	web.advanced.placeholder_2	Obsidian vault路径（如 H:\MyNotes）
+tab-高级功能.html	web.advanced.placeholder_3	Skill名称（英文）
+tab-高级功能.html	web.advanced.span_1	' + (s.has_script?'脚本':'提示词') + '
+tab-高级功能.html	web.advanced.span_2	' + (t.enabled?'启用':'禁用') + '
+tab-高级功能.html	web.advanced.span_3	同步完成：导入' + d.imported + '个文件，' + d.errors + '个失败
+tab-高级功能.html	web.advanced.span_4	✅ Skill "' + d.skill_name + '" 已生成！

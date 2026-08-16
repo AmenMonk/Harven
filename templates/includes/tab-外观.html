@@ -1,0 +1,128 @@
+<!-- Tab: 外观 -->
+                <div class="tab-panel" id="tab-appearance">
+                    <div class="settings-grid">
+                        <div class="setting-group">
+                            <label data-i18n="web.appearance.label_1">主题</label>
+                            <div class="theme-options">
+                                <button class="theme-btn active" onclick="setTheme('dark')" data-theme="dark" data-i18n="web.appearance.button_1">🌙 深色</button>
+                                <button class="theme-btn" onclick="setTheme('light')" data-theme="light" data-i18n="web.appearance.button_2">☀️ 浅色</button>
+                                <button class="theme-btn" onclick="setTheme('system')" data-theme="system" data-i18n="web.appearance.button_3">💻 跟随系统</button>
+                            </div>
+                        </div>
+                        <div class="setting-group">
+                            <label data-i18n="web.appearance.label_2">字体大小</label>
+                            <select id="setFontSize">
+                                <option value="small" data-i18n="web.appearance.option_1">小号字体</option>
+                                <option value="medium" selected data-i18n="web.appearance.option_2">中号字体（默认）</option>
+                                <option value="large" data-i18n="web.appearance.option_3">大号字体</option>
+                            </select>
+                        </div>
+                        <div class="setting-group">
+                            <label data-i18n="web.appearance.label_3">气泡样式</label>
+                            <select id="setBubbleStyle">
+                                <option value="default" selected data-i18n="web.appearance.option_4">默认 — 宽松舒适</option>
+                                <option value="compact" data-i18n="web.appearance.option_5">紧凑 — 更多内容</option>
+                            </select>
+                        </div>
+                        <div class="setting-group">
+                            <label data-i18n="web.appearance.label_4">底部状态栏</label>
+                            <label class="setting-toggle">
+                                <span data-i18n="web.appearance.span_1">显示系统状态栏</span>
+                                <input type="checkbox" id="setStatusBar" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                            <div class="setting-desc" data-i18n="web.appearance.desc_1">在聊天窗口底部显示模型状态和系统信息</div>
+                        </div>
+
+                        <!-- 品牌定制 -->
+                        <div class="setting-section-title" style="margin-top:20px;" data-i18n="web.appearance.title_1">🎨 品牌定制</div>
+                        <div class="setting-desc" style="margin-bottom:12px;" data-i18n="web.appearance.desc_2">自定义 Harven 的显示名称和应用图标，个性化你的 AI 助手。</div>
+
+                        <div class="setting-group" style="background:var(--bg-secondary);padding:16px;border-radius:8px;border:1px solid var(--border);">
+                            <!-- 自定义名称 -->
+                            <div style="margin-bottom:14px;">
+                                <label style="font-size:12px;color:var(--text-secondary);" data-i18n="web.appearance.label_5">AI 显示名称</label>
+                                <div style="display:flex;gap:8px;margin-top:4px;">
+                                    <input type="text" id="brandCustomName" placeholder="Harven AI" maxlength="20" style="flex:1;">
+                                    <button class="btn-primary btn-sm" onclick="saveBrandName()">💾</button>
+                                    <button class="btn-secondary btn-sm" onclick="resetBrandName()" data-i18n="web.appearance.button_4">重置</button>
+                                </div>
+                                <div id="brandNameHint" style="font-size:11px;color:var(--text-secondary);margin-top:4px;">修改后将显示在侧边栏标题和对话界面</div>
+                            </div>
+
+                            <!-- 自定义图标 -->
+                            <div style="margin-bottom:14px;">
+                                <label style="font-size:12px;color:var(--text-secondary);" data-i18n="web.appearance.label_6">应用图标</label>
+                                <div style="display:flex;align-items:center;gap:12px;margin-top:6px;">
+                                    <div id="brandIconPreview" style="width:48px;height:48px;border-radius:12px;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:24px;border:2px solid var(--border);">🤖</div>
+                                    <div>
+                                        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
+                                            <span class="brand-emoji-btn" onclick="setBrandEmoji('🤖')" title="机器人">🤖</span>
+                                            <span class="brand-emoji-btn" onclick="setBrandEmoji('✨')" title="闪耀">✨</span>
+                                            <span class="brand-emoji-btn" onclick="setBrandEmoji('🧠')" title="大脑">🧠</span>
+                                            <span class="brand-emoji-btn" onclick="setBrandEmoji('🦊')" title="狐狸">🦊</span>
+                                            <span class="brand-emoji-btn" onclick="setBrandEmoji('🐉')" title="龙">🐉</span>
+                                            <span class="brand-emoji-btn" onclick="setBrandEmoji('⚡')" title="闪电">⚡</span>
+                                            <span class="brand-emoji-btn" onclick="setBrandEmoji('🌟')" title="星星">🌟</span>
+                                            <span class="brand-emoji-btn" onclick="setBrandEmoji('🎯')" title="靶心">🎯</span>
+                                        </div>
+                                        <input type="text" id="brandCustomEmoji" data-i18n-ph="web.appearance.placeholder_1" placeholder="或输入任意 emoji" maxlength="4" style="width:120px;font-size:18px;text-align:center;" oninput="setBrandEmoji(this.value)">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 自定义头像（图片上传） -->
+                            <div>
+                                <label style="font-size:12px;color:var(--text-secondary);" data-i18n="web.appearance.label_7">自定义头像（可选，支持 PNG/JPG，建议 512×512）</label>
+                                <div style="display:flex;gap:8px;align-items:center;margin-top:4px;">
+                                    <input type="file" id="brandAvatarFile" accept="image/png,image/jpeg,image/webp" onchange="previewBrandAvatar(this)" style="flex:1;font-size:12px;">
+                                    <button class="btn-secondary btn-sm" onclick="clearBrandAvatar()" data-i18n="web.appearance.button_5">清除</button>
+                                </div>
+                                <img id="brandAvatarPreviewImg" style="display:none;width:64px;height:64px;border-radius:12px;margin-top:8px;object-fit:cover;border:2px solid var(--border);">
+                            </div>
+                        </div>
+
+                        <!-- 风格包管理（隐私保护） -->
+                        <div class="setting-section-title" style="margin-top:20px;" data-i18n="web.appearance.title_2">🎁 风格包管理</div>
+                        <div class="setting-desc" style="margin-bottom:12px;" data-i18n="web.appearance.desc_3">将品牌定制数据导出为风格包，或导入他人分享的风格包。</div>
+
+                        <div class="setting-group" style="background:var(--bg-secondary);padding:16px;border-radius:8px;border:1px solid var(--border);margin-bottom:12px;">
+                            <!-- 隐私声明 -->
+                            <div style="background:#1e3a1e;border:1px solid #34d39944;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:12px;color:#34d399;">
+                                🔒 <strong>隐私声明：</strong>品牌定制数据（名称/Emoji/头像）仅存储于本机 localStorage，<strong>不上传任何服务器</strong>，不参与任何网络请求。导出的风格包文件保留在本机，不会自动传输。
+                            </div>
+
+                            <!-- 导出选项 -->
+                            <div style="margin-bottom:12px;">
+                                <label style="font-size:12px;color:var(--text-secondary);margin-bottom:6px;display:block;" data-i18n="web.appearance.label_8">导出风格包</label>
+                                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+                                    <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;">
+                                        <input type="checkbox" id="exportIncludeAvatar" checked> 包含头像图片
+                                    </label>
+                                    <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;">
+                                        <input type="checkbox" id="exportIncludeEmoji" checked> 包含 Emoji 图标
+                                    </label>
+                                    <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;">
+                                        <input type="checkbox" id="exportIncludeName" checked> 包含自定义名称
+                                    </label>
+                                </div>
+                                <button class="btn-secondary btn-sm" onclick="exportStylePack()" data-i18n="web.appearance.button_6">📦 导出风格包 (.json)</button>
+                            </div>
+
+                            <!-- 导入 -->
+                            <div>
+                                <label style="font-size:12px;color:var(--text-secondary);margin-bottom:6px;display:block;" data-i18n="web.appearance.label_9">导入风格包</label>
+                                <div style="display:flex;gap:8px;align-items:center;">
+                                    <input type="file" id="stylePackFile" accept=".json" onchange="importStylePack(this)" style="flex:1;font-size:12px;">
+                                </div>
+                                <div id="stylePackImportStatus" style="margin-top:6px;font-size:12px;color:var(--text-secondary);min-height:16px;"></div>
+                            </div>
+                        </div>
+
+                        <!-- 风格包重置 -->
+                        <div class="setting-group">
+                            <button class="btn-secondary btn-sm" style="color:#f87171;border-color:#f87171" onclick="resetStylePack()" data-i18n="web.appearance.button_7">🗑️ 重置所有品牌定制</button>
+                            <div class="setting-desc" style="margin-top:4px;" data-i18n="web.appearance.desc_4">清除本机的所有品牌定制数据，恢复 Harven AI 默认外观。</div>
+                        </div>
+                    </div>
+                </div>

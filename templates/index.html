@@ -1,0 +1,1617 @@
+﻿<!--
+  Harven AI 哈文 - 纯本地私有AI大脑
+  Copyright 2026 AmenMonk <38552540@qq.com>
+  Licensed under Apache License 2.0
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <!-- 防闪烁：CSS加载前先应用主题 -->
+    <script>
+        (function(){
+            try {
+                var t = JSON.parse(localStorage.getItem('harven_theme') || '""');
+                if (t === 'system') t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+                if (t) document.documentElement.setAttribute('data-theme', t);
+            } catch(e) {}
+        })();
+    </script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <meta name="copyright" content="Copyright 2026 AmenMonk">
+    <meta name="author" content="AmenMonk">
+    <title>Harven AI 哈文</title>
+
+    <!-- PWA -->
+    <!-- PWA manifest disabled — localhost app doesn't need Service Worker caching -->
+    <!-- <link rel="manifest" href="/static/manifest.json"> -->
+    <meta name="theme-color" content="#1a1a2e">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Harven AI 哈文">
+    <link rel="apple-touch-icon" href="/static/icons/duck_180.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/duck_192.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/duck_32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/icons/duck_16.png">
+
+    <link rel="stylesheet" href="/static/css/style.css?v={{ build_id }}">
+    <script src="/static/js/vendor/marked.min.js"></script>
+    <link rel="stylesheet" href="/static/css/vendor/github.min.css">
+    <script src="/static/js/vendor/highlight.min.js"></script>
+
+    <!-- Harven AI 模块 -->
+    <!-- ★ i18n 引擎必须最先加载（其他模块可能依赖 HarvenI18n.t） -->
+    <script src="/static/js/modules/app-i18n.js?v={{ build_id }}"></script>
+    <script src="/static/js/modules/app-skills.js?v={{ build_id }}"></script>
+    <script src="/static/js/modules/app-panels.js?v={{ build_id }}"></script>
+    <script src="/static/js/modules/app-evolution.js?v={{ build_id }}"></script>
+    <script src="/static/js/modules/app-fallback.js?v={{ build_id }}"></script>
+    <script src="/static/js/modules/app-extraction.js?v={{ build_id }}"></script>
+    <script src="/static/js/modules/app-bilibili.js?v={{ build_id }}"></script>
+    <script src="/static/js/modules/app-vertical.js?v={{ build_id }}"></script>
+
+    <!-- 侧边栏按钮占位：确保 openModal 和侧边栏专用函数在 JS 模块加载前就已定义 -->
+    <script>
+        // ① openModal 占位（入队，等 app-settings.js 加载后补执行）
+        window._openModalQueue = [];
+        window.openModal = function(id) {
+            window._openModalQueue.push(id);
+            console.warn('[Harven] openModal 延迟调用（app-settings.js 加载中）:', id);
+            setTimeout(function() {
+                var isReady = window._openModalReady === true;
+                var isPlaceholder = window.openModal.toString().indexOf('_openModalQueue.push') !== -1;
+                if (!isReady && isPlaceholder) {
+                    alert('页面资源加载较慢，请稍后再试。若持续出现，请按 Ctrl+F5 强制刷新。');
+                }
+            }, 6000);
+        };
+
+        // ② 侧边栏按钮最终版函数 — 统一用 .active class 控制显隐（避免 cssText 覆盖冲突）
+        window._forceOpenModal = function(id) {
+            console.log('[Harven] _forceOpenModal 被调用, id=' + id);
+            // 先关闭其他modal
+            var allModals = document.querySelectorAll('.modal-overlay.active');
+            for (var i = 0; i < allModals.length; i++) {
+                if (allModals[i].id !== id) {
+                    allModals[i].classList.remove('active');
+                }
+            }
+            var el = document.getElementById(id);
+            if (!el) {
+                console.error('[Harven] Modal元素不存在:', id);
+                alert('弹窗 [' + id + '] 加载失败。请按 Ctrl+Shift+R 强制刷新页面。');
+                return false;
+            }
+            el.classList.add('active');
+            window._lastModalOpenTime = Date.now();
+            console.log('[Harven] ✅ Modal已打开:', id);
+            return true;
+        };
+        // 兜底closeModal + 侧边栏快捷打开函数 — 统一用 .active class 控制
+        if (!window._sidebarDataNeeded) window._sidebarDataNeeded = {};
+        window.openSidebarModal = function(id) {
+            // 映射：modal ID → data-needed key
+            var dataKeyMap = {
+                'kbModal': 'kb', 'specModal': 'spec', 'taskModal': 'task',
+                'monitorModal': 'monitor', 'settingsModal': 'settings'
+            };
+            // 关闭其他已打开的 modal
+            var allModals = document.querySelectorAll('.modal-overlay.active');
+            for (var i = 0; i < allModals.length; i++) {
+                if (allModals[i].id !== id) allModals[i].classList.remove('active');
+            }
+            var ok = _activateModal(id);
+            var dk = dataKeyMap[id];
+            if (ok && dk) window._sidebarDataNeeded[dk] = true;
+            return ok;
+        };
+        function _activateModal(id) {
+            var el = document.getElementById(id);
+            if (el) {
+                el.classList.add('active');
+                window._lastModalOpenTime = Date.now();
+            }
+            return !!el;
+        }
+        window.openKbModal = function() { _activateModal('kbModal'); window._sidebarDataNeeded.kb = true; if (window.loadKbList) setTimeout(loadKbList, 300); };
+        window.openSpecModal = function() { _activateModal('specModal'); window._sidebarDataNeeded.spec = true; };
+        window.openTaskModal = function() { _activateModal('taskModal'); window._sidebarDataNeeded.task = true; };
+        window.openMonitorModal = function() { _activateModal('monitorModal'); window._sidebarDataNeeded.monitor = true; };
+        window.openHarvenSettings = function() { _activateModal('settingsModal'); window._sidebarDataNeeded.settings = true; };
+        // 兜底closeModal — 只移除 active class（CSS 控制 display:none）
+        window._fallbackCloseModal = function(id) {
+            var el = document.getElementById(id);
+            if (el) {
+                el.classList.remove('active');
+            }
+        };
+        window.closeModal = window._fallbackCloseModal;  // head中直接可用
+
+        // ★ 2026-08-09: 手机端侧边栏切换
+        function toggleSidebar() {
+            var sb = document.getElementById('sidebar');
+            var ov = document.getElementById('sidebarOverlay');
+            var isOpen = sb.classList.contains('open');
+            if (isOpen) { sb.classList.remove('open'); ov.classList.remove('show'); }
+            else { sb.classList.add('open'); ov.classList.add('show'); }
+        }
+
+        // ★ 2026-08-10: 首次启动3步向导
+        var _wizardStep = 0;
+        var _wizardSteps = [
+            {title:'🔐 设置密码',html:'<p style=\"color:var(--text-secondary);font-size:14px;\">首次使用不需要密码，直接就能用。<br>想设密码的话，去 <b>设置→🔒安全隐私</b> 自己设一个</p>'},
+            {title:'🤖 配置外脑 Key',html:'<p style="color:var(--text-secondary);font-size:14px;">去 <b>设置→🤖模型管理</b><br>填入 DeepSeek/GLM 等 API Key<br><span style="font-size:12px;color:#888;">能使用云端模型，回复更快更准</span></p>'},
+            {title:'📥 拉取本地模型',html:'<p style="color:var(--text-secondary);font-size:14px;">去 <b>设置→🤖模型管理</b>→<br>点击"一键拉模型"下载 qwen2.5<br><span style="font-size:12px;color:#888;">本地模型永久免费、完全隐私</span></p>'}
+        ];
+        function renderWizard() {
+            var s = _wizardStep;
+            document.getElementById('wizardStepTitle').textContent = '第'+(s+1)+'步，共3步';
+            document.getElementById('wizardContent').innerHTML = '<h3>'+_wizardSteps[s].title+'</h3>'+_wizardSteps[s].html;
+            var dots = '';
+            for (var i=0;i<3;i++) dots += '<span style="width:10px;height:10px;border-radius:50%;background:'+(i<=s?'var(--primary)':'var(--border)')+';display:inline-block;"></span>';
+            document.getElementById('wizardDots').innerHTML = dots;
+            if (s >= 2) {
+                document.getElementById('wizardNext').style.display='none';
+                document.getElementById('wizardBtnGuide').style.display='inline-block';
+            } else {
+                document.getElementById('wizardNext').style.display='inline-block';
+                document.getElementById('wizardBtnGuide').style.display='none';
+            }
+        }
+        function nextWizardStep() { _wizardStep++; if (_wizardStep>=3) _wizardStep=2; renderWizard(); if (_wizardStep>=2) skipWizard(); }
+        function skipWizard() {
+            document.getElementById('firstRunWizard').style.display='none';
+            fetch('/api/settings/first-run/complete',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+        }
+        // 检测首次运行
+        fetch('/api/settings/first-run/check').then(r=>r.json()).then(d=>{
+            if (d.is_first_run) { document.getElementById('firstRunWizard').style.display='flex'; renderWizard(); }
+        }).catch(function(){});
+    </script>
+
+    <!-- Service Worker 注册 -->
+        {% include "includes/pwa-init.html" %}
+
+    <!-- ★ 2026-08-09: 手机端适配CSS -->
+    <style id="harven-mobile-css">
+        /* 桌面端：隐藏汉堡菜单按钮 + 边距调整 */
+        .menu-toggle { display: none !important; }
+        #sidebar .sidebar-header { padding-top: 0 !important; }
+        #sidebar .sidebar-footer { padding-bottom: 0 !important; }
+        
+        @media (max-width: 768px) {
+            /* === iPhone Safari 全局修复 === */
+            html, body { height: 100%; overflow: hidden; -webkit-overflow-scrolling: touch; }
+            /* 安全区域变量 */
+            :root { --safe-top: env(safe-area-inset-top, 0px); --safe-bottom: env(safe-area-inset-bottom, 0px); }
+            /* 主视图占满 */
+            #app { display: flex; flex-direction: row; height: 100vh; height: -webkit-fill-available; }
+            #main { flex: 1; min-width: 0; margin-left: 0 !important; }
+            
+            /* === 汉堡按钮强制可见 === */
+            .menu-toggle { position: fixed; top: calc(max(12px, var(--safe-top)) + 0px); left: 12px;
+                           z-index: 99999; width: 40px; height: 40px; 
+                           display: flex !important; align-items: center; justify-content: center;
+                           background: rgba(15,15,26,0.92); color: #fff; font-size: 24px;
+                           border: 1px solid rgba(255,255,255,0.15); border-radius: 12px;
+                           box-shadow: 0 2px 12px rgba(0,0,0,0.5); cursor: pointer; }
+            
+            /* 隐藏侧边栏 */
+            #sidebar { position: fixed; left: -290px; top: 0; bottom: 0; width: 280px; z-index: 10001;
+                       background: var(--bg-secondary, #1a1a2e); transition: left 0.3s ease-out;
+                       overflow-y: auto; height: 100vh; display: flex; flex-direction: column;
+                       padding-top: calc(var(--safe-top) + 48px); }
+            #sidebar.open { left: 0; box-shadow: 4px 0 30px rgba(0,0,0,0.6); }
+            #sidebar .sidebar-header { padding: 12px 12px 16px; border-bottom: 1px solid var(--border, #333); flex-shrink: 0; }
+            #sidebar .sidebar-footer { margin-top: auto; padding: 12px calc(var(--safe-bottom) + 12px); border-top: 1px solid var(--border, #333); flex-shrink: 0; }
+            /* 遮罩层 */
+            .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 10000; }
+            .sidebar-overlay.show { display: block; }
+            
+            /* === 对话区 + 输入框 iPhone 适配 === */
+            #chatContainer, .chat-container { margin-left: 0 !important; padding: 8px !important; }
+            /* 输入框：防Safari底栏 + 最小高度 */
+            .input-area { padding: 6px 4px calc(var(--safe-bottom) + 8px) 4px !important; gap: 4px !important; }
+            .input-wrapper { flex: 1; min-width: 0 !important; }
+            .input-wrapper textarea { min-width: 0 !important; width: 100% !important; min-height: 40px !important; font-size: 16px !important; }
+            #userInput { font-size: 16px !important; }
+            /* 设置弹窗占满 */
+            .modal-content, .modal-xl { max-width: 100% !important; width: 100% !important;
+                                        margin: 0 !important; border-radius: 0 !important;
+                                        max-height: 100vh !important; }
+            /* 面板+画板 */
+            #panelViewer { width: 100% !important; }
+            #verticalPanel { width: 100% !important; }
+            /* 工具栏精简 */
+            .qm-label { display: none !important; }
+            .qm-btn { padding: 3px 6px !important; font-size: 11px !important; }
+            .query-mode-selector { flex-wrap: wrap !important; gap: 2px !important; padding: 2px 4px !important; }
+            #queryModeDebug { display: none !important; }
+            .collab-dropdown-btn { padding: 3px 6px !important; font-size: 11px !important; }
+            .input-toolbar { gap: 2px !important; padding: 4px 6px !important; }
+            .input-toolbar button { padding: 4px 6px !important; font-size: 11px !important; }
+        }
+    </style>
+
+</head>
+<body>
+    <!-- ★ 2026-08-09: 手机端汉堡菜单 -->
+    <button class="menu-toggle" id="menuToggle" onclick="toggleSidebar()" title="菜单">☰</button>
+    <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+    
+    <!-- ★ 2026-08-10: 首次启动3步向导 -->
+    <div id="firstRunWizard" style="display:none;position:fixed;inset:0;z-index:20000;background:rgba(0,0,0,0.8);align-items:center;justify-content:center;">
+      <div style="background:var(--bg-secondary,#1a1a2e);border-radius:16px;padding:32px;max-width:480px;width:90%;border:1px solid var(--border);text-align:center;">
+        <div style="font-size:48px;margin-bottom:8px;">🦆</div>
+        <h2 style="color:#a78bfa;margin-bottom:4px;">欢迎使用 Harven AI 哈文</h2>
+        <p style="color:var(--text-secondary);margin-bottom:20px;" id="wizardStepTitle">第1步，共3步</p>
+        <div id="wizardContent"></div>
+        <div id="wizardDots" style="margin:16px 0;display:flex;justify-content:center;gap:8px;"></div>
+        <div style="display:flex;gap:10px;justify-content:center;">
+          <button id="wizardSkip" onclick="skipWizard()" style="background:transparent;border:1px solid var(--border);color:var(--text-secondary);padding:8px 20px;border-radius:8px;cursor:pointer;">跳过</button>
+          <button id="wizardNext" onclick="nextWizardStep()" style="background:var(--primary);color:#fff;border:none;padding:8px 24px;border-radius:8px;cursor:pointer;">下一步</button>
+          <a id="wizardBtnGuide" href="/docs/guide.html" target="_blank" style="background:var(--primary);color:#fff;text-decoration:none;padding:8px 24px;border-radius:8px;display:none;">查看完整指南</a>
+        </div>
+      </div>
+    </div>
+    
+    <div id="app">
+        <!-- Sidebar -->
+        <aside id="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <img src="/static/icon-duck.png" style="width:28px;height:28px;border-radius:6px;">
+                    <span class="logo-text">Harven AI 哈文</span>
+                </div>
+            </div>
+
+            <button class="btn-new-chat" onclick="newChat()">
+                <span class="icon">+</span> <span data-i18n="web.new_chat">新对话</span>
+            </button>
+
+            <!-- Multi-select toolbar -->
+            <div class="batch-bar" id="batchBar" style="display:none">
+                <span id="batchCount" data-i18n="web.batch_selected" data-i18n-n="0">已选 0 个</span>
+                <button class="btn-batch" onclick="selectAllConvs()" data-i18n="web.select_all">全选</button>
+                <button class="btn-batch btn-batch-danger" onclick="batchDeleteConvs()" data-i18n="web.delete_selected">删除选中</button>
+            </div>
+
+            <!-- Specialization selector -->
+            <div class="spec-selector">
+                <select id="specSelect" onchange="switchSpec(this.value)">
+                    <option value="" data-i18n="web.spec_default">🎯 通用模式</option>
+                </select>
+                <div id="channelName" class="channel-name" data-i18n="web.spec_default">💬 通用模式</div>
+            </div>
+
+            <!-- Conversation list -->
+            <div class="conv-list" id="convList">
+                <!-- Populated by JS -->
+            </div>
+
+            <div style="display:flex; gap:6px; padding:8px 12px;">
+                <button class="btn-multi-select" id="btnMultiSelect" style="flex:1;" data-i18n="web.multi_select">☑ 多选</button>
+                <button class="btn-multi-select" onclick="manualClassify()" data-i18n-title="web.classify_title" title="自动分类对话">🏷️</button>
+            </div>
+
+            <!-- 侧边栏按钮：统一走 openModal（完整版，含 display:flex 双保险） -->
+            <div class="sidebar-footer" id="sidebarFooter">
+                <button class="btn-sidebar" id="btnKb"
+                    onclick="if(window.openModal)window.openModal('kbModal')" data-i18n="web.kb">📚 知识库</button>
+                <button class="btn-sidebar" id="btnSpec"
+                    onclick="if(window.openModal)window.openModal('specModal')" data-i18n="web.spec_cultivate">🎯 专项培养</button>
+                <button class="btn-sidebar" id="btnTask"
+                    onclick="if(window.openModal)window.openModal('taskModal')" data-i18n="web.task_mgmt">📋 任务管理</button>
+                <button class="btn-sidebar" id="btnMonitor"
+                    onclick="if(window.openModal)window.openModal('monitorModal')" data-i18n="web.monitor">🔍 监控中心</button>
+                <button class="btn-sidebar" id="btnSettings"
+                    onclick="if(window.openModal)window.openModal('settingsModal')" data-i18n="web.settings">⚙️ 设置</button>
+                <button class="btn-sidebar btn-harvenhub" id="btnHarvenHub"
+                    onclick="if(window.openHarvenHub)window.openHarvenHub(); if(window.hubInit)hubInit()">🛒 HarvenHub</button>
+                <button class="btn-sidebar" id="btnHelp"
+                    onclick="window.open('/docs/guide.html','_blank')" data-i18n-title="web.help_title" title="打开完整使用指南" data-i18n="web.help">❓ 帮助</button>
+            </div>
+            <!-- 图片生成按钮单独处理 -->
+            <script>
+            (function(){
+                var imgBtn = document.getElementById('imgGenBtn');
+                if (imgBtn) {
+                    imgBtn.addEventListener('click', function(e){
+                        e.stopPropagation();
+                        var overlay = document.getElementById('imgGenOverlay');
+                        if (overlay) { overlay.style.display='flex'; overlay.classList.add('active'); }
+                    });
+                }
+                console.log('[Harven] ✅ 侧边栏 v250613-3 已激活（纯onclick，无竞态）');
+            })();
+            </script>
+            {% include "includes/sidebar-panels.html" %}
+        </aside>
+
+        <!-- Main area -->
+        <main id="main" style="display:flex;flex-direction:row;">
+            {% include "includes/panel-viewer.html" %}
+            <!-- Vertical Canvas Panel (垂直画板，默认隐藏；开启时置顶) -->
+            <div id="verticalPanel" style="display:none;width:420px;flex-shrink:0;border-left:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--bg-secondary);flex-direction:column;transition:width 0.3s,flex 0.3s;">
+                <!-- 画板头部 -->
+                <div style="padding:8px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <select id="verticalModelSelect" onchange="onVerticalModelChange(this.value)" style="background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;max-width:200px;">
+                            <option value="">选择垂直模型...</option>
+                        </select>
+                    </div>
+                    <button onclick="closeVerticalPanel()" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-secondary);padding:4px;">✕</button>
+                </div>
+                <!-- 画板内容区（由JS动态渲染，flex column: 结果上/表单下） -->
+                <div id="verticalCanvas" style="flex:1;display:flex;flex-direction:column;overflow:hidden;padding:12px;min-height:180px;">
+                    <div style="text-align:center;color:var(--text-secondary);font-size:13px;padding:40px 0;">请选择一个垂直模型</div>
+                </div>
+                <!-- 画板状态栏 -->
+                <div id="verticalStatus" style="padding:6px 12px;border-top:1px solid var(--border);font-size:11px;color:var(--text-secondary);flex-shrink:0;"></div>
+            </div>
+
+            <!-- Chat area wrapper (对话框：消息+输入，垂直模式下移到画板下方) -->
+            <div id="chatWrapper" style="flex:1;min-width:0;display:flex;flex-direction:column;">
+                <!-- Chat messages area -->
+                <div id="chatArea" style="flex:1;min-height:0;display:flex;flex-direction:column;">
+                    <!-- Welcome screen (shown when no messages) -->
+                    <div id="welcomeScreen" class="welcome">
+                        <div class="welcome-icon">⚡</div>
+                        <h1 data-i18n="web.home.title">Harven AI 哈文</h1>
+                        <p class="welcome-sub" data-i18n="web.home.tagline">纯本地 · 私有 · 你的专属AI助手</p>
+                        <div class="welcome-hints">
+                            <div class="hint-card" onclick="quickSend('介绍一下你自己')">👋 <span data-i18n="web.home.suggestion_intro">介绍一下你自己</span></div>
+                            <div class="hint-card" onclick="quickSend('今天天气怎么样')">🌤 <span data-i18n="web.home.suggestion_weather">今天天气怎么样</span></div>
+                            <div class="hint-card" onclick="quickSend('帮我写一首诗')">✍️ <span data-i18n="web.home.suggestion_poem">帮我写一首诗</span></div>
+                        </div>
+                    </div>
+
+                    <!-- Messages -->
+                    <div id="messages" class="messages"></div>
+                </div>  <!-- /chatArea -->
+
+            <!-- Message Queue Panel（JS 控制显示，默认隐藏） -->
+            <div id="msgQueuePanel" class="msg-queue-panel">
+                <div class="mq-header" id="mqHeader">
+                    <span class="mq-title">
+                        <span id="mqToggle" class="mq-toggle">▶</span>
+                        📋 等待发送 (<span id="mqTotal">0</span> 条)
+                    </span>
+                    <span class="mq-actions">
+                        <button class="mq-btn" onclick="clearQueue()" title="清空队列">🗑️</button>
+                    </span>
+                </div>
+                <div class="mq-body" id="mqBody">
+                    <!-- Queue items rendered by JS -->
+                </div>
+            </div>
+            <!-- 内联脚本：立即隐藏队列面板，防止 JS 加载前闪现 -->
+            <script>
+                (function(){
+                    var p = document.getElementById('msgQueuePanel');
+                    if (p) p.style.display = 'none';
+                })();
+            </script>
+
+            <!-- Input area -->
+            <div class="input-area">
+                <!-- 查询模式切换按钮（打字框左上） -->
+                <div class="query-mode-selector" id="queryModeSelector" data-i18n-title="web.qm_switch_mode" title="切换查询模式">
+                    <span class="qm-group">
+                        <span class="qm-label" data-i18n="web.qm_analyze">分析</span>
+                        <button class="qm-btn" data-mode="kb_only" onclick="setQueryMode('kb_only')" data-i18n="web.qm_local">🏠本地</button>
+                        <button class="qm-btn" id="verticalModeBtn" onclick="toggleVerticalPanel()" data-i18n-title="web.qm_vertical_title" title="切换到垂直模式" style="margin-left:4px;" data-i18n="web.qm_vertical">🎨垂直</button>
+                    </span>
+                    <span class="qm-sep"></span>
+                    <span class="qm-group">
+                        <span class="qm-label" data-i18n="web.qm_direct">直答</span>
+                        <button class="qm-btn" data-mode="direct" onclick="setQueryMode('direct')" data-i18n="web.qm_foreign">🤖外脑</button>
+                        <!-- ★ 2026-08-08: 多外脑切换下拉 -->
+                        <select id="quickForeignModelSelect" onchange="window.quickSwitchForeignModel&&window.quickSwitchForeignModel(this.value)" style="margin-left:4px;padding:2px 6px;border-radius:4px;border:0.5px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);font-size:11px;cursor:pointer;" data-i18n-title="web.qm_switch_foreign" title="切换外脑模型">
+                            <option value="" data-i18n="web.qm_current_foreign">当前外脑</option>
+                        </select>
+                    </span>
+                    <span id="queryModeDebug" style="margin-left:8px;font-size:11px;color:var(--text-secondary);opacity:0.7;" data-i18n="web.qm_current_local">当前: 🏠本地</span>
+                    <!-- ★ 2026-08-16: 中英快捷切换按钮已移除（改用设置→界面语言统一控制） -->
+                    <!-- 协作模式下拉菜单 -->
+                    <span class="qm-sep"></span>
+                    <span class="qm-group" id="collabModeGroup">
+                        <span class="qm-label" data-i18n="web.collab">协作</span>
+                        <div class="collab-dropdown" id="collabDropdown">
+                            <button class="qm-btn collab-dropdown-btn" id="collabModeBtn" onclick="toggleCollabDropdown()">
+                                <span id="collabBtnIcon">🤝</span> <span id="collabBtnText" data-i18n="web.collab_off">关闭</span> <span class="collab-arrow">▾</span>
+                            </button>
+                            <div class="collab-dropdown-menu" id="collabMenu" style="display:none;">
+                                <div class="collab-menu-item" data-mode="off">
+                                    <span class="collab-item-check">●</span>
+                                    <span class="collab-item-icon">🚫</span>
+                                    <div class="collab-item-body">
+                                        <span class="collab-item-title" data-i18n="web.collab_off_title">关闭协作</span>
+                                        <span class="collab-item-desc" data-i18n="web.collab_off_desc">纯对话模式，不启用垂直模型和Skill编排</span>
+                                    </div>
+                                </div>
+                                <div class="collab-menu-item" data-mode="cloud_local">
+                                    <span class="collab-item-check">○</span>
+                                    <span class="collab-item-icon">☁️</span>
+                                    <div class="collab-item-body">
+                                        <span class="collab-item-title" data-i18n="web.collab_cloud">智能协作（推荐）</span>
+                                        <span class="collab-item-desc" data-i18n="web.collab_cloud_desc">Skill脚本编排 + 外脑分析 + 垂直模型执行</span>
+                                    </div>
+                                </div>
+                                <div class="collab-menu-item" data-mode="local_dual">
+                                    <span class="collab-item-check">○</span>
+                                    <span class="collab-item-icon">🏠</span>
+                                    <div class="collab-item-body">
+                                        <span class="collab-item-title" data-i18n="web.collab_local">本地协作</span>
+                                        <span class="collab-item-desc" data-i18n="web.collab_local_desc">Skill脚本编排 + 本地模型 + 垂直模型（无需网络）</span>
+                                    </div>
+                                </div>
+                                <div class="collab-menu-divider"></div>
+                                <div class="collab-menu-item collab-menu-help" onclick="showCollabHelp()">
+                                    <span class="collab-item-icon">📖</span>
+                                    <div class="collab-item-body">
+                                        <span class="collab-item-title" data-i18n="web.collab_help">什么是协作模式？</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </span>
+                </div>
+                <div class="input-wrapper">
+                    <!-- 附件菜单按钮 -->
+                    <div class="attach-wrapper">
+                        <button class="btn-attach-menu" id="attachBtn" data-i18n-title="web.attach" title="附件" onclick="toggleAttachMenu()">
+                            📎
+                        </button>
+                        <div class="attach-menu" id="attachMenu">
+                            <div class="attach-menu-item" onclick="triggerFileInput('imageInput')">
+                                <span class="attach-icon">🖼️</span>
+                                <span>图片</span>
+                            </div>
+                            <!-- G3: 拍照选项已移除（摄像头兼容性差，保留代码不显示按钮）-->
+                            <div class="attach-menu-item" onclick="checkAndSendVideo()">
+                                <span class="attach-icon">🎬</span>
+                                <span>视频</span>
+                            </div>
+                            <div class="attach-menu-item" onclick="checkAndSendAudio()">
+                                <span class="attach-icon">🎵</span>
+                                <span>音频</span>
+                            </div>
+                            <div class="attach-menu-item" onclick="triggerFileInput('fileInput')">
+                                <span class="attach-icon">📄</span>
+                                <span>文件</span>
+                            </div>
+                        </div>
+                        <!-- 隐藏的文件输入 -->
+                        <input type="file" accept="image/*" id="imageInput" onchange="handleImageSelect(this)" multiple hidden>
+                        <input type="file" accept="video/mp4,video/webm,video/avi,video/mkv,video/mov,.mp4,.avi,.mkv,.mov,.webm" id="videoInput" onchange="handleVideoSelect(this)" hidden>
+                        <input type="file" accept="audio/*,.mp3,.wav,.ogg,.flac,.m4a,.aac,.wma,.webm" id="audioInput" onchange="handleAudioSelect(this)" hidden>
+                        <input type="file" id="fileInput" onchange="handleFileSelect(this)" multiple hidden>
+                    </div>
+                    <button id="voiceBtn" class="btn-voice" data-i18n-title="web.voice_title" title="点击开始录音，再次点击停止" onclick="toggleVoiceRecord()">
+                        🎤 录音
+                    </button>
+                    <textarea id="msgInput" data-i18n-ph="web.input_placeholder" placeholder="输入消息... (Shift+Enter换行)" rows="1"></textarea>
+                    <button id="imgGenBtn" class="btn-img-gen" data-i18n-title="web.img_gen" title="生成图片" onclick="(function(){var o=document.getElementById('imgGenOverlay');if(o){o.style.display='flex';o.classList.add('active');var p=document.getElementById('imgGenPrompt');if(p){p.value='';setTimeout(function(){p.focus()},100)}}})()">
+                        🎨
+                    </button>
+                    <button id="webSearchBtn" class="btn-web-search-off" title="联网搜索未开通" onclick="toggleWebSearch()">
+                        🌐 联网关
+                    </button>
+                    <button id="sendBtn" class="btn-send" onclick="sendMessage()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+                        </svg>
+                    </button>
+                    <button id="stopBtn" class="btn-stop-send" onclick="stopGeneration()" style="display:none;" data-i18n-title="web.stop_title" title="停止生成">
+                        ⏹
+                    </button>
+                </div>
+                <div class="input-footer">
+                    {{ model_status_html }}
+                    <span id="convTitle" class="conv-title"></span>
+                </div>
+                <!-- Image preview -->
+                <div id="imagePreview" class="image-preview" style="display:none;flex-wrap:wrap;gap:6px;">
+                    <div id="imageThumbs" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+                </div>
+                <!-- Video preview -->
+                <div id="videoPreview" class="image-preview" style="display:none">
+                    <span id="videoName" style="color:#666;font-size:13px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+                    <button class="btn-remove-img" onclick="removeVideo()">✕</button>
+                </div>
+                <!-- Audio preview -->
+                <div id="audioPreview" class="image-preview" style="display:none">
+                    <span id="audioName" style="color:#666;font-size:13px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+                    <button class="btn-remove-img" onclick="removeAudio()">✕</button>
+                </div>
+                <!-- F2: File preview 移到统一预览区（和图片/视频/音频一起）-->
+                <div id="filePreview" class="image-preview" style="display:none">
+                    <span id="fileName" style="color:#666;font-size:13px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+                    <button class="btn-remove-img" onclick="removeFile()">✕</button>
+                </div>
+                <!-- Camera modal -->
+                <div id="cameraModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;justify-content:center;align-items:center;flex-direction:column;">
+                    <div style="background:var(--card-bg);border-radius:12px;padding:16px;max-width:520px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.4);">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                            <strong style="font-size:15px;">📷 拍照</strong>
+                            <button onclick="closeCamera()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-secondary);">✕</button>
+                        </div>
+                        <video id="cameraVideo" autoplay playsinline style="width:100%;border-radius:8px;background:#000;max-height:400px;object-fit:cover;"></video>
+                        <canvas id="cameraCanvas" style="display:none;"></canvas>
+                        <div id="cameraCapturedImg" style="display:none;margin-top:8px;position:relative;">
+                            <img id="cameraPhoto" style="width:100%;border-radius:8px;max-height:400px;object-fit:cover;">
+                        </div>
+                        <div style="display:flex;gap:10px;justify-content:center;margin-top:14px;">
+                            <button id="btnCapture" class="btn-primary" onclick="capturePhoto()" style="padding:10px 28px;border-radius:8px;border:none;cursor:pointer;font-size:14px;">📸 拍照</button>
+                            <button id="btnRetake" class="btn-secondary" onclick="retakePhoto()" style="padding:10px 28px;border-radius:8px;border:1px solid var(--border);cursor:pointer;font-size:14px;display:none;background:var(--bg-main);color:var(--text-primary);">🔄 重拍</button>
+                            <button id="btnUsePhoto" class="btn-primary" onclick="useCameraPhoto()" style="padding:10px 28px;border-radius:8px;border:none;cursor:pointer;font-size:14px;display:none;">✅ 使用照片</button>
+                        </div>
+                    </div>
+                </div>
+                </div>
+                <!-- F2: 旧 filePreview 已移到上方统一预览区 -->
+                <!-- Voice recording indicator -->
+                <div id="voiceIndicator" style="display:none;position:absolute;bottom:80px;left:50%;transform:translateX(-50%);background:#ff6b6b;color:#fff;padding:10px 24px;border-radius:20px;font-size:14px;z-index:100;animation:pulse 1s infinite">
+                    🔴 正在录音，松开结束...
+                </div>
+            </div>
+        </div>  <!-- /chatWrapper -->
+        </main>
+    </div>
+
+    <!-- Settings Modal (Full) -->
+    <div class="modal-overlay" id="settingsModal">
+        <div class="modal modal-xl">
+            <div class="modal-header">
+                <h2>⚙️ 设置</h2>
+                <div class="settings-search">
+                    <input type="text" id="settingsSearchInput" data-i18n-ph="web.search_settings" placeholder="🔍 搜索设置..." oninput="filterSettingsTabs(this.value)">
+                </div>
+                <!-- 顶部保存按钮（最显眼位置） -->
+                <button class="btn-primary" id="settingsSaveTopBtn" onclick="saveAllSettings()" style="margin-right:8px;white-space:nowrap;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;font-weight:700;padding:8px 20px;font-size:14px;box-shadow:0 2px 8px rgba(34,197,94,0.4);" data-i18n="web.save_settings">💾 保存设置</button>
+                <button class="btn-close" onclick="closeModal('settingsModal')">✕</button>
+            </div>
+            <!-- Settings Tabs: 10 核心页面 -->
+            <div class="settings-tabs-wrapper">
+                <button class="stb-arrow stb-arrow-left" id="stbArrowLeft" onclick="scrollSettingsTabs(-120)" title="向左">‹</button>
+                <div class="settings-tabs" id="settingsTabs">
+                    <!-- ① 基本设置 -->
+                    <button class="stb active" onclick="switchSettingsTab('basic',this)">📋 基本设置</button>
+                    <!-- ② 模型管理 -->
+                    <button class="stb" onclick="switchSettingsTab('model',this)">🤖 模型管理</button>
+                    <!-- ③ 个人画像 -->
+                    <button class="stb" onclick="switchSettingsTab('profile',this)">👤 个人画像</button>
+                    <!-- ④ 外观定制 -->
+                    <button class="stb" onclick="switchSettingsTab('appearance',this)">🎨 外观定制</button>
+                    <!-- ⑤ 安全隐私 -->
+                    <button class="stb" onclick="switchSettingsTab('security',this)">🔒 安全隐私</button>
+                    <!-- 💾 数据 -->
+                    <button class="stb" onclick="switchSettingsTab('vault',this)">💾 数据</button>
+                    <!-- ⑥ 插件管理 -->
+                    <button class="stb" onclick="switchSettingsTab('plugins',this)">🧩 插件管理</button>
+                    <!-- ★ 2026-08-09: 高级功能 -->
+                    <button class="stb" onclick="switchSettingsTab('advanced',this)">⚙️ 高级功能</button>
+                    <!-- ★ 2026-08-09: 流程编辑器 -->
+                    <button class="stb" onclick="switchSettingsTab('floweditor',this)">📋 流程编辑器</button>
+                    <!-- ⑦ 分享联动 -->
+                    <button class="stb" onclick="switchSettingsTab('share',this)">📱 分享联动</button>
+                    <!-- ⑧ 关于 & 连接 -->
+                    <button class="stb" onclick="switchSettingsTab('about',this)">ℹ️ 关于</button>
+                </div>
+                <button class="stb-arrow stb-arrow-right" id="stbArrowRight" onclick="scrollSettingsTabs(120)" title="向右">›</button>
+            </div>
+            <div class="modal-body">
+
+<!-- ════════════ 主 Tab 标识面板（空壳，JS 用来识别当前主 Tab） ════════════ -->
+<!-- 所有子面板扁平放置，JS 统一控制显隐 -->
+
+<!-- ① 基本设置：基本信息 -->
+{% include "includes/tab-基本信息.html" %}
+<!-- 兼容保留：隐藏语言面板（saveAllSettings 读取其中 select 值） -->
+{% include "includes/tab-语言.html" %}
+
+<!-- ② 模型管理：AI模型 + 已安装 + 模型市场 + 手动拉取 -->
+{% include "includes/tab-ai模型.html" %}
+{% include "includes/tab-multimodel.html" %}
+{% include "includes/tab-已安装.html" %}
+{% include "includes/tab-模型市场.html" %}
+{% include "includes/tab-手动拉取.html" %}
+
+<!-- ③ 个人画像 -->
+{% include "includes/tab-个人画像.html" %}
+
+<!-- ④ 外观定制 -->
+{% include "includes/tab-外观.html" %}
+
+<!-- ⑤ 安全隐私：代码沙箱 + Agent -->
+{% include "includes/tab-安全隐私.html" %}
+{% include "includes/tab-代码沙箱.html" %}
+{% include "includes/modal-数据保险箱.html" %}
+{% include "includes/modal-panel-manage.html" %}
+{% include "includes/tab-agent.html" %}
+
+<!-- ⑥ 插件管理 + 工作流编辑 -->
+{% include "includes/tab-skills.html" %}
+{% include "includes/tab-skill-builder.html" %}
+<!-- P2: 工作流编辑器已归档（workflow.py 空架子） -->
+<!-- P2: learner 已归档（GPEA 从未成功） -->
+{% include "includes/tab-agents.html" %}
+{% include "includes/tab-agent-工坊.html" %}
+{% include "includes/tab-external-models.html" %}
+{% include "includes/tab-local-services.html" %}
+{% include "includes/tab-本地双模配置.html" %}
+{% include "includes/tab-本地模型推荐.html" %}
+
+<!-- ⑩ 关于 & 连接：持久子导航（不随面板切换而隐藏） -->
+<div id="aboutSubNavWrapper" style="display:none;gap:6px;margin-bottom:8px;flex-wrap:wrap;padding:0 2px;" class="about-sub-nav-wrapper">
+    <button class="btn-secondary btn-sm about-sub-btn active" onclick="switchAboutSubTab('about',this)">ℹ️ 关于</button>
+    <button class="btn-secondary btn-sm about-sub-btn" onclick="switchAboutSubTab('hardware',this)">🖥️ 硬件</button>
+    <button class="btn-secondary btn-sm about-sub-btn" onclick="switchAboutSubTab('mobile',this)">📱 手机+公网</button>
+                    <button class="btn-secondary btn-sm about-sub-btn" onclick="switchAboutSubTab('channels',this)">📡 渠道接入</button>
+</div>
+<!-- ⑦ 关于 & 连接：关于 + 硬件检测 + 渠道接入 -->
+{% include "includes/tab-关于.html" %}
+{% include "includes/tab-硬件检测.html" %}
+{% include "includes/tab-渠道接入.html" %}
+<!-- ★ 2026-08-09: 高级功能面板 -->
+{% include "includes/tab-高级功能.html" %}
+<!-- ★ 2026-08-09: 流程编辑器 -->
+{% include "includes/tab-流程编辑器.html" %}
+{% include "includes/tab-分享联动.html" %}
+
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="resetSettings()" data-i18n="web.restore_defaults">恢复默认</button>
+                <button class="btn-primary" onclick="saveAllSettings()" data-i18n="web.save_settings">💾 保存设置</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Specialization Modal -->
+    <div class="modal-overlay" id="specModal">
+        <div class="modal modal-lg">
+            <div class="modal-header">
+                <h2>🎯 专项培养</h2>
+                <button class="btn-close" onclick="closeModal('specModal')">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="spec-list" id="specList"></div>
+                <div class="spec-editor">
+                    <input id="specName" placeholder="名称（如：工厂助手）">
+                    <textarea id="specPrompt" rows="6" placeholder="系统提示词（定义AI的角色和规则）"></textarea>
+                    <button class="btn-primary" onclick="saveSpec()">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Knowledge Base Modal -->
+    <div class="modal-overlay" id="kbModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>📚 知识库</h2>
+                <button class="btn-close" onclick="closeModal('kbModal')">✕</button>
+            </div>
+            <div class="modal-body">
+                <!-- 粘贴文本区域 -->
+                <div class="kb-paste-section" style="margin-bottom: 15px; padding: 12px; background: #f0f4ff; border-radius: 8px;">
+                    <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                        <input type="text" id="kbTextTitle" placeholder="输入标题（必填）" style="flex: 1; padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px;">
+                        <button class="btn-primary btn-sm" onclick="pasteToKnowledge()" style="white-space: nowrap;">📋 粘贴并保存</button>
+                    </div>
+                    <textarea id="kbTextContent" placeholder="在此粘贴或输入内容..." style="width: 100%; height: 100px; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; resize: vertical; box-sizing: border-box;"></textarea>
+                    <div style="font-size: 11px; color: #999; margin-top: 4px;">💡 提示：也可以直接 Ctrl+V 粘贴剪贴板内容到上方文本框</div>
+                </div>
+
+                <div class="upload-area" id="kbUpload">
+                    <input type="file" id="kbFiles" multiple hidden>
+                    <div class="upload-hint" onclick="document.getElementById('kbFiles').click()">
+                        📁 点击或拖拽文件到此处上传<br>
+                        <small>支持 txt / md / json / csv / pdf / docx / xlsx / pptx</small>
+                    </div>
+                </div>
+                <div id="kbList" class="kb-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Task Modal -->
+    <div class="modal-overlay" id="taskModal">
+        <div class="modal modal-lg">
+            <div class="modal-header">
+                <h2>📋 任务管理</h2>
+                <button class="btn-close" onclick="closeModal('taskModal')">✕</button>
+            </div>
+            <div class="modal-body">
+                <!-- Task filters -->
+                <div class="task-filters">
+                    <button class="task-filter active" onclick="filterTasks('all', this)">全部</button>
+                    <button class="task-filter" onclick="filterTasks('pending', this)">⬜ 进行中</button>
+                    <button class="task-filter" onclick="filterTasks('done', this)">✅ 已完成</button>
+                </div>
+                <!-- Add task -->
+                <div class="task-add">
+                    <input type="text" id="taskTitleInput" placeholder="新建任务..." onkeydown="if(event.key==='Enter')addTask()">
+                    <select id="taskPriority">
+                        <option value="high">🔴 高</option>
+                        <option value="medium" selected>🟡 中</option>
+                        <option value="low">🟢 低</option>
+                    </select>
+                    <button class="btn-primary btn-sm" onclick="addTask()">添加</button>
+                </div>
+                <!-- Task list -->
+                <div id="taskList" class="task-list"></div>
+                <div id="taskEmpty" class="task-empty" style="display:none">暂无任务，可以从聊天中自动提取或手动添加</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Plugin Install Modal -->
+    <div class="modal-overlay" id="pluginInstallModal">
+        <div class="modal modal-lg">
+            <div class="modal-header">
+                <h2>🧩 安装插件</h2>
+                <button class="btn-close" onclick="closeModal('pluginInstallModal')">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="setting-group">
+                    <label>搜索 GitHub 插件</label>
+                    <div class="search-row">
+                        <input type="text" id="pluginSearchInput" placeholder="输入关键词搜索，或输入 GitHub 仓库地址" onkeydown="if(event.key==='Enter')searchPlugins()">
+                        <button class="btn-primary btn-sm" onclick="searchPlugins()">🔍 搜索</button>
+                    </div>
+                    <div class="setting-desc">示例：harven ai plugin 或 https://github.com/user/repo</div>
+                </div>
+                <div id="pluginSearchResults" class="plugin-results"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Plugin Detail Modal -->
+    <div class="modal-overlay" id="pluginDetailModal">
+        <div class="modal modal-xl">
+            <div class="modal-header">
+                <h2 id="pluginDetailTitle">插件详情</h2>
+                <button class="btn-close" onclick="closeModal('pluginDetailModal')">✕</button>
+            </div>
+            <div class="modal-body">
+                <div id="pluginDetailContent"></div>
+                <div class="modal-footer" style="margin-top:20px">
+                    <button class="btn-secondary" onclick="closeModal('pluginDetailModal')">取消</button>
+                    <button class="btn-primary" id="pluginInstallBtn" onclick="confirmInstallPlugin()">安装插件</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Monitor Modal -->
+    <div class="modal-overlay" id="monitorModal">
+        <div class="modal modal-xl">
+            <div class="modal-header">
+                <h2>🔔 监控中心</h2>
+                <button class="btn-close" onclick="closeModal('monitorModal')">✕</button>
+            </div>
+            <div class="modal-body">
+                <div style="display:flex; gap:20px; height:70vh;">
+                    <!-- Left: Topic List -->
+                    <div style="width:300px; border-right:1px solid var(--border); padding-right:20px; overflow-y:auto;">
+                        <div style="margin-bottom:15px;">
+                            <button class="btn-primary" onclick="showAddTopic()" style="width:100%;">➕ 添加监控主题</button>
+                        </div>
+                        <div id="monitorTopicsList"></div>
+                    </div>
+                    <!-- Right: Topic Details + Items -->
+                    <div style="flex:1; overflow-y:auto;">
+                        <div id="monitorDetail" style="display:none;">
+                            <div style="margin-bottom:15px; display:flex; justify-content:space-between; align-items:center;">
+                                <h3 id="monitorTopicTitle" style="margin:0;"></h3>
+                                <div>
+                                    <button class="btn-secondary" onclick="checkTopicNow()" style="margin-right:8px;">🔄 立即检查</button>
+                                    <button class="btn-danger" onclick="deleteTopic()" style="font-size:12px;">删除</button>
+                                </div>
+                            </div>
+                            <div style="margin-bottom:15px; font-size:13px; color:var(--text-secondary);">
+                                <span>关键词: </span><span id="monitorKeywords"></span>
+                                <span style="margin-left:15px;">未读: </span><span id="monitorUnread" style="color:var(--primary); font-weight:600;"></span>
+                            </div>
+                            <div style="margin-bottom:10px; display:flex; gap:8px;">
+                                <button class="btn-secondary btn-sm" onclick="filterMonitorItems('all')" id="btnMonitorAll">全部</button>
+                                <button class="btn-secondary btn-sm" onclick="filterMonitorItems('unread')" id="btnMonitorUnread">未读</button>
+                            </div>
+                            <div id="monitorItemsList"></div>
+                        </div>
+                        <div id="monitorEmpty" style="text-align:center; padding:40px; color:var(--text-secondary);">
+                            <p style="font-size:48px; margin:0;">🔔</p>
+                            <p style="font-size:16px; font-weight:600;">添加监控主题，自动追踪你关心的内容</p>
+                            <p style="font-size:13px; margin-top:8px;">点击左侧「➕ 添加监控主题」开始</p>
+                            <div style="margin-top:20px; text-align:left; display:inline-block; font-size:12px; line-height:1.8;">
+                                <p>💡 <b>使用技巧：</b></p>
+                                <p>• 关键词用逗号分隔，如：<code>AI, 人工智能, 大模型</code></p>
+                                <p>• 越简短越容易匹配，单字比长句命中率高</p>
+                                <p>• 勾选「RSS订阅」+「网页搜索」覆盖更全</p>
+                                <p>• 添加后自动首次检查，即刻看到结果</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Topic Modal -->
+    <div class="modal-overlay" id="addTopicModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>➕ 添加监控主题</h2>
+                <button class="btn-close" onclick="closeModal('addTopicModal')">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="setting-group">
+                    <label>主题名称</label>
+                    <input type="text" id="topicName" placeholder="例如：AI教育">
+                </div>
+                <div class="setting-group">
+                    <label>关键词</label>
+                    <input type="text" id="topicKeywords" placeholder="用逗号分隔，例如：AI,教育,培训">
+                    <div class="setting-desc">包含这些关键词的内容会被抓取</div>
+                </div>
+                <div class="setting-group">
+                    <label>数据源</label>
+                    <div style="display:flex; gap:15px; margin-top:8px;">
+                        <label style="display:flex; align-items:center; gap:5px; cursor:pointer;">
+                            <input type="checkbox" id="srcRss" checked> RSS订阅
+                        </label>
+                        <label style="display:flex; align-items:center; gap:5px; cursor:pointer;">
+                            <input type="checkbox" id="srcWeb" checked> 网页搜索
+                        </label>
+                        <label style="display:flex; align-items:center; gap:5px; cursor:pointer;">
+                            <input type="checkbox" id="srcGithub"> GitHub
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="closeModal('addTopicModal')">取消</button>
+                <button class="btn-primary" onclick="addTopic()">添加</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== HarvenHub Modal ===== -->
+    <div class="modal-overlay" id="harvenhubModal">
+        <div class="modal modal-xl" style="max-width: 800px;">
+            <div class="modal-header">
+                <h2>🛒 HarvenHub — 社区市场 & 知识打包</h2>
+                <button class="btn-close" onclick="closeHarvenHub()">✕</button>
+            </div>
+
+            <!-- 标签栏 -->
+            <div class="hh-tabs">
+                <button class="hh-tab active" data-tab="market" onclick="hhSwitchTab('market')">🏪 社区市场</button>
+                <button class="hh-tab" data-tab="cloudhub" onclick="hhSwitchTab('cloudhub')">☁️ Hub云端</button>
+                <button class="hh-tab" data-tab="sources" onclick="hhSwitchTab('sources')">📋 选择数据</button>
+                <button class="hh-tab" data-tab="export" onclick="hhSwitchTab('export')">📦 预览&打包</button>
+                <button class="hh-tab" data-tab="history" onclick="hhSwitchTab('history')">📂 历史记录</button>
+            </div>
+
+            <!-- Tab 0: 社区市场 (NEW) -->
+            <div class="hh-tab-panel active" id="hhTab_market">
+                <!-- 市场统计 -->
+                <div id="hhMarketStats" class="hh-market-stats" style="display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap;">
+                    <div class="hh-loading" style="width:100%;font-size:13px;">⏳ 加载市场中...</div>
+                </div>
+
+                <!-- 分类筛选 -->
+                <div id="hhMarketCategories" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
+                </div>
+
+                <!-- 搜索 + 排序 -->
+                <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap;">
+                    <input type="text" id="hhMarketSearch" placeholder="搜索技能..." 
+                           onkeydown="if(event.key==='Enter')hhMarketSearch()"
+                           style="flex:1;min-width:180px;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg-input);color:var(--text);">
+                    <button class="btn-primary btn-sm" onclick="hhMarketSearch()">🔍 搜索</button>
+                    <select id="hhMarketSort" onchange="hhMarketLoad()" 
+                            style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg-input);color:var(--text);">
+                        <option value="newest">🆕 最新</option>
+                        <option value="popular">🔥 最热</option>
+                        <option value="rating">⭐ 评分</option>
+                        <option value="downloads">📥 下载</option>
+                    </select>
+                    <select id="hhMarketType" onchange="hhMarketLoad()"
+                            style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg-input);color:var(--text);">
+                        <option value="">📦 全部类型</option>
+                        <option value="skill">⚡ Skill</option>
+                        <option value="agent">🤖 Agent</option>
+                        <option value="knowledge">📚 知识包</option>
+                        <option value="bundle">📦 Bundle</option>
+                        <option value="template">📋 模板</option>
+                        <option value="model_link">🧠 模型/工具</option>
+                        <option value="tool">🔧 工具</option>
+                    </select>
+                    <button class="btn-secondary btn-sm" onclick="hhMarketTogglePublish()">📤 发布</button>
+                </div>
+
+                <!-- 发布表单（默认隐藏） -->
+                <div id="hhMarketPublishForm" style="display:none;margin-bottom:14px;padding:14px;background:var(--bg-card);border-radius:8px;border:1px solid var(--border);">
+                    <div style="font-weight:600;margin-bottom:10px;">📤 发布到社区市场</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                        <div>
+                            <label style="font-size:12px;color:#888;">名称 <span style="color:#f87171">*</span></label>
+                            <input type="text" id="hhPublishName" class="form-input" placeholder="技能/插件名称" style="width:100%;box-sizing:border-box;">
+                        </div>
+                        <div>
+                            <label style="font-size:12px;color:#888;">作者</label>
+                            <input type="text" id="hhPublishAuthor" class="form-input" placeholder="你的名字" value="Harven用户" style="width:100%;box-sizing:border-box;">
+                        </div>
+                        <div>
+                            <label style="font-size:12px;color:#888;">分类</label>
+                            <select id="hhPublishCategory" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg-input);color:var(--text);">
+                                <option value="family">🏠 家庭</option>
+                                <option value="enterprise">🏢 企业</option>
+                                <option value="factory">🏭 工厂</option>
+                                <option value="school">🏫 学校</option>
+                                <option value="medical">🏥 医疗</option>
+                                <option value="restaurant">🍽️ 餐饮</option>
+                                <option value="agriculture">🌾 农业</option>
+                                <option value="ecommerce">🛒 电商</option>
+                                <option value="tool">🔧 工具</option>
+                                <option value="other">📦 其他</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="font-size:12px;color:#888;">类型</label>
+                            <select id="hhPublishType" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg-input);color:var(--text);">
+                                <option value="skill">⚡ Skill</option>
+                                <option value="agent">🤖 Agent</option>
+                                <option value="knowledge">📚 知识包</option>
+                                <option value="bundle">📦 Bundle</option>
+                                <option value="template">📋 模板</option>
+                                <option value="model_link">🧠 模型/工具</option>
+                            </select>
+                        </div>
+                        <div style="grid-column:1/-1;">
+                            <label style="font-size:12px;color:#888;">描述 <span style="color:#f87171">*</span></label>
+                            <textarea id="hhPublishDesc" class="form-input" rows="2" placeholder="简单描述功能、适用场景" style="width:100%;box-sizing:border-box;"></textarea>
+                        </div>
+                        <div>
+                            <label style="font-size:12px;color:#888;">标签（逗号分隔）</label>
+                            <input type="text" id="hhPublishTags" class="form-input" placeholder="AI, 自动化, 效率" style="width:100%;box-sizing:border-box;">
+                        </div>
+                        <div>
+                            <label style="font-size:12px;color:#888;">版本</label>
+                            <input type="text" id="hhPublishVersion" class="form-input" placeholder="1.0.0" value="1.0.0" style="width:100%;box-sizing:border-box;">
+                        </div>
+                    </div>
+                    <div style="margin-top:10px;display:flex;gap:8px;">
+                        <button class="btn-primary btn-sm" onclick="hhMarketPublish()">✅ 确认发布</button>
+                        <button class="btn-secondary btn-sm" onclick="hhMarketTogglePublish()">取消</button>
+                    </div>
+                    <div id="hhPublishResult" style="margin-top:8px;font-size:12px;"></div>
+                </div>
+
+                <!-- 搜索结果 -->
+                <div id="hhMarketResults" style="max-height:400px;overflow-y:auto;">
+                    <div style="text-align:center;color:#888;padding:20px;font-size:13px;">🔍 浏览社区市场，发现优秀技能</div>
+                </div>
+            </div>
+
+            <!-- Tab 0.5: Hub云端市场 (NEW 2026-07-08) -->
+            <div class="hh-tab-panel" id="hhTab_cloudhub" style="padding:20px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+                    <h3 style="margin:0;">☁️ Hub云端市场</h3>
+                    <div style="display:flex;gap:8px;">
+                        <input type="text" id="hubCloudSearch" placeholder="搜索..." style="padding:6px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);color:var(--text);" onkeydown="if(event.key==='Enter')hubCloudSearch()">
+                        <button class="btn-primary btn-sm" onclick="hubCloudSearch()">🔍</button>
+                        <button class="btn-secondary btn-sm" onclick="hubCloudShowUpload()">📤 上传</button>
+                    </div>
+                </div>
+                <div id="hubCloudStats" style="display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap;font-size:13px;"></div>
+                <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+                    <select id="hubCloudType" onchange="hubCloudLoad()" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg-input);color:var(--text);">
+                        <option value="">全部类型</option>
+                        <option value="skill">⚡ Skill</option>
+                        <option value="agent">🤖 Agent</option>
+                        <option value="knowledge">📚 知识包</option>
+                        <option value="bundle">📦 Bundle</option>
+                        <option value="template">📋 模板</option>
+                        <option value="model_link">🧠 模型/工具</option>
+                    </select>
+                    <select id="hubCloudCategory" onchange="hubCloudLoad()" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg-input);color:var(--text);">
+                        <option value="">全部分类</option>
+                        <option value="family">🏠 家庭</option>
+                        <option value="enterprise">🏢 企业</option>
+                        <option value="factory">🏭 工厂</option>
+                        <option value="tool">🔧 工具</option>
+                        <option value="other">📦 其他</option>
+                    </select>
+                </div>
+                <div id="hubCloudList" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;">
+                    <div style="grid-column:1;text-align:center;padding:40px;color:#999;">⏳ 加载中...</div>
+                </div>
+                <div id="hubCloudUploadArea" style="display:none;margin-top:14px;padding:14px;background:var(--bg-card);border-radius:8px;border:1px solid var(--border);">
+                    <h4>📤 上传到Hub</h4>
+                    <div style="display:grid;gap:8px;">
+                        <input type="text" id="hubCloudUpName" placeholder="名称" style="padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);color:var(--text);">
+                        <select id="hubCloudUpType" style="padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);color:var(--text);">
+                            <option value="skill">⚡ Skill</option>
+                            <option value="agent">🤖 Agent</option>
+                            <option value="knowledge">📚 知识包</option>
+                            <option value="bundle">📦 Bundle</option>
+                        </select>
+                        <textarea id="hubCloudUpDesc" placeholder="描述" rows="2" style="padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);color:var(--text);"></textarea>
+                        <input type="file" id="hubCloudUpFile" style="padding:8px;">
+                        <button class="btn-primary" onclick="hubCloudDoUpload()">📤 上传</button>
+                        <div id="hubCloudUpStatus" style="font-size:13px;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 1: 选择数据 -->
+            <div class="hh-tab-panel active" id="hhTab_sources">
+                <div class="hh-toolbar">
+                    <span style="font-size:13px;color:#888">选择要打包的知识内容：</span>
+                    <span style="flex:1"></span>
+                    <button class="btn-secondary btn-sm" onclick="hhSelectAll('conversations')">💬 全选对话</button>
+                    <button class="btn-secondary btn-sm" onclick="hhSelectAll('knowledge_base')">📚 全选知识库</button>
+                    <button class="btn-secondary btn-sm" onclick="hhSelectAll('memories')">🧠 全选记忆</button>
+                    <span id="hhSelectedCount" style="font-size:12px;color:#888;margin-left:6px">已选 0 项</span>
+                    <button class="btn-secondary btn-sm" onclick="hhClearSelection()" style="color:#f87171;border-color:#f87171;margin-left:8px">🗑️ 清空选中</button>
+                </div>
+                <div class="hh-source-body" id="hhSourceBody">
+                    <div class="hh-loading">⏳ 正在扫描数据源...</div>
+                </div>
+
+                <!-- AI 分析区域 -->
+                <div class="hh-analysis-bar">
+                    <button class="btn-primary" id="hhAnalyzeBtn" onclick="hhRunAnalysis()">🔍 AI 隐私分析</button>
+                    <span style="font-size:12px;color:#888;margin-left:6px">检测并标记隐私风险，导出时自动过滤高风险项</span>
+                    <div id="hhAnalyzeStatus" class="hh-status" style="display:none"></div>
+                </div>
+            </div>
+
+            <!-- Tab 2: 导出打包 -->
+            <div class="hh-tab-panel" id="hhTab_export">
+                <div class="hh-export-form">
+                    <div class="form-group">
+                        <label>知识包名称 <span style="color:#f87171">*</span></label>
+                        <input type="text" id="hhPackageName" class="form-input" 
+                               placeholder="例如：Python开发最佳实践、AI产品设计方法论">
+                    </div>
+                    <div class="form-group">
+                        <label>描述说明</label>
+                        <textarea id="hhPackageDesc" class="form-input" rows="3"
+                                  placeholder="简单描述这个知识包的内容、适用人群等，帮助他人理解"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="setting-toggle" style="justify-content:flex-start;gap:8px">
+                            <input type="checkbox" id="hhExcludePrivacy" checked>
+                            <span class="toggle-slider"></span>
+                            <span style="font-size:13px">自动排除隐私风险项（推荐开启）</span>
+                        </label>
+                    </div>
+                    <div class="hh-info-box">
+                        💡 <strong>HarvenHub.com 使用说明：</strong><br>
+                        1. 选择知识内容 → AI 分析隐私 → 打包导出 ZIP<br>
+                        2. 登录 <a href="https://harvenhub.com" target="_blank" style="color:#6366f1">HarvenHub.com</a> 上传ZIP包<br>
+                        3. 设置价格（免费或付费）、分类、标签<br>
+                        4. 发布后其他用户可浏览和购买你的知识包
+                    </div>
+                    <button class="btn-primary btn-lg" id="hhExportBtn" onclick="hhDoExport()"
+                            style="width:100%;padding:12px;font-size:15px;margin-top:8px">
+                        📦 开始打包
+                    </button>
+                    <div id="hhExportStatus" class="hh-status" style="display:none;margin-top:10px"></div>
+                </div>
+            </div>
+
+            <!-- Tab 3: 历史记录 -->
+            <div class="hh-tab-panel" id="hhTab_history">
+                <div class="hh-history-body" id="hhHistoryBody">
+                    <div class="hh-loading">⏳ 加载中...</div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <a href="https://harvenhub.com" target="_blank" class="btn-secondary" style="text-decoration:none">
+                    🌐 访问 HarvenHub.com
+                </a>
+                <button class="btn-primary" onclick="closeHarvenHub()">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== Multi-Agent Collaboration Modal ===== -->
+    <div class="modal-overlay" id="multiAgentModal"></div>
+
+    <script src="/static/js/modules/app-core.js?v={{ build_id }}"></script>
+    <script src="/static/js/modules/app-conversation.js?v={{ build_id }}"></script>
+    <script src="/static/js/modules/app-send.js?v={{ build_id }}"></script>
+    <script src="/static/js/modules/app-media.js?v={{ build_id }}"></script>
+    <script src="/static/js/modules/app-knowledge.js?v={{ build_id }}"></script>
+    <script src="/static/js/modules/app-settings.js?v={{ build_id }}"></script>
+    <script src="/static/js/modules/app-hardware.js?v={{ build_id }}"></script>
+    <script src="/static/js/modules/app-plugins.js?v={{ build_id }}"></script>
+    <script src="/static/js/modules/app-network.js?v={{ build_id }}"></script>
+    <script src="/static/js/modules/app-devices.js?v={{ build_id }}"></script>
+    <script src="/static/js/modules/app-harvenhub.js?v={{ build_id }}"></script>
+    <script src="/static/js/modules/app-model-manager.js?v={{ build_id }}"></script>
+    <script src="/static/js/modules/app-version-check.js?v={{ build_id }}"></script>
+    <script src="/static/js/modules/app-multi-agent.js?v={{ build_id }}"></script>
+    <script src="/static/js/modules/app-im.js?v={{ build_id }}"></script>
+    <!-- 监控中心（移除冲突导出后安全加载） -->
+    <script src="/static/js/modules/app-monitor.js?v={{ build_id }}"></script>
+    <!-- 🔒 侧边栏按钮兜底 + 页面诊断 -->
+    <script>
+    (function(){
+        var version = '{{ build_id }}';
+        console.log('[Harven] 页面版本:', version, '| 时间:', new Date().toISOString());
+        
+        // 2.5秒后检查核心函数是否可用（给异步加载充足时间）
+        setTimeout(function(){
+            var checks = [
+                'openModal', 'sendMessage', 'saveAllSettings', 'switchSettingsTab', 'loadSettings', 'closeModal'
+            ];
+            var failed = [];
+            checks.forEach(function(fn){
+                if (typeof window[fn] !== 'function') failed.push(fn);
+            });
+            if (failed.length > 0) {
+                console.warn('[Harven] 核心函数未加载:', failed.join(', '), '— 请 Ctrl+Shift+R 硬刷新');
+                // 轻量提示，不遮挡页面
+                var bar = document.createElement('div');
+                bar.style.cssText = 'background:#e53e3e;color:#fff;text-align:center;padding:4px 8px;font-size:11px;position:fixed;bottom:0;left:0;right:0;z-index:99999;cursor:pointer;opacity:0.92;';
+                bar.textContent = '⚠️ ' + failed.length + ' 个核心功能未加载 — 请 Ctrl+Shift+R 硬刷新 — 点击关闭';
+                bar.onclick = function(){ bar.remove(); };
+                document.body.append(bar);
+            } else {
+                console.log('[Harven] ✅ 核心函数就绪');
+            }
+        }, 2500);
+
+        // 侧边栏点击事件委托：点击按钮时在控制台输出日志，方便诊断
+        var sidebar = document.getElementById('sidebar');
+        if (sidebar) {
+            sidebar.addEventListener('click', function(e) {
+                var btn = e.target.closest('.btn-sidebar');
+                if (btn) {
+                    var text = (btn.textContent || btn.innerText || '').trim();
+                    console.log('[Harven][DIAG] 侧边栏按钮点击:', text, '| id:', btn.id, '| onclick:', btn.getAttribute('onclick'));
+                }
+            });
+            console.log('[Harven] ✅ 侧边栏事件委托已绑定');
+        }
+    })();
+    </script>
+
+    <!-- 🔥 侧边栏函数数据加载补全（模块就绪后覆盖 head 简易版） -->
+    <script>
+    (function(){
+        // 模块就绪后，用完整版覆盖侧边栏函数（打开弹窗 + 加载数据）
+        window.openKbModal = function() {
+            console.log('[Harven][DIAG] body openKbModal() 被调用, kbModal存在:', !!document.getElementById('kbModal'));
+            window._forceOpenModal('kbModal');
+            try { if (typeof loadKbList === 'function') loadKbList(); } catch(e) {}
+        };
+        window.openSpecModal = function() {
+            window._forceOpenModal('specModal');
+            try { if (typeof loadSpecializations === 'function') loadSpecializations(); } catch(e) {}
+        };
+        window.openTaskModal = function() {
+            window._forceOpenModal('taskModal');
+            try { if (typeof loadTasks === 'function') loadTasks(); } catch(e) {}
+        };
+        window.openMonitorModal = function() {
+            window._forceOpenModal('monitorModal');
+            try { if (typeof loadMonitorTopics === 'function') loadMonitorTopics(); } catch(e) {}
+            try { if (typeof updateMonitorBadge === 'function') updateMonitorBadge(); } catch(e) {}
+        };
+        window.openHarvenSettings = function() {
+            window._forceOpenModal('settingsModal');
+            try { if (typeof loadSettings === 'function') loadSettings(); } catch(e) {}
+            try { if (typeof loadInstalledPlugins === 'function') setTimeout(loadInstalledPlugins, 300); } catch(e) {}
+        };
+        // 重载 openSidebarModal，确保设置面板打开时加载数据
+        window.openSidebarModal = function(id) {
+            var handlers = {
+                'kbModal':        function() { window._forceOpenModal('kbModal');        try { if (typeof loadKbList === 'function') loadKbList(); } catch(e) {} },
+                'specModal':      function() { window._forceOpenModal('specModal');      try { if (typeof loadSpecializations === 'function') loadSpecializations(); } catch(e) {} },
+                'taskModal':      function() { window._forceOpenModal('taskModal');      try { if (typeof loadTasks === 'function') loadTasks(); } catch(e) {} },
+                'monitorModal':   function() { window._forceOpenModal('monitorModal');   try { if (typeof loadMonitorTopics === 'function') loadMonitorTopics(); } catch(e) {}; try { if (typeof updateMonitorBadge === 'function') updateMonitorBadge(); } catch(e) {} },
+                'settingsModal':  function() { window._forceOpenModal('settingsModal');  try { if (typeof loadSettings === 'function') loadSettings(); } catch(e) {}; try { if (typeof loadInstalledPlugins === 'function') setTimeout(loadInstalledPlugins, 300); } catch(e) {} },
+            };
+            if (handlers[id]) { handlers[id](); return true; }
+            var el = document.getElementById(id);
+            if (el) { el.classList.add('active'); return true; }
+            return false;
+        };
+        console.log('[Harven] ✅ openSidebarModal 已重载（完整版）');
+
+        // 补加载之前head简易版打开时标记的数据
+        if (window._sidebarDataNeeded) {
+            var needed = window._sidebarDataNeeded;
+            if (needed.kb && typeof loadKbList === 'function') loadKbList();
+            if (needed.spec && typeof loadSpecializations === 'function') loadSpecializations();
+            if (needed.task && typeof loadTasks === 'function') loadTasks();
+            if (needed.monitor) {
+                if (typeof loadMonitorTopics === 'function') loadMonitorTopics();
+                if (typeof updateMonitorBadge === 'function') updateMonitorBadge();
+            }
+            if (needed.settings) {
+                if (typeof loadSettings === 'function') loadSettings();
+                if (typeof loadInstalledPlugins === 'function') setTimeout(loadInstalledPlugins, 300);
+            }
+            if (needed.hub && typeof hubInit === 'function') hubInit();
+        }
+        // 补全 _sidebarDataNeeded（不覆盖已有值，只补缺失的key）
+        if (!window._sidebarDataNeeded) window._sidebarDataNeeded = {};
+        console.log('[Harven] ✅ 侧边栏函数数据加载补全完成');
+
+        // 🧪 自检：延迟2秒后测试侧边栏和设置功能（仅控制台，不弹红条）
+        setTimeout(function() {
+            var tests = {
+                settingsModal: !!document.getElementById('settingsModal'),
+                kbModal: !!document.getElementById('kbModal'),
+                btnSettings: !!document.querySelector('.btn-sidebar[id="btnSettings"]'),
+                switchSettingsTab: typeof window.switchSettingsTab === 'function',
+                loadSettings: typeof window.loadSettings === 'function',
+            };
+            var failed = [];
+            for (var k in tests) {
+                if (!tests[k]) failed.push(k);
+                console.log('[Harven][自检]', k, ':', tests[k] ? '✅' : '❌');
+            }
+            if (failed.length > 0) {
+                console.warn('[Harven][自检] ⚠️ 失败项:', failed.join(', '), '— 请 Ctrl+Shift+R 硬刷新');
+            } else {
+                console.log('[Harven][自检] ✅ 全部正常');
+            }
+        }, 2000);
+
+        // closeModal兜底
+        if (typeof window.closeModal !== 'function') {
+            window.closeModal = window._fallbackCloseModal;
+        }
+
+        // ☢️ 核弹级兜底：500ms后覆盖所有设置面板函数
+        setTimeout(function() {
+            var _panelMap = {
+                basic: 'tab-basic', model: 'tab-model', profile: 'tab-profile',
+                appearance: 'tab-appearance', security: 'tab-security',
+                plugins: 'tab-skills', about: 'tab-about', share: 'tab-share',
+                advanced: 'tabAdvancedFeatures', floweditor: 'tabFlowEditor'
+            };
+
+            function _showPanel(targetId) {
+                var all = document.querySelectorAll('#settingsModal .tab-panel');
+                for (var i = 0; i < all.length; i++) {
+                    all[i].classList.remove('active');
+                    all[i].style.display = '';    // 清内联，让CSS接管
+                }
+                var target = document.getElementById(targetId);
+                if (target) {
+                    target.classList.add('active');
+                    // 解锁嵌套父面板
+                    var p = target.parentElement;
+                    while (p && !p.classList.contains('modal-body')) {
+                        if (p.classList.contains('tab-panel') && !p.classList.contains('active')) {
+                            p.classList.add('active');
+                        }
+                        p = p.parentElement;
+                    }
+                    var mb = target.closest('.modal-body');
+                    if (mb) mb.scrollTop = 0;
+                }
+            }
+
+            window.initSettingsPanelVisibility = function() {
+                _showPanel('tab-basic');
+                var btns = document.querySelectorAll('.stb');
+                for (var i = 0; i < btns.length; i++) btns[i].classList.remove('active');
+                var b = document.querySelector('.stb[onclick*="basic"]');
+                if (b) b.classList.add('active');
+            };
+
+            // 覆盖 switchSettingsTab
+            window.switchSettingsTab = function(tab, btn) {
+                console.log('[NUCLEAR] switch →', tab);
+                var targetId = _panelMap[tab] || ('tab-' + tab);
+                _showPanel(targetId);
+                // 高亮按钮
+                var btns = document.querySelectorAll('.stb');
+                for (var i = 0; i < btns.length; i++) btns[i].classList.remove('active');
+                if (btn) btn.classList.add('active');
+
+                // 🔑 模型管理：同时显示子Tab面板 + 重置子导航
+                if (tab === 'model') {
+                    // 显示模型子面板（已安装、市场、拉取需隐藏，只显示主面板）
+                    ['tab-model','tab-local-models'].forEach(function(id) {
+                        var el = document.getElementById(id);
+                        if (el) el.classList.add('active');
+                    });
+                    ['tab-multimodel','modelTabContentInstalled','modelTabContentMarket','modelTabContentPull','tab-hardware','modelTabContentLocalSelector'].forEach(function(id) {
+                        var el = document.getElementById(id);
+                        if (el) { el.classList.remove('active'); el.style.display = ''; }
+                    });
+                    // 高亮 modelsub 第一个按钮
+                    var mbtns = document.querySelectorAll('.model-sub-btn');
+                    for (var j = 0; j < mbtns.length; j++) mbtns[j].classList.remove('active');
+                    if (mbtns.length > 0) mbtns[0].classList.add('active');
+                }
+
+                // 🔧 plugins（插件管理）：加载内容 + 生成子导航
+                if (tab === 'plugins') {
+                    if (typeof loadRHChannels === 'function') loadRHChannels();
+                    if (typeof loadInstalledPlugins === 'function') loadInstalledPlugins();
+                    if (typeof ensurePluginsSubNav === 'function') ensurePluginsSubNav();
+                    var pNav = document.getElementById('pluginsSubNav');
+                    if (pNav) pNav.style.display = 'flex';
+                }
+
+                // about 子导航
+                var aboutNav = document.getElementById('aboutSubNavWrapper');
+                if (aboutNav) aboutNav.style.display = (tab === 'about' ? 'flex' : 'none');
+                // ★ 修复：切到about时隐藏plugins子导航，切到plugins时隐藏about子导航
+                var pNav2 = document.getElementById('pluginsSubNav');
+                if (pNav2) pNav2.style.display = (tab === 'plugins' ? 'flex' : 'none');
+            };
+
+            // 覆盖 openModal — 关闭其他 modals，防止堆叠遮挡
+            var _origOpenModal = window.openModal;
+            window.openModal = function(id) {
+                // 🔑 先关闭所有其他 modal
+                var all = document.querySelectorAll('.modal-overlay');
+                for (var i = 0; i < all.length; i++) {
+                    if (all[i].id !== id) {
+                        all[i].classList.remove('active');
+                        all[i].style.display = '';
+                    }
+                }
+                // 打开目标 modal
+                if (_origOpenModal) _origOpenModal(id);
+                else {
+                    var el = document.getElementById(id);
+                    if (el) { el.classList.add('active'); el.style.display = 'flex'; }
+                }
+                if (id === 'settingsModal') {
+                    setTimeout(function() { window.initSettingsPanelVisibility(); }, 50);
+                    // 二次确认：300ms后再次隐藏非目标面板，防止异步脚本干扰
+                    setTimeout(function() { window.initSettingsPanelVisibility(); }, 350);
+                }
+            };
+
+            console.log('[NUCLEAR] ☢️ 核弹级覆盖完成');
+        }, 500);
+    })();
+    </script>
+
+    <!-- ☢️ 2026-07-26: 核弹级覆盖 formatTime + loadConv（pywebview缓存修复） -->
+    <script>
+    (function(){
+        // 500ms后覆盖（等JS模块加载完）
+        setTimeout(function(){
+            // 覆盖 formatTime — 手动解析日期，不用 new Date()
+            window.formatTime = function(dateStr) {
+                if (!dateStr) return '';
+                var parts = String(dateStr).match(/(\d{4})-(\d{1,2})-(\d{1,2})[ T](\d{1,2}):(\d{1,2}):?(\d{1,2})?/);
+                if (parts) {
+                    var month = parseInt(parts[2]) - 1;
+                    var day = parseInt(parts[3]);
+                    var hour = parseInt(parts[4]);
+                    var min = parseInt(parts[5]);
+                    var now = new Date();
+                    var isToday = parseInt(parts[1]) === now.getFullYear() && month === now.getMonth() && day === now.getDate();
+                    var hh = String(hour).padStart(2,'0');
+                    var mm = String(min).padStart(2,'0');
+                    if (isToday) return hh + ':' + mm;
+                    return (month+1) + '/' + day + ' ' + hh + ':' + mm;
+                }
+                return String(dateStr);
+            };
+
+            // ★ 2026-07-29: 覆盖 renderMessages — 直接渲染，不依赖appendUserMsg/appendAiMsg
+            window.renderMessages = function(msgs) {
+                var el = document.getElementById('messages');
+                if (!el) return;
+                el.innerHTML = '';
+                if (!msgs || !msgs.length) return;
+                msgs.forEach(function(m) {
+                    if (!m) return;
+                    // 提取内容（处理多种格式）
+                    var text = m.content || m.text || m.message || '';
+                    if (Array.isArray(text)) {
+                        // OpenAI格式 [{type:'text', text:'...'}]
+                        text = text.map(function(p){return p.text || p.content || ''}).join('\n');
+                    }
+                    if (typeof text === 'object') text = JSON.stringify(text);
+                    text = String(text || '').trim();
+                    if (!text) text = '(空消息)';
+
+                    var div = document.createElement('div');
+                    if (m.role === 'user') {
+                        div.style.cssText = 'margin:6px 0;padding:10px 14px;background:#e3f2fd;border-left:3px solid #2196f3;border-radius:6px;word-wrap:break-word;color:#1a1a2e;font-size:14px;';
+                    } else if (m.role === 'assistant') {
+                        div.style.cssText = 'margin:6px 0;padding:10px 14px;background:#f5f5f5;border-left:3px solid #9e9e9e;border-radius:6px;word-wrap:break-word;color:#1a1a2e;font-size:14px;white-space:pre-wrap;';
+                    } else {
+                        return;
+                    }
+                    div.textContent = text;
+                    el.appendChild(div);
+                });
+                el.scrollTop = el.scrollHeight;
+            };
+
+            // 覆盖 loadConv — 更好的错误处理
+            window.loadConv = async function(id) {
+                console.log('[NUCLEAR] loadConv called, id=' + id);
+                currentConvId = id;
+                var ws = document.getElementById('welcomeScreen');
+                if (ws) ws.style.display = 'none';
+                try {
+                    var r = await fetch('/api/conversations/' + id + '/messages');
+                    console.log('[NUCLEAR] fetch status=' + r.status);
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    var msgs = await r.json();
+                    console.log('[NUCLEAR] msgs=' + msgs.length);
+                    renderMessages(msgs);
+                    if (typeof loadConversations === 'function') {
+                        loadConversations();
+                    }
+                } catch(e) {
+                    console.log('[NUCLEAR] loadConv ERROR: ' + e.message);
+                    var el = document.getElementById('messages');
+                    if (el) el.innerHTML = '<div style="padding:20px;color:#999;text-align:center;">对话加载失败: ' + e.message + '</div>';
+                }
+            };
+
+            // ★ 2026-07-29: 覆盖 appendUserMsg/appendAiMsg — 修复新消息不显示
+            window.appendUserMsg = function(content) {
+                var el = document.getElementById('messages');
+                if (!el) return;
+                var div = document.createElement('div');
+                div.style.cssText = 'margin:6px 0;padding:10px 14px;background:#e3f2fd;border-left:3px solid #2196f3;border-radius:6px;word-wrap:break-word;color:#1a1a2e;font-size:14px;';
+                div.textContent = content || '(empty)';
+                el.appendChild(div);
+                el.scrollTop = el.scrollHeight;
+            };
+            window.appendAiMsg = function(content) {
+                var el = document.getElementById('messages');
+                if (!el) return;
+                var div = document.createElement('div');
+                div.style.cssText = 'margin:6px 0;padding:10px 14px;background:#f5f5f5;border-left:3px solid #9e9e9e;border-radius:6px;word-wrap:break-word;color:#1a1a2e;font-size:14px;white-space:pre-wrap;';
+                div.textContent = content || '(empty)';
+                el.appendChild(div);
+                el.scrollTop = el.scrollHeight;
+            };
+
+            // ★ 2026-07-29: MutationObserver — 自动样式化所有新增消息
+            setTimeout(function(){
+                var msgEl = document.getElementById('messages');
+                if (!msgEl) return;
+                window._msgObserver = new MutationObserver(function(mutations) {
+                    mutations.forEach(function(m) {
+                        m.addedNodes.forEach(function(node) {
+                            if (node.nodeType !== 1 || node.tagName !== 'DIV') return;
+                            if (node.dataset.styled === '1') return;
+                            // 检测用户vs AI：通过文本内容判断（用户消息短，AI消息长）
+                            var text = node.textContent || '';
+                            var isUser = text.length < 200 && !node.querySelector('button,svg,img,.icon');
+                            node.style.cssText = isUser
+                                ? 'margin:6px 0;padding:10px 14px;background:#e3f2fd;border-left:3px solid #2196f3;border-radius:6px;word-wrap:break-word;color:#1a1a2e;font-size:14px;'
+                                : 'margin:6px 0;padding:10px 14px;background:#f5f5f5;border-left:3px solid #9e9e9e;border-radius:6px;word-wrap:break-word;color:#1a1a2e;font-size:14px;white-space:pre-wrap;';
+                            node.dataset.styled = '1';
+                        });
+                    });
+                });
+                window._msgObserver.observe(msgEl, {childList: true, subtree: false});
+                // 处理已有但未标记的div
+                msgEl.querySelectorAll('div:not([data-styled])').forEach(function(d){
+                    var text = d.textContent || '';
+                    var isUser = text.length < 200 && !d.querySelector('button,svg,img,.icon');
+                    d.style.cssText = isUser
+                        ? 'margin:6px 0;padding:10px 14px;background:#e3f2fd;border-left:3px solid #2196f3;border-radius:6px;word-wrap:break-word;color:#1a1a2e;font-size:14px;'
+                        : 'margin:6px 0;padding:10px 14px;background:#f5f5f5;border-left:3px solid #9e9e9e;border-radius:6px;word-wrap:break-word;color:#1a1a2e;font-size:14px;white-space:pre-wrap;';
+                    d.dataset.styled = '1';
+                });
+                console.log('[NUCLEAR] MutationObserver activated');
+            }, 1000);
+
+            // 覆盖 loadConversations — 过滤 sched_
+            var _origLoadConvs = window.loadConversations;
+            window.loadConversations = async function() {
+                try {
+                    var url = '/api/conversations' + (typeof currentSpecId !== 'undefined' && currentSpecId ? '?spec_id=' + currentSpecId : '');
+                    var r = await fetch(url);
+                    var convs = await r.json();
+                    // 过滤掉 sched_ 开头的假对话
+                    var real = (convs || []).filter(function(c) { return c && c.id && !String(c.id).startsWith('sched_'); });
+                    if (typeof renderConvList === 'function') {
+                        renderConvList(real);
+                    }
+                } catch(e) {}
+            };
+
+            // 立即刷新对话列表
+            if (typeof window.loadConversations === 'function') {
+                window.loadConversations();
+            }
+            console.log('[NUCLEAR] ☢️ formatTime + loadConv 覆盖完成');
+        }, 800);
+    })();
+    </script>
+        {% include "includes/model-tab-switch.html" %}
+
+    <!-- 🔥 终极兜底：2秒后直接填充模型下拉框（不依赖任何其他函数） -->
+        {% include "includes/force-populate.html" %}
+
+
+    <!-- 图片生成弹窗 -->
+    <div id="imgGenOverlay" class="img-gen-overlay">
+        <div class="img-gen-dialog">
+            <h3>🎨 AI 图片生成</h3>
+            <p>输入画面描述，AI 将为你生成图片（需要本地运行 Stable Diffusion）</p>
+            <textarea id="imgGenPrompt" placeholder="例如：一只穿风衣的白色鸭子，戴着圆框眼镜，晨光森林背景，拟人态"></textarea>
+            <div class="img-gen-loading" id="imgGenLoading">
+                <div class="spinner"></div>
+                <p>正在生成中，预计 10-30 秒...</p>
+            </div>
+            <div class="img-gen-result" id="imgGenResult">
+                <img id="imgGenImage" src="" alt="生成的图片">
+            </div>
+            <div class="img-gen-actions">
+                <button class="btn-secondary btn-sm" onclick="closeImageGenDialog()">取消</button>
+                <button class="btn-primary btn-sm" id="imgGenSubmitBtn" onclick="submitImageGen()">生成图片</button>
+            </div>
+        </div>
+    </div>
+    <!-- 🔥 图片生成按钮兜底：内联绑定，不依赖任何外部 JS 模块 -->
+    <!-- 🔥 同时抑制 PWA 安装提示，避免阻挡测试 -->
+    <script>
+    window.addEventListener('beforeinstallprompt', function(e) {
+        e.preventDefault();
+        window._deferredPrompt = e;
+    });
+    window.addEventListener('appinstalled', function() {
+        window._deferredPrompt = null;
+    });
+    (function(){
+        var btn = document.getElementById('imgGenBtn');
+        var overlay = document.getElementById('imgGenOverlay');
+        if (btn && overlay) {
+            btn.onclick = function() {
+                overlay.style.display = 'flex';
+                overlay.classList.add('active');
+                var promptEl = document.getElementById('imgGenPrompt');
+                if (promptEl) { promptEl.value = ''; setTimeout(function(){ promptEl.focus(); }, 100); }
+            };
+            // 点击遮罩层关闭
+            overlay.addEventListener('click', function(e) {
+                if (e.target === overlay) {
+                    overlay.style.display = 'none';
+                    overlay.classList.remove('active');
+                }
+            });
+            // 取消按钮关闭
+            var cancelBtn = overlay.querySelector('.btn-secondary');
+            if (cancelBtn) {
+                cancelBtn.addEventListener('click', function() {
+                    overlay.style.display = 'none';
+                    overlay.classList.remove('active');
+                });
+            }
+            console.log('[Harven] 图片生成按钮已内联绑定');
+        }
+    })();
+    </script>
+
+    <!-- Toast 全局通知（必须在所有 modal 之外） -->
+    <div id="toast" class="toast"></div>
+
+</body>
+</html>
+

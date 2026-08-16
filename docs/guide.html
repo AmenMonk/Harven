@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Harven AI 哈文 - 完整使用指南</title>
+<style>
+:root {--primary:#667eea;--bg:#0f0f1a;--card:#1a1a2e;--text:#e0e0e0;--border:#333;--green:#22c55e;--warn:#f59e0b;--red:#ef4444}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:15px}
+.container{max-width:900px;margin:0 auto;padding:20px}
+header{background:linear-gradient(135deg,#1a1a3e,#2d2d5e);padding:40px 20px;text-align:center;border-bottom:3px solid var(--primary)}
+header h1{font-size:2em;color:#fff;margin-bottom:8px}
+header p{font-size:1.05em;color:#a0a0c0}
+.toc{background:var(--card);border-radius:12px;padding:24px;margin:24px 0;border:1px solid var(--border)}
+.toc h2{color:var(--primary);margin-bottom:16px;font-size:1.2em}
+.toc-list{column-count:2;column-gap:16px}
+.toc-list a{color:#a0c0ff;text-decoration:none;padding:6px 10px;display:block;font-size:0.92em;border-radius:6px;break-inside:avoid}
+.toc-list a:hover{background:rgba(102,126,234,0.15)}
+h2{margin:32px 0 16px;color:var(--primary);font-size:1.3em;border-bottom:2px solid var(--border);padding-bottom:8px}
+h3{color:#a78bfa;margin:20px 0 10px;font-size:1.05em}
+p{margin:8px 0;color:#c0c0d0}
+ul{margin:8px 0;padding-left:24px;color:#c0c0d0}
+li{margin:4px 0}
+.note{background:rgba(245,158,11,0.1);border-left:3px solid var(--warn);padding:14px;margin:14px 0;border-radius:0 10px 10px 0;font-size:0.92em}
+.warn{background:rgba(239,68,68,0.1);border-left:3px solid var(--red);padding:14px;margin:14px 0;border-radius:0 10px 10px 0}
+.tip{background:rgba(34,197,94,0.1);border-left:3px solid var(--green);padding:14px;margin:14px 0;border-radius:0 10px 10px 0;font-size:0.92em}
+code{background:rgba(102,126,234,0.15);padding:3px 8px;border-radius:4px;font-size:0.9em;color:#a0c0ff}
+pre{background:rgba(0,0,0,0.3);padding:16px;border-radius:8px;overflow-x:auto;margin:12px 0;font-size:0.85em;line-height:1.5;border:1px solid var(--border)}
+b{color:#d0d0f0}
+table{width:100%;border-collapse:collapse;margin:12px 0;font-size:0.9em}
+th{background:rgba(102,126,234,0.2);padding:10px 14px;text-align:left;font-weight:600;color:#a78bfa;border-bottom:2px solid var(--primary)}
+td{padding:10px 14px;border-bottom:1px solid var(--border)}
+tr:hover td{background:rgba(102,126,234,0.05)}
+footer{text-align:center;padding:30px;color:#666;font-size:0.85em;border-top:1px solid var(--border);margin-top:40px}
+.kbd{display:inline-block;padding:2px 8px;border:1px solid var(--border);border-radius:4px;background:rgba(255,255,255,0.05);font-family:monospace;font-size:0.9em;color:#a0c0ff}
+@media(max-width:768px){.container{padding:12px}.toc-list{column-count:1}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Harven AI 哈文 &mdash; 完整使用指南</h1>
+  <p>写给不太熟悉电脑的人 &mdash; 每一步都说清楚，照着做就行</p>
+  <p style="font-size:0.85em;color:#888;margin-top:10px">版本 v0.3.1 | 2026-08-17 | 支持 Windows / Linux / macOS</p>
+</header>
+<div class="container">
+
+<div class="toc">
+  <h2>&#x1F4D1; 目录</h2>
+  <div class="toc-list">
+    <a href="#ch1">一、哈文能帮你干什么</a>
+    <a href="#ch2">二、怎么安装哈文</a>
+    <a href="#ch3">三、怎么选模型</a>
+    <a href="#ch4">四、怎么拉模型</a>
+    <a href="#ch5">五、怎么用外脑</a>
+    <a href="#ch6">六、对话区操作技巧</a>
+    <a href="#ch7">七、垂直模型</a>
+    <a href="#ch8">八、协作模式</a>
+    <a href="#ch9">九、长效任务</a>
+    <a href="#ch10">十、设置里每个按钮</a>
+    <a href="#ch11">十一、左边面板</a>
+    <a href="#ch12">十二、手机端</a>
+    <a href="#ch13">十三、飞书/钉钉</a>
+    <a href="#ch14">十四、HarvenHub商店</a>
+    <a href="#ch15">十五、用代码调用哈文</a>
+    <a href="#ch16">十六、常见问题</a>
+    <a href="#ch17">十七、安全建议</a>
+  </div>
+</div>
+
+<!-- ====== 第一章 ====== -->
+<h2 id="ch1">一、哈文能帮你干什么</h2>
+<h3>1.1 哈文是什么?</h3>
+<p>哈文就像一个住在你电脑里的智能助手。你可以用打字的方式跟它聊天，也可以用语音说话让它听写，它会帮你写文章、查资料、翻译外语、管理家里的开销。所有聊天记录都保存在你自己的电脑里，不用联网也能用。</p>
+<h3>1.2 能帮我做什么? 举几个例子</h3>
+<ul>
+  <li><b>聊天问答</b>：有什么不懂的，直接打字问它。不会打字? 按键盘上的 F9 键，用嘴说就行。</li>
+  <li><b>写东西</b>：工作报告、朋友圈文案、给孩子的请假条，告诉它需求就行。</li>
+  <li><b>翻译</b>：贴一段英文进去翻成中文，或者反过来。</li>
+  <li><b>看图片</b>：截一张图，按 Ctrl+V 粘贴到输入框，问它"这上面写的是什么"。</li>
+  <li><b>查最新信息</b>：点对话区的互联网按钮，哈文会先上网搜再回答你。</li>
+  <li><b>家庭记账</b>：左边面板有家庭记账，记录每天花了多少钱。</li>
+  <li><b>定时提醒</b>：让哈文在指定时间提醒你做事。</li>
+  <li><b>知识库</b>：把常用文档放进去，以后问哈文就能找到答案。</li>
+  <li><b>操作电脑</b>：说"打开D盘""截图""打开设置"，哈文直接帮你操作。</li>
+  <li><b>装/卸软件</b>：说"装个微信""卸载QQ"，哈文用winget帮你装/卸。</li>
+  <li><b>清空回收站</b>：说"清空回收站"，哈文帮你清干净并验证。</li>
+  <li><b>删文件/文件夹</b>：说"删除D盘test.txt""删除G盘虚拟飞行文件夹"，哈文帮你删。</li>
+  <li><b>查电脑状态</b>：说"看看内存""查配置""docker装了吗"，哈文直接查。</li>
+</ul>
+<h3>1.3 哈文的AI能力（Function Calling）</h3>
+<p>哈文支持<b>Function Calling</b>（FC）——AI能直接调用工具执行操作，不需要写代码。</p>
+<div class="tip">
+<b>FC能做什么：</b><br>
+- 列目录、读文件、删文件<br>
+- 执行系统命令（装软件/清回收站/修网络）<br>
+- 联网搜索、抓网页内容<br>
+- 查软件状态、查时间<br>
+- 多步操作（先列目录→再删文件→验证删除）
+</div>
+<div class="note">
+<b>安全机制：</b><br>
+- 危险命令（rm -rf/format/reg delete）自动拦截<br>
+- 删文件用强制权限（chmod+takeown）<br>
+- 执行后自动验证效果
+</div>
+<h3>1.4 用哈文需要什么?</h3>
+<p>一台普通电脑就行。<b>不需要装Python</b>——安装包已自带Python 3.13。也不需要装Ollama——用外脑模式（填API Key）就能聊天。想用本地模型再装Ollama。</p>
+
+<!-- ====== 第二章 ====== -->
+<h2 id="ch2">二、怎么安装哈文</h2>
+<div class="tip">
+<b>Windows 安装前提：</b>不需要装Python！安装包已自带Python 3.13。双击就能装。<br>
+<b>安装顺序：</b>1.解压 → 2.双击"安装哈文.bat" → 3.等5-15分钟 → 4.桌面出现哈文图标 → 5.双击图标启动
+</div>
+<h3>2.1 Windows: 双击安装</h3>
+<p>把安装包 <code>HarvenAI_v0.3.1_Windows.zip</code> 解压，里面有一个 <code>安装哈文.bat</code> 文件。鼠标左键双击它。屏幕会弹出一个黑色窗口，里面有一些文字在跑 -- 这是哈文在自动安装需要的东西，不用担心。</p>
+<div class="note">
+<b>启动时会弹UAC框</b>（"是否允许此应用更改你的设备"），点"是"就行。管理员权限是为了让哈文能删文件、装软件。
+</div>
+<h3>2.2 Windows 安装过程中会发生什么?</h3>
+<p>整个过程大概5-15分钟，看网速。安装完成后，桌面上会出现一个黄色小鸭子图标，名字叫"Harven AI"。同时浏览器会自动打开哈文的主界面。如果没自动打开，自己在浏览器里输入 <code>http://localhost:7000</code> 按回车。</p>
+<div class="tip"><b>初始密码: <code>harven2026</code></b><br>首次登录后建议改成你自己的密码。</div>
+<h3>2.3 第一次打开要做什么?</h3>
+<p>输入密码 harven2026 点确定就进去了。然后哈文会弹出一个3步引导：(1)改密码 (2)填API Key(可选) (3)拉模型(可选)。不急的话随时可以关掉，以后再补。</p>
+<h3>2.4 Windows 出问题了怎么办?</h3>
+<p><b>黑窗口一闪就没了</b>：杀毒软件拦了。关掉杀毒软件再试。<br><b>浏览器打不开</b>：哈文没启动成功。重新双击桌面鸭子图标。<br><b>提示缺少什么</b>：重新双击安装哈文.bat就行。</p>
+
+<h3>2.5 Linux 安装（Ubuntu/Debian/CentOS/Arch）</h3>
+<div class="tip">
+<b>Linux 安装前提：</b>不需要装 Python！安装包已内置 Python 3.13，跟 Windows 版一样开箱即用。
+</div>
+<p>安装步骤：</p>
+<pre># 1. 解压
+unzip HarvenAI_v0.3.1_Linux.zip -d HarvenAI
+cd HarvenAI
+
+# 2. 一键安装（装依赖 + 创建桌面快捷方式）
+bash install.sh
+
+# 3. 启动哈文 — 双击桌面的 Harven AI 图标
+#    或终端运行：bash start.sh
+
+# 4. 浏览器打开 http://localhost:7000
+</pre>
+<div class="tip"><b>Linux 初始密码</b>：同 Windows，<code>harven2026</code></div>
+<p><b>install.sh 做了什么</b>：</p>
+<ul>
+  <li>使用内置 Python 3.13（在 <code>python/</code> 目录，无需下载）</li>
+  <li>创建虚拟环境 + 安装全部依赖</li>
+  <li>自动在桌面创建 Harven AI 快捷方式（双击启动，跟 Windows 一样）</li>
+</ul>
+<p><b>Linux 注意事项</b>：</p>
+<ul>
+  <li>系统操作（装软件/卸载）会用 <code>apt</code>/<code>yum</code>/<code>pacman</code> 自动适配</li>
+  <li>回收站清空用 <code>rm -rf ~/.local/share/Trash/*</code></li>
+  <li>截图需要 <code>scrot</code> 或 <code>gnome-screenshot</code></li>
+  <li>Ollama 需自行安装： <code>curl -fsSL https://ollama.com/install.sh | sh</code></li>
+</ul>
+
+<h3>2.6 macOS 安装（Intel / Apple Silicon）</h3>
+<div class="tip">
+<b>macOS 安装前提：</b>不需要装 Python！安装包已内置 Python 3.13（同时支持 Apple Silicon 和 Intel），跟 Windows 版一样开箱即用。
+</div>
+<p>安装步骤：</p>
+<pre># 1. 解压
+unzip HarvenAI_v0.3.1_macOS.zip -d HarvenAI
+cd HarvenAI
+
+# 2. 一键安装（装依赖 + 创建桌面快捷方式）
+bash install.sh
+
+# 3. 启动哈文 — 双击桌面的 HarvenAI.command
+#    或终端运行：bash start.sh
+
+# 4. 浏览器打开 http://localhost:7000
+</pre>
+<div class="tip"><b>macOS 初始密码</b>：同 Windows，<code>harven2026</code></div>
+<p><b>macOS 注意事项</b>：</p>
+<ul>
+  <li>系统操作（装软件）会用 <code>brew</code></li>
+  <li>回收站清空用 <code>rm -rf ~/.Trash/*</code></li>
+  <li>截图用 <code>screencapture</code>（系统自带）</li>
+  <li>Apple Silicon (M1/M2/M3) 支持 Ollama 原生 ARM 加速</li>
+  <li>Ollama 需自行安装： <code>brew install ollama</code></li>
+</ul>
+
+<h3>2.7 三平台功能差异说明</h3>
+<table>
+<tr><th>功能</th><th>Windows</th><th>Linux</th><th>macOS</th></tr>
+<tr><td>核心对话/外脑/FC</td><td>✓ 全支持</td><td>✓ 全支持</td><td>✓ 全支持</td></tr>
+<tr><td>中英双语 i18n</td><td>✓ 全支持</td><td>✓ 全支持</td><td>✓ 全支持</td></tr>
+<tr><td>内置 Python</td><td>✓ 自带 3.13</td><td>✗ 用系统 Python</td><td>✗ 用系统 Python</td></tr>
+<tr><td>装软件/卸载</td><td>winget</td><td>apt/yum/pacman</td><td>brew</td></tr>
+<tr><td>清空回收站</td><td>Clear-RecycleBin</td><td>rm Trash/*</td><td>rm .Trash/*</td></tr>
+<tr><td>截图</td><td>Win+Shift+S</td><td>scrot</td><td>screencapture</td></tr>
+<tr><td>本地模型(Ollama)</td><td>✓ CUDA/ROCm</td><td>✓ CUDA/ROCm</td><td>✓ Metal(M1+)</td></tr>
+<tr><td>语音识别(STT)</td><td>✓ faster-whisper</td><td>✓ faster-whisper</td><td>✓ faster-whisper</td></tr>
+</table>
+
+<!-- ====== 第三章 ====== -->
+<h2 id="ch3">三、怎么选模型</h2>
+<h3>3.1 什么是"模型"?</h3>
+<p>模型就是哈文的大脑。不同的模型擅长不同的事：有的擅长聊天，有的擅长写代码，有的擅长翻译。</p>
+<h3>3.2 本地模型 -- 用你自己电脑算</h3>
+<p><b>优点</b>：完全免费，不联网，对话内容不会上传。<br><b>缺点</b>：速度取决于电脑配置。内存越小越慢。</p>
+<div class="note"><h3>选模型看你自己</h3>
+<p>哈文安装包不带任何模型。你的电脑配置决定能跑多大模型：内存小的选小模型(7b之类)，内存大的可以选大模型(14b之类)。拿不准就先从小模型开始试，不够再换。</p></div>
+<h3>3.3 外脑模式 -- 让网上大模型替你回答</h3>
+<p><b>优点</b>：回复快、质量高，不需要好配置。<br><b>缺点</b>：需要申请API Key(免费)，每次回复有少量费用。</p>
+<h3>3.4 到底选哪个?</h3>
+<p>不确定就先试外脑模式 -- 回复快、质量好。用熟了再考虑拉本地模型。两个随时切换。</p>
+
+<!-- ====== 第四章 ====== -->
+<h2 id="ch4">四、怎么拉模型</h2>
+<h3>4.1 去哪里拉模型</h3>
+<p>哈文 -> 设置 -> 模型管理 -> 往下找"一键拉模型"按钮。</p>
+<div class="warn"><h3>哈文安装包不带任何模型</h3>
+<p>哈文刚装完是什么模型都没有的。你需要根据自己的电脑配置和需求自己拉。没有"标准配置"。</p></div>
+<h3>4.2 怎么选模型?</h3>
+<p>哈文会列出所有可用模型。你根据电脑配置选：内存小于8GB选带"7b"的，8-16GB选"14b"的，更大内存选更大的。拿不准先装小的，不够再换。</p>
+<h3>4.3 拉模型要等多久?</h3>
+<p>模型通常2-5GB。网速快5-10分钟，慢的话15-30分钟。下载时按钮旁边有进度，可以关掉设置页去干别的。</p>
+<h3>4.4 除了"一键拉"还能怎么装模型?</h3>
+<p>设置里还有一个<b>模型市场</b>页面，能搜魔搭(ModelScope)和HuggingFace上的模型。如果你在网上下载了 <code>.gguf</code> 格式的模型文件，也可以在<b>已安装</b>页面直接导入，不用联网下载。</p>
+<h3>4.5 本地双模配置是什么?</h3>
+<p>如果你有两个模型 -- 比如一个用来聊天，一个用来生成音乐 -- 可以在设置的<b>本地双模配置</b>页面分别指定：一个当"大脑模型"(负责对话)，一个当"工具模型"(负责垂直任务)。两个模型各自独立启停，互不影响。</p>
+<h3>4.6 拉模型失败了怎么办?</h3>
+<p><b>下载断了</b>：重新点"一键拉模型"，会从断的地方继续。<br><b>空间不足</b>：清理硬盘或换小模型。<br><b>连接失败</b>：网络不稳定，换时间再试。</p>
+
+<!-- ====== 第五章 ====== -->
+<h2 id="ch5">五、怎么用外脑</h2>
+<h3>5.1 什么是API Key?</h3>
+<p>API Key就像一张门禁卡。你去大模型公司网站免费注册一个账号，他们会给你一串字母数字。填到哈文里，哈文就能用他们的模型帮你回答了。</p>
+<h3>5.2 去哪里申请?</h3>
+<p>哈文支持多家外脑，选一个注册就行（不用全部注册）：</p>
+<table>
+  <tr><th>提供商</th><th>申请地址</th><th>特点</th></tr>
+  <tr><td><b>DeepSeek</b></td><td>platform.deepseek.com</td><td>推理强，新用户送免费额度</td></tr>
+  <tr><td><b>智谱AI (GLM)</b></td><td>open.bigmodel.cn</td><td>中文好，免费额度大方</td></tr>
+  <tr><td><b>豆包 (火山引擎)</b></td><td>console.volcengine.com</td><td>字节跳动，风格多样</td></tr>
+  <tr><td><b>通义千问 (阿里)</b></td><td>dashscope.aliyun.com</td><td>阿里云，企业场景适用</td></tr>
+  <tr><td><b>Kimi (Moonshot)</b></td><td>platform.moonshot.cn</td><td>长文本处理能力强</td></tr>
+  <tr><td><b>零一万物 (Yi)</b></td><td>platform.lingyiwanwu.com</td><td>开源模型，中文不错</td></tr>
+  <tr><td><b>百川 (Baichuan)</b></td><td>platform.baichuan-ai.com</td><td>医疗/法律垂直领域强</td></tr>
+  <tr><td><b>阶跃星辰 (Step)</b></td><td>platform.stepfun.com</td><td>多模态，图文均可</td></tr>
+</table>
+<p>每家申请方式一样：注册账号 -> 找"API Key" -> 点创建 -> 复制那串字母数字。选一家就够了，日常用 DeepSeek 或智谱最稳。</p>
+<h3>5.3 怎么填到哈文里?</h3>
+<p>(1)哈文 -> 设置 -> 模型管理<br>(2)找到对应栏(如"DeepSeek")<br>(3)粘贴字母数字到输入框<br>(4)点 保存<br>(5)在"当前使用的外脑"下拉框选 DeepSeek<br>(6)回到对话页，底部选 外脑 模式。开始打字!</p>
+<h3>5.4 外脑要花钱吗?</h3>
+<p>每个API Key都有免费额度。DeepSeek新用户送几十万token，日常聊天用一个月没问题。用完免费额度后充10块钱能用很久。每次对话大概1-3毛钱，比订会员便宜得多。</p>
+
+<!-- ====== 第六章 -- 对话区操作技巧 ====== -->
+<h2 id="ch6">六、对话区操作技巧 -- 你可能不知道的功能</h2>
+
+<h3>6.1 用嘴说话代替打字 (F9语音输入)</h3>
+<p>不会打字? 或者打字太慢? 按键盘上的 <span class="kbd">F9</span> 键，哈文开始录音。对着麦克风说话，说完再按一次 <span class="kbd">F9</span> 停止。哈文会自动把你说的内容转成文字，填到输入框里。</p>
+<div class="tip">第一次用语音输入时，哈文可能需要下载语音识别模型。下载完之后就能离线用了，不联网也行。</div>
+
+<h3>6.2 让哈文上网搜最新信息 (互联网按钮)</h3>
+<p>有时候你问的东西需要最新信息 -- 比如"今天天气怎么样"或者"最近的新闻是什么"。这时候：</p>
+<p>(1)看对话区底部，找到一个 <b>互联网</b> 按钮(可能显示为🌐图标)<br>(2)点一下让它亮起来<br>(3)然后正常打字问问题<br>(4)哈文会先上网搜，再根据搜索结果回答你</p>
+<div class="note">开了互联网搜索后，回复会慢10-20秒(因为要先搜网页)。不需要联网信息的时候关掉它，回复会快很多。</div>
+
+<h3>6.3 截图直接粘贴问哈文 (Ctrl+V粘贴图片)</h3>
+<p>看到一张图片有不懂的内容? 直接操作：</p>
+<p>(1)按 <span class="kbd">Win</span> + <span class="kbd">Shift</span> + <span class="kbd">S</span> 截屏(或者用其他截图工具)<br>(2)回到哈文的输入框<br>(3)按 <span class="kbd">Ctrl</span> + <span class="kbd">V</span> 粘贴<br>(4)图片会出现在输入框上方<br>(5)打字问它"这上面写的是什么"或者"帮我翻译这张图里的英文"<br>(6)哈文会看图回答你</p>
+<div class="tip">这个功能需要你的模型支持看图(视觉模型)。如果模型不支持，哈文会提示你。</div>
+
+<h3>6.4 键盘快捷操作</h3>
+<table>
+  <tr><th>按键</th><th>作用</th></tr>
+  <tr><td><span class="kbd">Enter</span></td><td>发送消息</td></tr>
+  <tr><td><span class="kbd">Shift</span> + <span class="kbd">Enter</span></td><td>换行(不发送，继续输入)</td></tr>
+  <tr><td><span class="kbd">F9</span></td><td>开始/停止语音录入</td></tr>
+  <tr><td><span class="kbd">Ctrl</span> + <span class="kbd">V</span></td><td>粘贴图片或文字</td></tr>
+  <tr><td><span class="kbd">Ctrl</span> + <span class="kbd">Shift</span> + <span class="kbd">R</span></td><td>强制刷新页面(页面卡住时用)</td></tr>
+</table>
+
+<h3>6.5 输入 /help 随时查帮助</h3>
+<p>在输入框里打 <code>/help</code> 然后发送，哈文会直接返回一份帮助清单，不用打开这个网页。还支持搜索：</p>
+<ul>
+  <li><code>/help</code> -- 看所有帮助主题</li>
+  <li><code>/help 模型</code> -- 查看模型相关帮助</li>
+  <li><code>/help 外脑</code> -- 查看外脑配置帮助</li>
+  <li><code>/help 手机</code> -- 查看手机端帮助</li>
+  <li><code>/help 密码</code> -- 查看改密码帮助</li>
+</ul>
+<p>这个命令不走模型推理，秒回，不花钱。</p>
+
+<h3>6.6 系统操作会弹窗确认 (安全!)</h3>
+<p>当你想让哈文帮你做电脑上的事情(比如截图、打开D盘、安装软件)，哈文会先弹出确认框问你是不是真的要执行。这是为了防止聊天时不小心触发系统操作。点"确认执行"才会真的做，点"取消"就当普通聊天。</p>
+<div class="tip">在协作模式下，系统操作会直接执行不弹窗。因为协作模式本身就是你主动开启的"干活模式"，不需要反复确认。</div>
+
+<!-- ====== 第七章 -- 垂直模型 ====== -->
+<h2 id="ch7">七、垂直模型 -- 音乐、图片、代码</h2>
+<h3>7.1 什么是垂直模型?</h3>
+<p>普通模型擅长"聊天"。但有些事需要专门的模型 -- 比如生成音乐、看图识别。这些专门做一件事的模型，哈文里叫"垂直模型"。</p>
+<div class="warn"><h3>哈文安装包不带任何模型</h3>
+<p>哈文的安装包本身不包含任何本地模型，也不包含任何垂直模型。所有模型都是用户根据自己的电脑配置和需求自己选择下载的。不要把作者的电脑配置当成标准。</p></div>
+<h3>7.2 哈文支持哪些垂直模型?</h3>
+<p>哈文<b>支持</b>以下类型，但<b>都不预装</b>。你需要哪种自己去下载：</p>
+<table>
+  <tr><th>类型</th><th>能做什么</th><th>需要的模型</th><th>怎么下载</th></tr>
+  <tr><td>音乐生成</td><td>根据描述创作音乐</td><td>musicgen</td><td>设置->模型管理->搜索</td></tr>
+  <tr><td>图片理解</td><td>看图回答问题</td><td>minicpm-v</td><td>设置->模型管理->搜索</td></tr>
+  <tr><td>代码生成</td><td>写代码、查bug</td><td>deepseek-r1等</td><td>设置->模型管理->搜索</td></tr>
+</table>
+<p><b>注意</b>：上面是举例，不是推荐。你根据需求决定要不要装。日常聊天写文章用本地模型或外脑就够了，不一定需要垂直模型。</p>
+<h3>7.3 怎么用垂直模型?</h3>
+<p>对话区底部点 <b>垂直</b> 按钮，右边会展开一个画板。在画板里描述你要什么 -- 比如"帮我生成一首轻快的钢琴曲"。画板可以和对话区同时使用，左边聊天，右边生成内容。</p>
+
+<!-- ====== 第八章 -- 协作模式 ====== -->
+<h2 id="ch8">八、协作模式 -- 本地+外脑配合</h2>
+<h3>8.1 什么是协作模式?</h3>
+<p>本地模型想个草稿，外脑来润色。两个模型一起干活，比单一模型效果好。像你写文章初稿(本地)，再请专家修改(外脑)。</p>
+<h3>8.2 什么时候用?</h3>
+<ul>
+  <li>写重要文档：本地出框架，外脑润色语言</li>
+  <li>翻译长文：本地先翻译，外脑检查语法</li>
+  <li>复杂分析：本地提取信息，外脑做推理</li>
+  <li>敏感内容：本地处理隐私部分，只把脱敏摘要发给外脑</li>
+</ul>
+<h3>8.3 怎么开启?</h3>
+<p>对话区底部的"协作"按钮有三种状态：<b>关闭</b>(只用本地)、<b>外脑</b>(直接让外脑回答)、<b>协作</b>(本地+外脑配合)。选协作模式后，哈文自动决定哪些部分用本地、哪些请外脑帮忙。</p>
+<div class="tip"><b>隐私保护</b>：协作模式下，本地模型先处理你的问题，然后把"需求摘要"发给外脑。外脑只看到摘要，看不到你的原始文字。在设置->模型管理里可以调隐私档位：<b>全量</b>(传全部)、<b>平衡</b>(隐藏手机号身份证)、<b>严格</b>(只传摘要)。建议选平衡。</div>
+<h3>8.4 实际例子</h3>
+<div class="note"><b>例子1 -- 写商业计划书：</b><br>你说"帮我写一份奶茶店创业计划书"<br>-> 本地模型：列出大纲(市场分析/成本预算/营销方案)<br>-> 外脑：根据大纲逐段撰写详细内容<br>-> 最终答案：结构清晰、内容专业</div>
+<div class="note"><b>例子2 -- 隐私处理：</b><br>你说"我身份证号是320xxx，帮我查账户"<br>-> 本地模型：检测到身份证号，替换为[身份证号]<br>-> 外脑：只看到"请[身份证号]用户查询..."<br>-> 你的隐私没有泄露给外脑</div>
+
+<!-- ====== 第九章 -- 长效任务 ====== -->
+<h2 id="ch9">九、长效任务 -- 让哈文自己干活</h2>
+<h3>9.1 什么是长效任务?</h3>
+<p>普通对话是你打一行字，哈文回一行。但有些事需要花很长时间 -- 比如翻译200页的书、处理100个Excel文件。这些就叫"长效任务"。设置后你可以关掉浏览器，哈文在后台自己跑。跑完了通过飞书/钉钉通知你。</p>
+<h3>9.2 哪些事适合做长效任务?</h3>
+<ul>
+  <li><b>批量翻译</b>：把50个文件翻译成中文</li>
+  <li><b>数据清洗</b>：处理100个CSV文件，提取关键字段</li>
+  <li><b>定时监控</b>：每小时检查某网站是否更新</li>
+  <li><b>文档生成</b>：根据知识库自动生成月度报告</li>
+  <li><b>代码审查</b>：逐一审查今天的所有代码提交</li>
+</ul>
+<h3>9.3 怎么创建?</h3>
+<p>直接在对话里告诉哈文你要做什么。比如："帮我把 data/docs/ 文件夹下所有PDF翻译成中文，结果放到 data/output/ 目录，完成后通过飞书通知我"。哈文会自动列出文件、逐个翻译、保存、通知。</p>
+<h3>9.4 流程编辑器</h3>
+<p>设置里有一个<b>流程编辑器</b>页面。如果你想要更复杂的多步骤自动化流程，可以在这里可视化地拖拽节点来编排。比如"读取文件 -> 翻译 -> 生成摘要 -> 发送通知"这样的流程。编排好之后保存为模板，以后可以反复用。</p>
+
+<!-- ====== 第十章 -- 设置 ====== -->
+<h2 id="ch10">十、设置里每个按钮是干嘛的</h2>
+<h3>10.1 基本设置</h3>
+<p>改端口号(一般不用动)、设置开机自动启动。</p>
+<h3>10.2 模型管理(最重要)</h3>
+<p>填API Key、拉模型、切换外脑、加自定义模型、设置隐私档位。</p>
+<h3>10.3 个人画像</h3>
+<p>告诉哈文你的名字、职业、兴趣。填了之后回答更贴合你的情况。哈文也会从日常对话中自动学习你的偏好，越用越懂你。</p>
+<h3>10.4 外观定制</h3>
+<p>改主题颜色、字体大小。手机上同步生效。</p>
+<h3>10.5 安全隐私(重要!)</h3>
+<p><b>改密码</b>：把初始密码换成自己的。<br><b>隐私档位</b>：控制外脑能看到多少你的信息。建议"平衡"。<br><b>数据保险箱</b>：加密存储你的敏感信息(密码、银行卡号等)，只有输入主密码才能查看。</p>
+<h3>10.6 高级功能</h3>
+<p><b>硬件检测</b>：看你的电脑能不能跑本地模型。<br><b>手机+公网</b>：获取IP地址，手机上输入这个地址就能用哈文。<br><b>渠道接入</b>：把哈文接到飞书/钉钉群。</p>
+<h3>10.7 代码沙箱</h3>
+<p>设置里有一个<b>代码沙箱</b>页面。如果你(或者哈文)需要运行Python/JS/Shell代码，可以在这里安全地跑 -- 15秒超时自动终止，不会搞坏你的电脑。普通用户不用管这个。</p>
+<h3>10.8 语言设置</h3>
+<p><b>界面与回答语言</b>：设置→语言→"界面与回答语言"下拉，统一控制界面显示语言和 AI 回答语言。三个选项：</p>
+<ul>
+  <li><b>跟随系统语言</b>（默认）：自动检测 Windows 系统语言，中文系统→中文界面，英文系统→英文界面</li>
+  <li><b>简体中文</b>：界面和 AI 回答都用中文</li>
+  <li><b>English</b>：界面和 AI 回答都用英文</li>
+</ul>
+<p>切换后立即生效，所有 28 个设置 tab、首页、HarvenHub、B 方案输出标签、FC 提示词、语音识别语言全部同步切换。当前支持中文和英文两种语言。</p>
+<h3>10.9 保底模式</h3>
+<p>万一哈文的核心服务出了问题，<b>保底模式</b>会自动启动，保证基本功能还能用。设置里有"自动修复"按钮，遇到故障点一下试试。</p>
+<h3>10.10 数据备份</h3>
+<p>备份和恢复对话记录。建议每月备份一次。备份文件在你自己电脑里，不会上传到网上。</p>
+
+<!-- ====== 第十一章 -- 面板 ====== -->
+<h2 id="ch11">十一、左边那些面板是什么</h2>
+<h3>11.1 知识库</h3>
+<p>上传文件让AI查阅回答。支持 txt/pdf/docx/md，文件不超过50MB。</p>
+<h3>11.2 专项培养(Agent)</h3>
+<p>让哈文扮演不同角色(如"英语老师")。创建方法有两种：</p>
+<ul>
+  <li><b>手动创建</b>：点专项培养 -> 新建 -> 起名字 -> 写说明 -> 保存</li>
+  <li><b>Agent工坊(推荐)</b>：用自然语言一句话描述你要什么角色，AI自动帮你生成。比如输入"我需要一个能帮我纠正英语语法的老师"，它自动创建好。</li>
+</ul>
+<h3>11.3 任务管理</h3>
+<p>定时提醒、周期任务、查看长效任务状态。</p>
+<h3>11.4 监控中心</h3>
+<p>查看哈文内存占用、CPU使用情况。出问题时排查用。</p>
+<h3>11.5 HarvenHub</h3>
+<p>哈文的"应用商店" -- 浏览和安装别人写的工具。</p>
+<h3>11.6 家庭记账</h3>
+<p>记录收支，月度统计。</p>
+<h3>11.7 居家管理 + 我的面板</h3>
+<p>菜谱、家务、购物清单。我的面板可自定义组合功能。</p>
+
+<!-- ====== 第十二章 -- 手机 ====== -->
+<h2 id="ch12">十二、手机也能用哈文</h2>
+<h3>12.1 怎么在手机上打开</h3>
+<p>电脑和手机连同一个WiFi。哈文 -> 设置 -> 高级功能 -> 手机+公网，会显示一个地址如 <code>192.168.1.57:7000</code>。手机浏览器里输入这个地址就能看到哈文了。</p>
+<h3>12.2 iPhone用户注意</h3>
+<p>左上角有一个菜单按钮，点它拉出侧边栏。不点只能看到对话区。</p>
+<h3>12.3 手机上能做什么?</h3>
+<p>聊天、查知识库、用外脑 -- 全部功能都有了。唯一限制是不能拉模型(只能在电脑上操作)。</p>
+
+<!-- ====== 第十三章 -- 渠道 ====== -->
+<h2 id="ch13">十三、怎么接到飞书/钉钉群</h2>
+<h3>13.1 飞书群</h3>
+<p>电脑打开飞书 -> 目标群 -> 群设置 -> 群机器人 -> 添加自定义机器人 -> 复制Webhook URL -> 哈文 设置->高级功能->渠道接入 -> 选"飞书机器人" -> 粘贴 -> 添加。</p>
+<h3>13.2 钉钉群</h3>
+<p>步骤一样，选"钉钉机器人"。钉钉的Webhook在群设置->智能群助手->添加机器人里。</p>
+<div class="note">飞书/钉钉机器人是单向通知(哈文->群)。要双向对话用手机浏览器打开哈文。</div>
+
+<!-- ====== 第十四章 -- HarvenHub ====== -->
+<h2 id="ch14">十四、HarvenHub 应用商店</h2>
+<h3>14.1 能装什么?</h3>
+<p>Skill(工具插件)、Agent(专业角色)、Template(流程模板)、Prompt(提示词模板)。</p>
+<h3>14.2 怎么装?</h3>
+<p>左边面板点 HarvenHub -> 浏览分类 -> 点进去看介绍 -> 点"安装"。安装前哈文会告诉你需要什么额外的软件包，缺的自动帮你装。</p>
+<h3>14.3 自己也能做Skill</h3>
+<p>设置里有<b>Skill制作向导</b>。你用自然语言描述"我想要一个能帮我把CSV转成Excel的Skill"，AI会自动帮你生成代码。生成后可以测试、保存、甚至上传到HarvenHub分享给别人。</p>
+
+<!-- ====== 第十五章 -- 垂直API ====== -->
+<h2 id="ch15">十五、用代码远程调用哈文</h2>
+<h3>15.1 什么是API?</h3>
+<p>哈文除了能聊天，还是一个"API服务器" -- 你写Python脚本就能远程调用哈文的能力。比如你在另一个程序里想生成一首歌，不用自己写模型，直接调哈文就行。</p>
+<h3>15.2 能调什么?</h3>
+<table>
+  <tr><th>API</th><th>做什么</th><th>请求方式</th></tr>
+  <tr><td><code>/api/vertical/generate</code></td><td>调用垂直模型生成</td><td>POST JSON</td></tr>
+  <tr><td><code>/api/vertical/models</code></td><td>列出所有垂直模型</td><td>GET</td></tr>
+  <tr><td><code>/api/multi-model/switch</code></td><td>切换当前外脑</td><td>POST JSON</td></tr>
+  <tr><td><code>/api/channels</code></td><td>管理渠道(增删查)</td><td>GET/POST/DELETE</td></tr>
+  <tr><td><code>/api/webhook/&lt;channel_id&gt;</code></td><td>接收外部渠道消息</td><td>POST JSON</td></tr>
+</table>
+<h3>15.3 Python调用示例</h3>
+<pre>
+import requests
+
+# 列出所有垂直模型
+r = requests.get('http://localhost:7000/api/vertical/models')
+print(r.json())
+
+# 切换外脑为智谱GLM
+r = requests.post('http://localhost:7000/api/multi-model/switch', json={
+    "provider": "zhipu"
+})
+print(r.json())
+
+# 添加飞书渠道
+r = requests.post('http://localhost:7000/api/channels', json={
+    "type": "feishu",
+    "name": "我家群",
+    "webhook": "https://open.feishu.cn/open-apis/bot/v2/hook/xxx"
+})
+print(r.json())
+</pre>
+<div class="warn"><b>安全提醒</b>：不要在公网暴露7000端口。API只在局域网内使用。一定要公网访问就先改复杂密码。</div>
+
+<!-- ====== 第十六章 -- 常见问题 ====== -->
+<h2 id="ch16">十六、常见问题</h2>
+<div class="note"><b>Q1: 为什么打开哈文是空白的?</b><br>按 <span class="kbd">Ctrl</span>+<span class="kbd">Shift</span>+<span class="kbd">R</span> 强制刷新。不行就关掉浏览器重开。</div>
+<div class="note"><b>Q2: 对话记录消失了?</b><br>可能被自动分类到别的分类了。在左边对话列表找，或用顶部搜索框搜。</div>
+<div class="note"><b>Q3: 外脑选了，回答的还是本地模型?</b><br>切换后等3秒。检查设置->模型管理里，外脑状态是不是"已配置"。</div>
+<div class="note"><b>Q4: 忘了密码怎么办?</b><br>在哈文安装目录找 config.yaml 文件，用记事本打开，admin_password 那一行就是密码。</div>
+<div class="note"><b>Q5: 外脑花多少钱?</b><br>每次对话大概1-3毛钱。充10块能用大概100次对话。</div>
+<div class="note"><b>Q6: 本地模型跑得很慢?</b><br>换小一点的模型(如7b)，或者直接切外脑。</div>
+<div class="note"><b>Q7: 安装时黑窗口报错?</b><br>截图发给我们，常见的是网络问题或杀毒软件拦截。</div>
+<div class="note"><b>Q8: iPhone看不到输入框?</b><br>Safari底部工具栏挡住了。上滑一点。或者把哈文添加到主屏幕单独打开。</div>
+<div class="note"><b>Q9: 知识库上传了文件，问它说找不到?</b><br>把内容复制粘贴到txt文件里再上传。txt最稳。</div>
+<div class="note"><b>Q10: 语音输入没反应?</b><br>第一次用需要下载语音识别模型，等几分钟。下载完就能离线用了。</div>
+<div class="note"><b>Q11: 协作模式比外脑模式慢?</b><br>正常。因为要先用本地模型处理再给外脑。多等几秒，质量会更好。</div>
+<div class="note"><b>Q12: 长效任务中途断了怎么办?</b><br>在任务管理面板查看进度。断了的任务点"继续"会从断点重新开始。</div>
+<div class="note"><b>Q13: 哈文突然不能用了?</b><br>去设置找"保底模式"页面，点"自动修复"按钮试试。还不行就重启哈文。</div>
+<div class="note"><b>Q14: 怎么随时查帮助?</b><br>在输入框里打 <code>/help</code> 发送，秒回帮助清单。也可以点侧边栏的"帮助"按钮打开这个完整指南。</div>
+
+<!-- ====== 第十七章 -- 安全 ====== -->
+<h2 id="ch17">十七、让哈文更安全更好用</h2>
+<h3>17.1 改掉默认密码</h3>
+<p>去 设置 -> 安全隐私 -> 换一个只有你自己知道的密码。</p>
+<h3>17.2 不要让陌生人访问</h3>
+<p>不要把 http://你的IP:7000 发给不认识的人。</p>
+<h3>17.3 外脑隐私档位</h3>
+<p><b>全量</b>：全部内容发给外脑。<br><b>平衡(推荐)</b>：自动隐藏身份证号、手机号等。<br><b>严格</b>：最安全但质量可能下降。</p>
+<h3>17.4 用数据保险箱存敏感信息</h3>
+<p>设置->安全隐私里有数据保险箱。你的密码、银行卡号等敏感信息可以加密存在里面，只有输入主密码才能查看。比存在记事本里安全多了。</p>
+<h3>17.5 定期备份</h3>
+<p>去 设置 -> 数据 -> 备份。建议每月备份一次。</p>
+<h3>17.6 更新哈文</h3>
+<p>有新版本时下载新安装包覆盖安装即可。对话记录和设置都在。</p>
+
+<footer>
+Harven AI v0.3.0 | 完整使用指南 | 2026-08-11<br>
+有问题? 在哈文里输入 <code>/help</code> 随时查 &mdash; 秒回不花钱
+</footer>
+</div>
+</body>
+</html>

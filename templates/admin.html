@@ -1,0 +1,1276 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Harven AI — 管理后台</title>
+<style>
+/* ===================== 基础 Reset ===================== */
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0f0f1a;color:#e2e8f0;font-family:'Segoe UI','PingFang SC','Microsoft YaHei',system-ui,sans-serif;min-height:100vh}
+a{text-decoration:none}
+
+/* ===================== 顶部导航栏 ===================== */
+.topbar{
+  background:#1a1a2e;padding:0 28px;display:flex;align-items:center;gap:16px;
+  border-bottom:1px solid #2d2d4e;height:56px;position:sticky;top:0;z-index:100;
+}
+.topbar .logo{font-size:17px;color:#a78bfa;font-weight:700;letter-spacing:.5px;white-space:nowrap}
+.topbar .badge{background:#a78bfa22;color:#a78bfa;padding:3px 10px;border-radius:20px;font-size:11px}
+.topbar .update-time{margin-left:auto;font-size:12px;color:#64748b}
+.topbar .logout{
+  color:#f87171;font-size:13px;background:#f8717118;padding:5px 14px;
+  border-radius:8px;border:1px solid #f87171;transition:.2s;white-space:nowrap;
+}
+.topbar .logout:hover{background:#f87171;color:#fff}
+
+/* ===================== 侧边导航 ===================== */
+.layout{display:flex;min-height:calc(100vh - 56px)}
+.sidebar{
+  width:200px;flex-shrink:0;background:#13132a;border-right:1px solid #2d2d4e;
+  padding:20px 0;position:sticky;top:56px;height:calc(100vh - 56px);overflow-y:auto;
+}
+.nav-item{
+  display:flex;align-items:center;gap:10px;padding:10px 20px;font-size:13px;
+  color:#94a3b8;cursor:pointer;transition:.18s;border-left:3px solid transparent;
+}
+.nav-item:hover{color:#e2e8f0;background:#1a1a2e}
+.nav-item.active{color:#a78bfa;background:#a78bfa18;border-left-color:#a78bfa;font-weight:600}
+.nav-item .icon{font-size:16px;width:20px;text-align:center}
+
+/* ===================== 主体内容 ===================== */
+.main{flex:1;padding:24px;overflow-x:hidden}
+.page{display:none}
+.page.active{display:block}
+
+/* ===================== 统计卡片 ===================== */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px;margin-bottom:24px}
+.stat-card{
+  background:#1a1a2e;border:1px solid #2d2d4e;border-radius:12px;padding:18px 16px;
+  text-align:center;transition:.18s;
+}
+.stat-card:hover{border-color:#a78bfa44}
+.stat-card .num{font-size:30px;font-weight:700;color:#a78bfa;margin-bottom:4px;line-height:1.1}
+.stat-card .label{font-size:12px;color:#64748b}
+.stat-card.green .num{color:#34d399}
+.stat-card.red   .num{color:#f87171}
+.stat-card.blue  .num{color:#60a5fa}
+.stat-card.amber .num{color:#fbbf24}
+
+/* ===================== 区块 ===================== */
+.section{background:#1a1a2e;border:1px solid #2d2d4e;border-radius:12px;margin-bottom:20px;overflow:hidden}
+.section-header{
+  padding:14px 20px;border-bottom:1px solid #2d2d4e;
+  display:flex;align-items:center;justify-content:space-between;
+}
+.section-header h2{font-size:14px;font-weight:600;color:#e2e8f0}
+.section-body{padding:16px 20px}
+
+/* ===================== 表格 ===================== */
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{color:#64748b;font-weight:500;padding:8px 10px;text-align:left;border-bottom:1px solid #2d2d4e;white-space:nowrap}
+td{padding:9px 10px;border-bottom:1px solid #1e1e35;vertical-align:middle;word-break:break-all}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#1e1e35}
+
+/* ===================== 徽标 ===================== */
+.badge-tag{border-radius:6px;padding:2px 8px;font-size:11px;font-weight:500}
+.tag-blocked{background:#f8717122;color:#f87171}
+.tag-online {background:#34d39922;color:#34d399}
+.tag-normal {background:#60a5fa22;color:#60a5fa}
+.tag-warn   {background:#fbbf2422;color:#fbbf24}
+.tag-danger {background:#f8717122;color:#f87171}
+
+/* ===================== 按钮 ===================== */
+.btn{border:none;border-radius:7px;padding:6px 14px;font-size:12px;cursor:pointer;transition:.2s;font-weight:500}
+.btn-primary  {background:#a78bfa;color:#fff}.btn-primary:hover{background:#9061f9}
+.btn-danger   {background:#f8717122;color:#f87171;border:1px solid #f87171}.btn-danger:hover{background:#f87171;color:#fff}
+.btn-success  {background:#34d39922;color:#34d399;border:1px solid #34d399}.btn-success:hover{background:#34d399;color:#000}
+.btn-secondary{background:#1e2a3a;color:#94a3b8;border:1px solid #2d2d4e}.btn-secondary:hover{background:#2d3748;color:#e2e8f0}
+.btn-sm{padding:4px 10px;font-size:11px}
+.btn-refresh  {background:#a78bfa22;color:#a78bfa;border:1px solid #a78bfa55}.btn-refresh:hover{background:#a78bfa;color:#fff}
+
+/* ===================== 表单控件 ===================== */
+.form-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.form-group{margin-bottom:16px}
+.form-group label{font-size:12px;color:#94a3b8;display:block;margin-bottom:6px}
+input[type=text],input[type=password],input[type=number],select,textarea{
+  background:#0f0f1a;border:1px solid #2d2d4e;color:#e2e8f0;
+  padding:8px 12px;border-radius:8px;font-size:13px;outline:none;
+  transition:border-color .2s;width:100%;
+}
+input[type=text]:focus,input[type=password]:focus,input[type=number]:focus,
+select:focus,textarea:focus{border-color:#a78bfa}
+select option{background:#1a1a2e}
+
+/* ===================== 消息提示 ===================== */
+.msg{padding:8px 12px;border-radius:8px;font-size:13px;margin-top:10px;display:none}
+.msg.ok {background:#34d39920;color:#34d399}
+.msg.err{background:#f8717120;color:#f87171}
+.msg.warn{background:#fbbf2420;color:#fbbf24}
+
+/* ===================== 系统健康条 ===================== */
+.health-bar-wrap{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.health-bar-wrap label{font-size:12px;color:#94a3b8;width:80px;flex-shrink:0}
+.health-bar{flex:1;height:6px;border-radius:3px;background:#2d2d4e;overflow:hidden}
+.health-bar-fill{height:100%;border-radius:3px;transition:width .4s}
+.health-bar-fill.good{background:#34d399}
+.health-bar-fill.warn{background:#fbbf24}
+.health-bar-fill.bad {background:#f87171}
+.health-bar-val{font-size:11px;color:#64748b;width:36px;text-align:right}
+
+/* ===================== 日志区域 ===================== */
+.log-area{
+  background:#0a0a18;border:1px solid #2d2d4e;border-radius:8px;padding:12px 14px;
+  font-family:'Courier New',monospace;font-size:11px;color:#94a3b8;
+  max-height:320px;overflow-y:auto;line-height:1.7;
+}
+.log-area .log-error{color:#f87171}
+.log-area .log-warn {color:#fbbf24}
+.log-area .log-info {color:#60a5fa}
+.log-area .log-ok   {color:#34d399}
+
+/* ===================== 开关 ===================== */
+.toggle-switch{position:relative;display:inline-block;width:40px;height:22px;flex-shrink:0}
+.toggle-switch input{opacity:0;width:0;height:0}
+.toggle-slider{
+  position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;
+  background:#2d2d4e;border-radius:22px;transition:.3s;
+}
+.toggle-slider:before{
+  position:absolute;content:'';height:16px;width:16px;left:3px;bottom:3px;
+  background:#e2e8f0;border-radius:50%;transition:.3s;
+}
+input:checked + .toggle-slider{background:#a78bfa}
+input:checked + .toggle-slider:before{transform:translateX(18px)}
+
+/* ===================== 空状态 ===================== */
+.empty{color:#475569;font-size:13px;padding:32px 0;text-align:center}
+
+/* ===================== 响应式 ===================== */
+@media(max-width:768px){
+  .sidebar{display:none}
+  .stats-grid{grid-template-columns:1fr 1fr}
+}
+</style>
+</head>
+<body>
+
+<!-- 顶部导航栏 -->
+<div class="topbar">
+  <div class="logo">⚙️ Harven AI 管理后台</div>
+  <span class="badge" id="protBadge">加载中…</span>
+  <div class="update-time" id="updateTime"></div>
+  <a href="/admin/logout" class="logout">退出登录</a>
+</div>
+
+<div class="layout">
+  <!-- 侧边导航 -->
+  <nav class="sidebar">
+    <div class="nav-item active" onclick="showPage('overview',this)">
+      <span class="icon">📊</span> 系统概览
+    </div>
+    <div class="nav-item" onclick="showPage('visitors',this)">
+      <span class="icon">👥</span> 访客管理
+    </div>
+    <div class="nav-item" onclick="showPage('security',this)">
+      <span class="icon">🔒</span> 安全设置
+    </div>
+    <div class="nav-item" onclick="showPage('models',this)">
+      <span class="icon">🧠</span> 模型管理
+    </div>
+    <div class="nav-item" onclick="showPage('data',this)">
+      <span class="icon">💾</span> 数据管理
+    </div>
+    <div class="nav-item" onclick="showPage('system',this)">
+      <span class="icon">🖥️</span> 系统监控
+    </div>
+    <div class="nav-item" onclick="showPage('logs',this)">
+      <span class="icon">📋</span> 系统日志
+    </div>
+    <div class="nav-item" onclick="showPage('config',this)">
+      <span class="icon">🔧</span> 配置管理
+    </div>
+  </nav>
+
+  <!-- 主体内容 -->
+  <main class="main">
+
+    <!-- ========== 页面：系统概览 ========== -->
+    <div class="page active" id="page-overview">
+      <h1 style="font-size:18px;margin-bottom:20px;color:#a78bfa">📊 系统概览</h1>
+
+      <!-- 统计卡片 -->
+      <div class="stats-grid">
+        <div class="stat-card green"><div class="num" id="sOnline">…</div><div class="label">当前在线（10分钟内）</div></div>
+        <div class="stat-card"><div class="num" id="sToday">…</div><div class="label">今日新增访客</div></div>
+        <div class="stat-card blue"><div class="num" id="sTotal">…</div><div class="label">累计访客</div></div>
+        <div class="stat-card"><div class="num" id="sTodayMsg">…</div><div class="label">今日对话条数</div></div>
+        <div class="stat-card blue"><div class="num" id="sTotalMsg">…</div><div class="label">累计对话条数</div></div>
+        <div class="stat-card amber"><div class="num" id="sKbDocs">…</div><div class="label">知识库文件数</div></div>
+      </div>
+
+      <!-- 系统健康 -->
+      <div class="section">
+        <div class="section-header">
+          <h2>💚 系统健康状态</h2>
+          <button class="btn btn-refresh btn-sm" onclick="loadHealth()">🔄 刷新</button>
+        </div>
+        <div class="section-body" id="healthBody">
+          <div class="empty">加载中…</div>
+        </div>
+      </div>
+
+      <!-- 快速操作 -->
+      <div class="section">
+        <div class="section-header"><h2>⚡ 快速操作</h2></div>
+        <div class="section-body">
+          <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <button class="btn btn-secondary" onclick="triggerAutoCheck()">🤖 触发保底自动检查</button>
+            <button class="btn btn-secondary" onclick="triggerTryFix()">🔧 触发自动修复</button>
+            <button class="btn btn-secondary" onclick="clearVisitors()">🗑️ 清除访客记录</button>
+            <button class="btn btn-secondary" onclick="window.location.reload()">🔄 刷新页面</button>
+          </div>
+          <div class="msg" id="quickMsg"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== 页面：访客管理 ========== -->
+    <div class="page" id="page-visitors">
+      <h1 style="font-size:18px;margin-bottom:20px;color:#a78bfa">👥 访客管理</h1>
+
+      <!-- 访问码管理 -->
+      <div class="section">
+        <div class="section-header">
+          <h2>🔑 访问码管理</h2>
+          <span id="codeStatus" style="font-size:12px;color:#94a3b8">加载中…</span>
+        </div>
+        <div class="section-body">
+          <div class="form-row">
+            <input type="password" id="codeInput" placeholder="新访问码（留空=关闭保护）" style="width:220px;">
+            <button class="btn btn-primary" onclick="setCode()">保存</button>
+            <button class="btn btn-secondary" onclick="clearCode()">清除保护</button>
+          </div>
+          <p style="font-size:12px;color:#64748b;margin-top:6px">⚡ 本机/局域网访问永远免码。访客输码后 cookie 保存 7 天。</p>
+          <div class="msg" id="codeMsg"></div>
+        </div>
+      </div>
+
+      <!-- 访客列表 -->
+      <div class="section">
+        <div class="section-header">
+          <h2>访客列表（最近 200 条）</h2>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input type="text" id="visitorSearch" placeholder="搜索 IP / UA…" style="width:160px;padding:5px 10px;font-size:12px;" oninput="filterVisitors()">
+            <button class="btn btn-refresh btn-sm" onclick="loadVisitors()">🔄 刷新</button>
+          </div>
+        </div>
+        <div class="section-body" style="padding:0">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>IP 地址</th>
+                  <th>浏览器 / UA</th>
+                  <th>首次访问</th>
+                  <th>最后活跃</th>
+                  <th style="text-align:center">对话数</th>
+                  <th>状态</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="visitorTbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== 页面：安全设置 ========== -->
+    <div class="page" id="page-security">
+      <h1 style="font-size:18px;margin-bottom:20px;color:#a78bfa">🔒 安全设置</h1>
+
+      <!-- 修改管理员密码 -->
+      <div class="section">
+        <div class="section-header"><h2>🔑 修改管理员密码</h2></div>
+        <div class="section-body" style="max-width:420px">
+          <div class="form-group">
+            <label>当前密码</label>
+            <input type="password" id="pwCurrent" placeholder="输入当前密码">
+          </div>
+          <div class="form-group">
+            <label>新密码（至少 6 位）</label>
+            <input type="password" id="pwNew" placeholder="输入新密码">
+          </div>
+          <div class="form-group">
+            <label>确认新密码</label>
+            <input type="password" id="pwConfirm" placeholder="再次输入新密码">
+          </div>
+          <button class="btn btn-primary" onclick="changePassword()">修改密码</button>
+          <div class="msg" id="pwMsg"></div>
+        </div>
+      </div>
+
+      <!-- Session 安全 -->
+      <div class="section">
+        <div class="section-header"><h2>🍪 Session 管理</h2></div>
+        <div class="section-body">
+          <p style="font-size:13px;color:#94a3b8;margin-bottom:14px">
+            管理员 session 有效期为 <strong style="color:#e2e8f0">1 天</strong>，到期需重新登录。<br>
+            如需立即使所有 session 失效，点击下方按钮（之后需重新登录）。
+          </p>
+          <button class="btn btn-danger" onclick="invalidateSessions()">使所有 Session 失效</button>
+          <div class="msg" id="sessionMsg"></div>
+        </div>
+      </div>
+
+      <!-- IP 封禁管理 -->
+      <div class="section">
+        <div class="section-header">
+          <h2>🚫 IP 封禁列表</h2>
+          <button class="btn btn-refresh btn-sm" onclick="loadBlockedIPs()">🔄 刷新</button>
+        </div>
+        <div class="section-body">
+          <div class="form-row" style="margin-bottom:14px;">
+            <input type="text" id="blockIpInput" placeholder="输入要封禁的 IP 地址" style="width:200px;">
+            <button class="btn btn-danger btn-sm" onclick="blockIP()">封禁 IP</button>
+          </div>
+          <div id="blockedIPList"><div class="empty">暂无封禁记录</div></div>
+          <div class="msg" id="blockMsg"></div>
+        </div>
+      </div>
+
+      <!-- 安全事件记录 -->
+      <div class="section">
+        <div class="section-header">
+          <h2>⚠️ 安全事件记录</h2>
+          <button class="btn btn-refresh btn-sm" onclick="loadSecurityEvents()">🔄 刷新</button>
+        </div>
+        <div class="section-body">
+          <div id="securityEventList"><div class="empty">暂无安全事件</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== 页面：模型管理 ========== -->
+    <div class="page" id="page-models">
+      <h1 style="font-size:18px;margin-bottom:20px;color:#a78bfa">🧠 模型管理</h1>
+
+      <!-- 已安装模型 -->
+      <div class="section">
+        <div class="section-header">
+          <h2>📦 已安装模型</h2>
+          <button class="btn btn-refresh btn-sm" onclick="loadModelsAdmin()">🔄 刷新</button>
+        </div>
+        <div class="section-body" id="modelsAdminBody">
+          <div class="empty">加载中…</div>
+        </div>
+      </div>
+
+      <!-- 下载新模型 -->
+      <div class="section">
+        <div class="section-header"><h2>⬇️ 下载新模型</h2></div>
+        <div class="section-body" style="max-width:600px">
+          <div class="form-row">
+            <input type="text" id="modelPullInput" placeholder="输入模型名（如 qwen2.5:7b）" style="width:300px;">
+            <button class="btn btn-primary" onclick="pullModelAdmin()">下载</button>
+          </div>
+          <p style="font-size:12px;color:#64748b;margin-top:4px">从本地引擎拉取模型。大型模型可能需要较长时间。</p>
+          <div class="msg" id="pullMsg"></div>
+          <div id="pullProgress" style="margin-top:8px;display:none">
+            <div class="health-bar"><div class="health-bar-fill good" id="pullBar" style="width:0%"></div></div>
+            <div style="font-size:11px;color:#64748b;margin-top:4px" id="pullStatus"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 硬件检测 + 模型推荐 -->
+      <div class="section">
+        <div class="section-header">
+          <h2>🖥️ 硬件检测与推荐</h2>
+          <button class="btn btn-refresh btn-sm" onclick="loadHardwareAdmin()">🔄 检测</button>
+        </div>
+        <div class="section-body" id="hardwareAdminBody">
+          <div class="empty">点击"检测"开始硬件扫描…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== 页面：数据管理 ========== -->
+    <div class="page" id="page-data">
+      <h1 style="font-size:18px;margin-bottom:20px;color:#a78bfa">💾 数据管理</h1>
+
+      <!-- 三库状态 -->
+      <div class="section">
+        <div class="section-header">
+          <h2>🗄️ 三库状态</h2>
+          <button class="btn btn-refresh btn-sm" onclick="loadDbStatusAdmin()">🔄 刷新</button>
+        </div>
+        <div class="section-body" id="dbStatusAdminBody">
+          <div class="empty">加载中…</div>
+        </div>
+      </div>
+
+      <!-- 备份 -->
+      <div class="section">
+        <div class="section-header"><h2>📦 备份</h2></div>
+        <div class="section-body" style="max-width:520px">
+          <div class="form-group">
+            <label>备份路径（留空使用默认 data/backups/）</label>
+            <input type="text" id="backupPath" placeholder="H:\Harven_Backup\">
+          </div>
+          <button class="btn btn-primary" onclick="backupDataAdmin()">📦 全量备份</button>
+          <div class="msg" id="backupMsg"></div>
+        </div>
+      </div>
+
+      <!-- 恢复 -->
+      <div class="section">
+        <div class="section-header"><h2>📥 恢复</h2></div>
+        <div class="section-body" style="max-width:520px">
+          <div class="form-group">
+            <label>备份文件路径</label>
+            <input type="text" id="restorePath" placeholder="H:\Harven_Backup\harven_backup_2026.zip">
+          </div>
+          <button class="btn btn-danger" onclick="restoreDataAdmin()">⚠️ 从备份恢复</button>
+          <div class="msg" id="restoreMsg"></div>
+        </div>
+      </div>
+
+      <!-- 清空数据（双重验证） -->
+      <div class="section" style="border-color:#f8717144">
+        <div class="section-header"><h2 style="color:#f87171">🗑️ 清空数据</h2></div>
+        <div class="section-body" style="max-width:520px">
+          <p style="font-size:13px;color:#f87171;margin-bottom:14px">
+            ⚠️ 此操作将清除所有对话记录、知识库和用户数据。<br>
+            需要输入管理员密码和确认码进行双重验证。此操作不可恢复！
+          </p>
+          <div class="form-group">
+            <label>管理员密码</label>
+            <input type="password" id="clearPwd" placeholder="输入管理员密码">
+          </div>
+          <div class="form-group">
+            <label>确认码（输入 DELETE 确认）</label>
+            <input type="text" id="clearConfirm" placeholder="输入 DELETE">
+          </div>
+          <button class="btn btn-danger" onclick="clearDataAdmin()">🗑️ 确认清除所有数据</button>
+          <div class="msg" id="clearMsg"></div>
+        </div>
+      </div>
+
+      <!-- 导出数据 -->
+      <div class="section">
+        <div class="section-header"><h2>📤 导出数据</h2></div>
+        <div class="section-body">
+          <button class="btn btn-success" onclick="exportDataAdmin()">📤 导出所有数据（JSON）</button>
+          <div class="msg" id="exportMsg"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== 页面：系统监控 ========== -->
+    <div class="page" id="page-system">
+      <h1 style="font-size:18px;margin-bottom:20px;color:#a78bfa">🖥️ 系统监控</h1>
+
+      <!-- 实时资源 -->
+      <div class="section">
+        <div class="section-header">
+          <h2>📡 实时资源使用率</h2>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <label style="font-size:12px;color:#64748b;display:flex;align-items:center;gap:6px;">
+              <input type="checkbox" id="autoRefreshCheck" checked onchange="toggleAutoRefresh()"> 自动刷新（5秒）
+            </label>
+            <button class="btn btn-refresh btn-sm" onclick="loadResourceStats()">🔄 刷新</button>
+          </div>
+        </div>
+        <div class="section-body" id="resourceBody">
+          <div class="empty">加载中…</div>
+        </div>
+      </div>
+
+      <!-- 本地模型 -->
+      <div class="section">
+        <div class="section-header">
+          <h2>🧠 本地模型状态</h2>
+          <button class="btn btn-refresh btn-sm" onclick="loadOllamaInfo()">🔄 刷新</button>
+        </div>
+        <div class="section-body" id="ollamaBody">
+          <div class="empty">加载中…</div>
+        </div>
+      </div>
+
+      <!-- 知识库状态 -->
+      <div class="section">
+        <div class="section-header">
+          <h2>📚 知识库状态</h2>
+          <button class="btn btn-refresh btn-sm" onclick="loadKbStatus()">🔄 刷新</button>
+        </div>
+        <div class="section-body" id="kbStatusBody">
+          <div class="empty">加载中…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== 页面：系统日志 ========== -->
+    <div class="page" id="page-logs">
+      <h1 style="font-size:18px;margin-bottom:20px;color:#a78bfa">📋 系统日志</h1>
+
+      <!-- 保底状态日志 -->
+      <div class="section">
+        <div class="section-header">
+          <h2>🛡️ 保底系统日志</h2>
+          <button class="btn btn-refresh btn-sm" onclick="loadFallbackLog()">🔄 刷新</button>
+        </div>
+        <div class="section-body">
+          <div class="log-area" id="fallbackLogArea">加载中…</div>
+        </div>
+      </div>
+
+      <!-- 知识萃取日志 -->
+      <div class="section">
+        <div class="section-header">
+          <h2>📚 知识萃取日志</h2>
+          <button class="btn btn-refresh btn-sm" onclick="loadExtractionLog()">🔄 刷新</button>
+        </div>
+        <div class="section-body">
+          <div class="log-area" id="extractionLogArea">加载中…</div>
+        </div>
+      </div>
+
+      <!-- 进化提案日志 -->
+      <div class="section">
+        <div class="section-header">
+          <h2>🚀 进化提案记录</h2>
+          <button class="btn btn-refresh btn-sm" onclick="loadEvolutionLog()">🔄 刷新</button>
+        </div>
+        <div class="section-body">
+          <div id="evolutionLogArea"><div class="empty">加载中…</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== 页面：配置管理 ========== -->
+    <div class="page" id="page-config">
+      <h1 style="font-size:18px;margin-bottom:20px;color:#a78bfa">🔧 配置管理</h1>
+
+      <!-- 当前配置摘要 -->
+      <div class="section">
+        <div class="section-header">
+          <h2>📄 当前配置摘要</h2>
+          <button class="btn btn-refresh btn-sm" onclick="loadConfigSummary()">🔄 刷新</button>
+        </div>
+        <div class="section-body" id="configSummaryBody">
+          <div class="empty">加载中…</div>
+        </div>
+      </div>
+
+      <!-- 运行时配置修改 -->
+      <div class="section">
+        <div class="section-header"><h2>⚙️ 运行时配置修改</h2></div>
+        <div class="section-body" style="max-width:520px">
+          <p style="font-size:12px;color:#64748b;margin-bottom:14px">修改将写入 config.yaml，部分配置需重启生效。支持点分隔键，如 <code style="background:#0f0f1a;padding:1px 5px;border-radius:3px;font-size:11px">ollama.default_model</code>。</p>
+          <div class="form-group">
+            <label>配置键（config.yaml 路径）</label>
+            <input type="text" id="cfgKey" placeholder="例如: ollama.default_model">
+          </div>
+          <div class="form-group">
+            <label>新值</label>
+            <input type="text" id="cfgVal" placeholder="新配置值">
+          </div>
+          <button class="btn btn-primary" onclick="applyConfig()">✅ 应用配置</button>
+          <div class="msg" id="cfgMsg"></div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+/* ===================== 页面路由 ===================== */
+let _autoRefreshTimer = null;
+let _allVisitors = [];
+
+function showPage(page, navEl) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  if (navEl) navEl.classList.add('active');
+
+  // 按需加载
+  if (page === 'overview')  { loadOverview(); }
+  if (page === 'visitors')  { loadStats(); loadVisitors(); }
+  if (page === 'system')    { loadResourceStats(); loadOllamaInfo(); loadKbStatus(); }
+  if (page === 'logs')      { loadFallbackLog(); loadExtractionLog(); loadEvolutionLog(); }
+  if (page === 'security')  { loadBlockedIPs(); loadSecurityEvents(); }
+  if (page === 'config')    { loadConfigSummary(); }
+  if (page === 'models')    { loadModelsAdmin(); loadHardwareAdmin(); }
+  if (page === 'data')      { loadDbStatusAdmin(); }
+}
+
+/* ===================== 通用工具 ===================== */
+function fmtTime(t) {
+  if (!t) return '—';
+  try {
+    const d = new Date(t.includes('Z') ? t : t + ' UTC');
+    return d.toLocaleString('zh-CN', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+  } catch { return t; }
+}
+
+function showMsg(id, text, type) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text;
+  el.className = 'msg ' + type;
+  el.style.display = 'block';
+  setTimeout(() => { el.style.display = 'none'; }, 4000);
+}
+
+function barColor(pct) {
+  return pct >= 85 ? 'bad' : pct >= 65 ? 'warn' : 'good';
+}
+
+/* ===================== 概览 ===================== */
+async function loadOverview() {
+  await loadStats();
+  await loadHealth();
+}
+
+async function loadStats() {
+  try {
+    const r = await fetch('/api/visitor/stats');
+    const d = await r.json();
+    setText('sOnline',   d.online_now ?? '—');
+    setText('sToday',    d.today_visitors ?? '—');
+    setText('sTotal',    d.total_visitors ?? '—');
+    setText('sTodayMsg', d.today_messages ?? '—');
+    setText('sTotalMsg', d.total_messages ?? '—');
+    const prot = d.protected;
+    document.getElementById('protBadge').innerHTML = prot
+      ? '<span style="color:#34d399">● 保护已开启</span>'
+      : '<span style="color:#94a3b8">● 无访问码保护</span>';
+    const cs = document.getElementById('codeStatus');
+    if (cs) cs.innerHTML = prot
+      ? '<span style="color:#34d399">● 保护已开启</span>'
+      : '<span style="color:#94a3b8">● 未设置（公开）</span>';
+    document.getElementById('updateTime').textContent = '更新于 ' + new Date().toLocaleTimeString('zh-CN');
+  } catch(e) { console.error(e); }
+
+  // 知识库文件数
+  try {
+    const r2 = await fetch('/api/kb/list');
+    const d2 = await r2.json();
+    const cnt = Array.isArray(d2.files) ? d2.files.length : (d2.count ?? '—');
+    setText('sKbDocs', cnt);
+  } catch { setText('sKbDocs', '—'); }
+}
+
+async function loadHealth() {
+  const el = document.getElementById('healthBody');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/fallback/health');
+    const d = await r.json();
+    const h = d.health || {};
+    const score = h.health_score || 0;
+    const scoreColor = score >= 80 ? '#34d399' : score >= 60 ? '#fbbf24' : '#f87171';
+    const items = [
+      { label: '本地引擎服务', pct: h.ollama_available ? 100 : 0, text: h.ollama_available ? '正常' : '异常', isBool: true },
+      { label: '知识库',     pct: h.knowledge_base_available ? 100 : 0, text: h.knowledge_base_available ? '正常' : '异常', isBool: true },
+      { label: '内存使用率', pct: h.memory_percent || 0 },
+      { label: '磁盘使用率', pct: h.disk_percent   || 0 },
+      { label: '系统负载',   pct: h.system_load    || 0 },
+    ];
+    let html = `<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+      <div style="font-size:36px;font-weight:700;color:${scoreColor}">${score}</div>
+      <div>
+        <div style="font-size:13px;color:${scoreColor};font-weight:600">${score>=80?'健康':score>=60?'一般':score>=40?'较差':'危险'}</div>
+        <div style="font-size:11px;color:#64748b">综合健康评分（100分）</div>
+      </div>
+    </div>`;
+    for (const it of items) {
+      const pct = it.isBool ? (it.pct === 100 ? 0 : 100) : it.pct; // bool: 0=good, 100=bad
+      const displayPct = it.isBool ? null : it.pct;
+      const fillClass = it.isBool ? (it.pct === 100 ? 'good' : 'bad') : barColor(it.pct);
+      const fillPct = it.isBool ? (it.pct === 100 ? 100 : 100) : it.pct;
+      html += `<div class="health-bar-wrap">
+        <label>${it.label}</label>
+        <div class="health-bar"><div class="health-bar-fill ${fillClass}" style="width:${fillPct}%"></div></div>
+        <div class="health-bar-val">${it.text || (it.pct + '%')}</div>
+      </div>`;
+    }
+    if (h.issues && h.issues.length) {
+      html += '<div style="margin-top:12px;"><div style="font-size:12px;color:#fbbf24;margin-bottom:6px;">⚠️ 检测到的问题：</div>';
+      html += h.issues.map(i => `<div style="font-size:12px;color:#f87171;padding:3px 0;">• ${i}</div>`).join('');
+      html += '</div>';
+    }
+    el.innerHTML = html;
+  } catch(e) {
+    el.innerHTML = '<div class="empty">健康检查失败：' + e.message + '</div>';
+  }
+}
+
+/* ===================== 访客管理 ===================== */
+async function loadVisitors() {
+  try {
+    const r = await fetch('/api/visitor/list?limit=200');
+    _allVisitors = await r.json();
+    renderVisitors(_allVisitors);
+  } catch(e) { console.error(e); }
+}
+
+function filterVisitors() {
+  const q = (document.getElementById('visitorSearch')?.value || '').toLowerCase();
+  if (!q) { renderVisitors(_allVisitors); return; }
+  renderVisitors(_allVisitors.filter(v =>
+    (v.ip_address||'').toLowerCase().includes(q) ||
+    (v.user_agent||'').toLowerCase().includes(q)
+  ));
+}
+
+function renderVisitors(list) {
+  const tbody = document.getElementById('visitorTbody');
+  if (!tbody) return;
+  if (!list.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无访客记录</td></tr>'; return; }
+  tbody.innerHTML = list.map(v => {
+    const ua = v.user_agent || '';
+    const uaShort = ua.length > 60 ? ua.slice(0,60) + '…' : ua;
+    const blocked = v.is_blocked;
+    const lastSeen = new Date(v.last_seen + 'Z');
+    const online = (Date.now() - lastSeen.getTime()) < 10 * 60 * 1000;
+    const statusBadge = blocked
+      ? '<span class="badge-tag tag-blocked">已封禁</span>'
+      : (online ? '<span class="badge-tag tag-online">在线</span>' : '<span class="badge-tag tag-normal">离线</span>');
+    const btn = blocked
+      ? `<button class="btn btn-success btn-sm" onclick="toggleBlock('${v.session_id}',false)">解封</button>`
+      : `<button class="btn btn-danger  btn-sm" onclick="toggleBlock('${v.session_id}',true)">封禁</button>`;
+    return `<tr>
+      <td>${v.ip_address||'—'}</td>
+      <td title="${ua}">${uaShort||'—'}</td>
+      <td>${fmtTime(v.first_seen)}</td>
+      <td>${fmtTime(v.last_seen)}</td>
+      <td style="text-align:center">${v.msg_count||0}</td>
+      <td>${statusBadge}</td>
+      <td>${btn}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function toggleBlock(sid, block) {
+  const url = block ? '/api/visitor/block' : '/api/visitor/unblock';
+  await fetch(url, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:sid})});
+  loadVisitors();
+}
+
+async function setCode() {
+  const code = document.getElementById('codeInput')?.value || '';
+  if (!code.trim()) { showMsg('codeMsg','请输入访问码','err'); return; }
+  const r = await fetch('/api/visitor/set-access-code', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code})});
+  const d = await r.json();
+  if (d.success) { document.getElementById('codeInput').value=''; showMsg('codeMsg','✅ 访问码已设置','ok'); loadStats(); }
+  else showMsg('codeMsg','❌ 设置失败','err');
+}
+
+async function clearCode() {
+  const r = await fetch('/api/visitor/set-access-code', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:''})});
+  const d = await r.json();
+  if (d.success) { showMsg('codeMsg','✅ 访问码已清除（公开访问）','ok'); loadStats(); }
+  else showMsg('codeMsg','❌ 操作失败','err');
+}
+
+async function clearVisitors() {
+  if (!confirm('确定要清除所有访客记录吗？此操作不可恢复。')) return;
+  try {
+    const r = await fetch('/api/visitor/clear', {method:'POST'});
+    const d = await r.json();
+    if (d.success) { showMsg('quickMsg','✅ 访客记录已清除','ok'); await loadStats(); }
+    else showMsg('quickMsg','❌ 清除失败：' + (d.error||''),'err');
+  } catch(e) { showMsg('quickMsg','❌ 网络错误','err'); }
+}
+
+/* ===================== 安全设置 ===================== */
+async function changePassword() {
+  const current = document.getElementById('pwCurrent')?.value || '';
+  const newPwd   = document.getElementById('pwNew')?.value     || '';
+  const confirm  = document.getElementById('pwConfirm')?.value || '';
+  if (!current || !newPwd || !confirm) { showMsg('pwMsg','请填写所有字段','err'); return; }
+  if (newPwd !== confirm) { showMsg('pwMsg','两次输入不一致','err'); return; }
+  if (newPwd.length < 6)  { showMsg('pwMsg','新密码至少6位','err'); return; }
+  try {
+    const r = await fetch('/api/admin/change-password', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ current_password: current, value: newPwd, confirm_password: confirm }),
+    });
+    const d = await r.json();
+    if (d.success) {
+      showMsg('pwMsg','✅ 密码修改成功，请重新登录','ok');
+      ['pwCurrent','pwNew','pwConfirm'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      });
+      setTimeout(() => window.location.href = '/admin/logout', 2000);
+    } else { showMsg('pwMsg','❌ ' + (d.error||'修改失败'),'err'); }
+  } catch(e) { showMsg('pwMsg','❌ 网络错误','err'); }
+}
+
+async function invalidateSessions() {
+  if (!confirm('确定要使所有 Session 失效吗？你将需要重新登录。')) return;
+  // 直接退出登录，让用户重新登录
+  window.location.href = '/admin/logout';
+}
+
+async function loadBlockedIPs() {
+  // 从访客列表中提取封禁的IP
+  const el = document.getElementById('blockedIPList');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/visitor/list?limit=500');
+    const list = await r.json();
+    const blocked = list.filter(v => v.is_blocked);
+    if (!blocked.length) { el.innerHTML = '<div class="empty">暂无封禁记录</div>'; return; }
+    el.innerHTML = blocked.map(v => `
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #1e1e35;">
+        <span style="font-size:13px;flex:1">${v.ip_address||'—'}</span>
+        <span style="font-size:11px;color:#64748b">${fmtTime(v.last_seen)}</span>
+        <button class="btn btn-success btn-sm" onclick="toggleBlock('${v.session_id}',false);loadBlockedIPs()">解封</button>
+      </div>`).join('');
+  } catch(e) { el.innerHTML = '<div class="empty">加载失败</div>'; }
+}
+
+async function blockIP() {
+  const ip = document.getElementById('blockIpInput')?.value?.trim() || '';
+  if (!ip) { showMsg('blockMsg','请输入IP地址','err'); return; }
+  // 简单正则验证
+  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) { showMsg('blockMsg','IP 格式不正确','err'); return; }
+  try {
+    const r = await fetch('/api/visitor/block', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ip_address: ip}),
+    });
+    const d = await r.json();
+    if (d.success) { showMsg('blockMsg','✅ IP 已封禁','ok'); document.getElementById('blockIpInput').value=''; loadBlockedIPs(); }
+    else showMsg('blockMsg','❌ ' + (d.error||'封禁失败'),'err');
+  } catch(e) { showMsg('blockMsg','❌ 网络错误','err'); }
+}
+
+function loadSecurityEvents() {
+  // 从 hw_security 获取安全事件（若接口存在）
+  const el = document.getElementById('securityEventList');
+  if (!el) return;
+  fetch('/api/security/events').then(r => r.json()).then(d => {
+    const events = d.events || [];
+    if (!events.length) { el.innerHTML = '<div class="empty">暂无安全事件</div>'; return; }
+    el.innerHTML = events.slice(-20).reverse().map(e => `
+      <div style="padding:8px 0;border-bottom:1px solid #1e1e35;font-size:12px;">
+        <span style="color:#fbbf24">${e.level||'INFO'}</span>
+        <span style="color:#64748b;margin:0 8px">${fmtTime(e.timestamp)}</span>
+        <span>${e.message||''}</span>
+      </div>`).join('');
+  }).catch(() => { el.innerHTML = '<div class="empty">安全事件接口不可用</div>'; });
+}
+
+/* ===================== 系统监控 ===================== */
+let _autoRefresh = true;
+
+function toggleAutoRefresh() {
+  _autoRefresh = document.getElementById('autoRefreshCheck')?.checked;
+}
+
+async function loadResourceStats() {
+  const el = document.getElementById('resourceBody');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/stats/resource');
+    const d = await r.json();
+    const s = d.resource_stats || d.stats || {};
+    if (!s || !Object.keys(s).length) { el.innerHTML = '<div class="empty">暂无资源数据</div>'; return; }
+    el.innerHTML = `
+      <div class="health-bar-wrap"><label>CPU 使用率</label>
+        <div class="health-bar"><div class="health-bar-fill ${barColor(s.cpu_percent||0)}" style="width:${s.cpu_percent||0}%"></div></div>
+        <div class="health-bar-val">${(s.cpu_percent||0).toFixed(1)}%</div>
+      </div>
+      <div class="health-bar-wrap"><label>内存使用率</label>
+        <div class="health-bar"><div class="health-bar-fill ${barColor(s.memory_percent||0)}" style="width:${s.memory_percent||0}%"></div></div>
+        <div class="health-bar-val">${(s.memory_percent||0).toFixed(1)}%</div>
+      </div>
+      <div class="health-bar-wrap"><label>磁盘使用率</label>
+        <div class="health-bar"><div class="health-bar-fill ${barColor(s.disk_percent||0)}" style="width:${s.disk_percent||0}%"></div></div>
+        <div class="health-bar-val">${(s.disk_percent||0).toFixed(1)}%</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-top:14px;">
+        <div style="background:#0f0f1a;border-radius:8px;padding:10px 12px;">
+          <div style="font-size:11px;color:#64748b">可用内存</div>
+          <div style="font-size:15px;font-weight:600;color:#60a5fa">${s.memory_available_gb != null ? s.memory_available_gb.toFixed(1)+' GB' : '—'}</div>
+        </div>
+        <div style="background:#0f0f1a;border-radius:8px;padding:10px 12px;">
+          <div style="font-size:11px;color:#64748b">可用磁盘</div>
+          <div style="font-size:15px;font-weight:600;color:#60a5fa">${s.disk_free_gb != null ? s.disk_free_gb.toFixed(1)+' GB' : '—'}</div>
+        </div>
+        <div style="background:#0f0f1a;border-radius:8px;padding:10px 12px;">
+          <div style="font-size:11px;color:#64748b">CPU 核心数</div>
+          <div style="font-size:15px;font-weight:600;color:#a78bfa">${s.cpu_count||'—'}</div>
+        </div>
+        <div style="background:#0f0f1a;border-radius:8px;padding:10px 12px;">
+          <div style="font-size:11px;color:#64748b">采集时间</div>
+          <div style="font-size:12px;color:#64748b">${s.timestamp ? new Date(s.timestamp).toLocaleTimeString('zh-CN') : '—'}</div>
+        </div>
+      </div>`;
+  } catch(e) { el.innerHTML = '<div class="empty">资源数据加载失败：' + e.message + '</div>'; }
+}
+
+async function loadOllamaInfo() {
+  const el = document.getElementById('ollamaBody');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/models/list');
+    const d = await r.json();
+    const models = d.models || [];
+    if (!models.length) { el.innerHTML = '<div class="empty">未检测到 本地模型，请确认 本地引擎服务已启动</div>'; return; }
+    el.innerHTML = '<div class="table-wrap"><table><thead><tr><th>模型名</th><th>大小</th><th>修改时间</th></tr></thead><tbody>' +
+      models.map(m => `<tr>
+        <td style="font-weight:500">${m.name||m.model||'—'}</td>
+        <td>${m.size ? (m.size/1e9).toFixed(2)+' GB' : '—'}</td>
+        <td>${fmtTime(m.modified_at||m.modified)}</td>
+      </tr>`).join('') + '</tbody></table></div>';
+  } catch(e) { el.innerHTML = '<div class="empty">本地引擎接口请求失败</div>'; }
+}
+
+async function loadKbStatus() {
+  const el = document.getElementById('kbStatusBody');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/kb/list');
+    const d = await r.json();
+    const files = d.files || [];
+    if (!files.length) { el.innerHTML = '<div class="empty">知识库为空</div>'; return; }
+    el.innerHTML = '<div class="table-wrap"><table><thead><tr><th>文件名</th><th>大小</th><th>类型</th></tr></thead><tbody>' +
+      files.map(f => `<tr>
+        <td>${f.name||f.filename||'—'}</td>
+        <td>${f.size ? (f.size/1024).toFixed(1)+' KB' : '—'}</td>
+        <td>${f.type||f.ext||'—'}</td>
+      </tr>`).join('') + '</tbody></table></div>';
+  } catch(e) { el.innerHTML = '<div class="empty">知识库状态加载失败</div>'; }
+}
+
+/* ===================== 日志页 ===================== */
+async function loadFallbackLog() {
+  const el = document.getElementById('fallbackLogArea');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/fallback/status');
+    const d = await r.json();
+    const s = d.status || {};
+    el.innerHTML = `<span class="${s.is_fallback_mode ? 'log-warn' : 'log-ok'}">[保底状态] ${s.is_fallback_mode ? '🛡️ 保底模式已激活 — ' + (s.reason||'未知') : '✅ 系统正常运行'}</span>\n进入时间: ${s.since||'—'}`;
+  } catch(e) { el.textContent = '加载失败: ' + e.message; }
+}
+
+async function loadExtractionLog() {
+  const el = document.getElementById('extractionLogArea');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/extraction/log');
+    const d = await r.json();
+    const logs = d.log || [];
+    if (!logs.length) { el.textContent = '暂无萃取日志'; return; }
+    el.innerHTML = logs.slice(-30).reverse().map(e => {
+      const t = e.timestamp ? new Date(e.timestamp).toLocaleString('zh-CN') : '—';
+      return `<span class="log-info">[${t}]</span> ${e.source_type||'?'} → 萃取 <span class="log-ok">${e.item_count||0}</span> 条`;
+    }).join('\n');
+  } catch(e) { el.textContent = '加载失败: ' + e.message; }
+}
+
+async function loadEvolutionLog() {
+  const el = document.getElementById('evolutionLogArea');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/evolution/proposals');
+    const d = await r.json();
+    const proposals = d.proposals || [];
+    if (!proposals.length) { el.innerHTML = '<div class="empty">暂无进化提案记录</div>'; return; }
+    const statusMap = { pending:'<span class="badge-tag tag-warn">待审批</span>', approved:'<span class="badge-tag tag-normal">已批准</span>', applied:'<span class="badge-tag tag-online">已应用</span>', rejected:'<span class="badge-tag tag-blocked">已拒绝</span>' };
+    el.innerHTML = '<div class="table-wrap"><table><thead><tr><th>标题</th><th>类型</th><th>状态</th><th>提交时间</th><th>审批备注</th></tr></thead><tbody>' +
+      proposals.slice().reverse().map(p => `<tr>
+        <td style="font-weight:500">${p.title||'—'}</td>
+        <td>${p.type||'—'}</td>
+        <td>${statusMap[p.status] || p.status}</td>
+        <td>${fmtTime(p.submitted_at)}</td>
+        <td style="color:#94a3b8;font-size:11px">${p.review_comment||'—'}</td>
+      </tr>`).join('') + '</tbody></table></div>';
+  } catch(e) { el.innerHTML = '<div class="empty">加载失败</div>'; }
+}
+
+/* ===================== 配置管理 ===================== */
+async function loadConfigSummary() {
+  const el = document.getElementById('configSummaryBody');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/system/config-summary');
+    const d = await r.json();
+    if (!d.success) { el.innerHTML = '<div class="empty">暂不支持配置摘要接口</div>'; return; }
+    const c = d.config || {};
+    el.innerHTML = '<div class="table-wrap"><table><thead><tr><th>配置项</th><th>当前值</th></tr></thead><tbody>' +
+      Object.entries(c).map(([k,v]) => `<tr><td style="font-family:monospace;font-size:12px">${k}</td><td style="color:#a78bfa;font-size:12px">${JSON.stringify(v)}</td></tr>`).join('') +
+      '</tbody></table></div>';
+  } catch(e) { el.innerHTML = '<div class="empty">配置摘要接口不可用（需在 web_app.py 中添加 /api/system/config-summary）</div>'; }
+}
+
+async function applyConfig() {
+  const key = document.getElementById('cfgKey')?.value?.trim() || '';
+  const val = document.getElementById('cfgVal')?.value?.trim() || '';
+  if (!key) { showMsg('cfgMsg','请输入配置键','err'); return; }
+  try {
+    const r = await fetch('/api/evolution/proposals', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ title:'管理后台配置变更 — '+key, description:'通过管理后台修改配置', type:'config_change', target:key, new_value:val, submitted_by:'admin' }),
+    });
+    const d = await r.json();
+    if (!d.success) { showMsg('cfgMsg','❌ 提案创建失败：'+(d.error||''),'err'); return; }
+    // 立即批准
+    const r2 = await fetch(`/api/evolution/proposals/${d.proposal_id}/approve`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({comment:'管理后台直接应用'}),
+    });
+    const d2 = await r2.json();
+    if (d2.success) {
+      showMsg('cfgMsg','✅ 配置已应用（' + key + ' = ' + val + '）','ok');
+      document.getElementById('cfgKey').value = '';
+      document.getElementById('cfgVal').value = '';
+    } else { showMsg('cfgMsg','❌ 应用失败：'+(d2.error||''),'err'); }
+  } catch(e) { showMsg('cfgMsg','❌ 网络错误','err'); }
+}
+
+/* ===================== 快速操作 ===================== */
+async function triggerAutoCheck() {
+  try {
+    await fetch('/api/fallback/auto-check', {method:'POST'});
+    showMsg('quickMsg','✅ 自动检查已触发','ok');
+  } catch(e) { showMsg('quickMsg','❌ 触发失败','err'); }
+}
+
+async function triggerTryFix() {
+  try {
+    const r = await fetch('/api/fallback/try-fix', {method:'POST'});
+    const d = await r.json();
+    const fixes = d.fixes || [];
+    showMsg('quickMsg', fixes.length ? '✅ 已修复 '+fixes.length+' 个问题' : '✅ 系统无需修复','ok');
+  } catch(e) { showMsg('quickMsg','❌ 触发失败','err'); }
+}
+
+/* ===================== 工具函数 ===================== */
+function setText(id, text) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text;
+}
+
+/* ===================== 模型管理 ===================== */
+async function loadModelsAdmin() {
+  const el = document.getElementById('modelsAdminBody');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/models/list');
+    const d = await r.json();
+    const models = d.models || [];
+    if (!models.length) { el.innerHTML = '<div class="empty">未检测到模型。本地引擎服务是否已启动？</div>'; return; }
+    el.innerHTML = '<div class="table-wrap"><table><thead><tr><th>模型名</th><th>大小</th><th>修改时间</th><th>操作</th></tr></thead><tbody>' +
+      models.map(m => `<tr>
+        <td style="font-weight:500">${m.name||m.model||'—'}</td>
+        <td>${m.size ? (m.size/1e9).toFixed(2)+' GB' : '—'}</td>
+        <td>${fmtTime(m.modified_at||m.modified)}</td>
+        <td><button class="btn btn-danger btn-sm" onclick="deleteModelAdmin('${m.name||m.model}')">删除</button></td>
+      </tr>`).join('') + '</tbody></table></div>';
+  } catch(e) { el.innerHTML = '<div class="empty">加载失败：' + e.message + '</div>'; }
+}
+
+async function pullModelAdmin() {
+  const model = document.getElementById('modelPullInput')?.value?.trim();
+  if (!model) { showMsg('pullMsg','请输入模型名','err'); return; }
+  showMsg('pullMsg','⏳ 开始下载 ' + model + '…','warn');
+  document.getElementById('pullProgress').style.display = 'block';
+  document.getElementById('pullBar').style.width = '5%';
+  document.getElementById('pullStatus').textContent = '正在下载…';
+  try {
+    const r = await fetch('/api/models/pull', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({model: model})
+    });
+    const d = await r.json();
+    if (d.success) {
+      showMsg('pullMsg','✅ 模型 ' + model + ' 下载完成','ok');
+      document.getElementById('pullBar').style.width = '100%';
+      document.getElementById('pullStatus').textContent = '完成';
+      document.getElementById('modelPullInput').value = '';
+      loadModelsAdmin();
+    } else {
+      showMsg('pullMsg','❌ 下载失败：' + (d.error||'未知错误'),'err');
+      document.getElementById('pullProgress').style.display = 'none';
+    }
+  } catch(e) {
+    showMsg('pullMsg','❌ 请求失败：' + e.message,'err');
+    document.getElementById('pullProgress').style.display = 'none';
+  }
+}
+
+async function deleteModelAdmin(modelName) {
+  if (!confirm('确定删除模型 ' + modelName + ' ？此操作不可恢复。')) return;
+  try {
+    const r = await fetch('/api/models/delete', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({model: modelName})
+    });
+    const d = await r.json();
+    if (d.success) { toast2('✅ 已删除 ' + modelName); loadModelsAdmin(); }
+    else toast2('❌ ' + (d.error||'删除失败'));
+  } catch(e) { toast2('❌ 请求失败'); }
+}
+
+async function loadHardwareAdmin() {
+  const el = document.getElementById('hardwareAdminBody');
+  if (!el) return;
+  el.innerHTML = '<div class="empty">正在检测硬件…</div>';
+  try {
+    const r = await fetch('/api/hardware/detect');
+    const d = await r.json();
+    if (d.error) { el.innerHTML = '<div class="empty">检测失败：' + d.error + '</div>'; return; }
+    let html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:16px">';
+    html += statCardHtml('CPU', d.cpu_model||'—', 'blue');
+    html += statCardHtml('内存', (d.ram_gb||'—')+' GB', 'green');
+    html += statCardHtml('GPU', d.gpu_name||'未检测到', 'amber');
+    html += statCardHtml('显存', (d.gpu_vram_gb||'—')+' GB', d.gpu_vram_gb>=12?'green':d.gpu_vram_gb>=8?'amber':'red');
+    html += '</div>';
+    if (d.recommended_models && d.recommended_models.length) {
+      html += '<h3 style="font-size:13px;color:#a78bfa;margin-bottom:10px">📋 推荐模型</h3>';
+      html += '<div class="table-wrap"><table><thead><tr><th>模型</th><th>推荐理由</th><th>显存需求</th></tr></thead><tbody>';
+      d.recommended_models.forEach(m => {
+        html += `<tr><td style="font-weight:500">${m.model||m.name||'—'}</td><td>${m.reason||'—'}</td><td>${m.vram_gb||'—'} GB</td></tr>`;
+      });
+      html += '</tbody></table></div>';
+    }
+    el.innerHTML = html;
+  } catch(e) { el.innerHTML = '<div class="empty">硬件检测接口不可用</div>'; }
+}
+
+function statCardHtml(label, value, color) {
+  return `<div class="stat-card ${color}"><div class="num" style="font-size:18px">${value}</div><div class="label">${label}</div></div>`;
+}
+
+/* ===================== 数据管理 ===================== */
+async function loadDbStatusAdmin() {
+  const el = document.getElementById('dbStatusAdminBody');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/settings/db-status');
+    const d = await r.json();
+    if (d.error) { el.innerHTML = '<div class="empty">无法获取三库状态</div>'; return; }
+    el.innerHTML = '<div class="table-wrap"><table><thead><tr><th>数据库</th><th>路径</th><th>大小</th><th>状态</th></tr></thead><tbody>' +
+      (d.databases||[]).map(db => `<tr>
+        <td style="font-weight:500">${db.name||'—'}</td>
+        <td style="font-family:monospace;font-size:11px">${db.path||'—'}</td>
+        <td>${db.size||'—'}</td>
+        <td>${db.exists?'<span class="badge-tag tag-online">正常</span>':'<span class="badge-tag tag-blocked">不存在</span>'}</td>
+      </tr>`).join('') + '</tbody></table></div>';
+  } catch(e) {
+    // Fallback: show simple info from config
+    try {
+      const r2 = await fetch('/api/system/info');
+      const d2 = await r2.json();
+      el.innerHTML = `<p style="font-size:13px;color:#94a3b8">数据目录：data/</p>
+        <p style="font-size:13px;color:#94a3b8">内存：${d2.memory?.used||'—'} / ${d2.memory?.total||'—'} GB</p>
+        <p style="font-size:13px;color:#94a3b8">磁盘可用：${d2.disk?.free||'—'} / ${d2.disk?.total||'—'} GB</p>`;
+    } catch { el.innerHTML = '<div class="empty">三库状态接口不可用</div>'; }
+  }
+}
+
+async function backupDataAdmin() {
+  const path = document.getElementById('backupPath')?.value?.trim() || '';
+  showMsg('backupMsg','⏳ 正在备份…','warn');
+  try {
+    const r = await fetch('/api/admin/backup', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({path: path})
+    });
+    const d = await r.json();
+    if (d.success) showMsg('backupMsg','✅ 备份完成：' + (d.path||''),'ok');
+    else showMsg('backupMsg','❌ 备份失败：' + (d.error||''),'err');
+  } catch(e) { showMsg('backupMsg','❌ 请求失败：' + e.message,'err'); }
+}
+
+async function restoreDataAdmin() {
+  const path = document.getElementById('restorePath')?.value?.trim();
+  if (!path) { showMsg('restoreMsg','请输入备份文件路径','err'); return; }
+  if (!confirm('⚠️ 从备份恢复将覆盖当前所有数据！确定继续？')) return;
+  showMsg('restoreMsg','⏳ 正在恢复…','warn');
+  try {
+    const r = await fetch('/api/admin/restore', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({path: path})
+    });
+    const d = await r.json();
+    if (d.success) showMsg('restoreMsg','✅ 恢复完成，部分功能可能需要重启','ok');
+    else showMsg('restoreMsg','❌ 恢复失败：' + (d.error||''),'err');
+  } catch(e) { showMsg('restoreMsg','❌ 请求失败：' + e.message,'err'); }
+}
+
+async function clearDataAdmin() {
+  const pwd = document.getElementById('clearPwd')?.value?.trim() || '';
+  const confirm = document.getElementById('clearConfirm')?.value?.trim() || '';
+  if (!pwd) { showMsg('clearMsg','请输入管理员密码','err'); return; }
+  if (confirm !== 'DELETE') { showMsg('clearMsg','请输入确认码 DELETE','err'); return; }
+  if (!confirm('🚨 最终确认：真的清除所有数据？此操作完全不可恢复！')) return;
+  showMsg('clearMsg','⏳ 正在清除…','warn');
+  try {
+    const r = await fetch('/api/admin/clear-data', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({password: pwd, confirm: 'DELETE'})
+    });
+    const d = await r.json();
+    if (d.success) { showMsg('clearMsg','✅ 所有数据已清除','ok'); ['clearPwd','clearConfirm'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';}); }
+    else showMsg('clearMsg','❌ ' + (d.error||'清除失败'),'err');
+  } catch(e) { showMsg('clearMsg','❌ 请求失败：' + e.message,'err'); }
+}
+
+async function exportDataAdmin() {
+  showMsg('exportMsg','⏳ 正在导出…','warn');
+  try {
+    const r = await fetch('/api/admin/export-data', {method:'POST'});
+    if (!r.ok) { const d=await r.json(); showMsg('exportMsg','❌ '+(d.error||'导出失败'),'err'); return; }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'harven_export_' + new Date().toISOString().slice(0,10) + '.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    showMsg('exportMsg','✅ 导出完成','ok');
+  } catch(e) { showMsg('exportMsg','❌ 请求失败：' + e.message,'err'); }
+}
+
+function toast2(msg) {
+  const existing = document.querySelector('.toast-floating');
+  if (existing) existing.remove();
+  const div = document.createElement('div');
+  div.className = 'toast-floating';
+  div.textContent = msg;
+  div.style.cssText = 'position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:10px 24px;border-radius:8px;font-size:14px;z-index:999;opacity:0;transition:opacity .3s';
+  document.body.appendChild(div);
+  requestAnimationFrame(()=>{div.style.opacity='1'});
+  setTimeout(()=>{div.style.opacity='0';setTimeout(()=>div.remove(),300)},3000);
+}
+
+/* ===================== 初始化 ===================== */
+loadOverview();
+
+// 自动刷新资源监控（5秒）
+setInterval(() => {
+  if (_autoRefresh && document.getElementById('page-system').classList.contains('active')) {
+    loadResourceStats();
+  }
+  // 全局 topbar 统计每30秒刷一次
+}, 5000);
+
+setInterval(loadStats, 30000);
+</script>
+</body>
+</html>

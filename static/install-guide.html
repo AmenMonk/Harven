@@ -1,0 +1,435 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Harven AI 安装教程 — 魔搭GGUF直连即用</title>
+<style>
+:root {
+  --bg: #f8f9fb; --card: #fff; --text: #1a1a2e; --muted: #6b7280;
+  --accent: #4f46e5; --accent2: #059669; --warn: #d97706; --err: #dc2626;
+  --border: #e5e7eb; --tag-bg: #eef2ff;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+  background: var(--bg); color: var(--text); line-height: 1.7;
+}
+.container { max-width: 900px; margin: 0 auto; padding: 40px 20px 80px; }
+
+.header {
+  text-align: center; padding: 48px 0 32px;
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+  color: #fff; border-radius: 0 0 32px 32px; margin-bottom: 32px;
+}
+.header h1 { font-size: 32px; font-weight: 700; margin-bottom: 8px; }
+.header .badge-row { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 8px; }
+.header .pill {
+  background: rgba(255,255,255,.18); padding: 4px 14px; border-radius: 99px;
+  font-size: 12px; color: #fff;
+}
+
+.progress-wrap { position: sticky; top: 0; z-index: 100; background: var(--bg); padding: 12px 0 24px; }
+.progress-bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.progress-fill { height: 100%; background: var(--accent); border-radius: 3px; transition: width .4s ease; width: 0%; }
+.step-indicator { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); margin-top: 6px; gap: 2px; }
+.step-indicator span.active { color: var(--accent); font-weight: 600; }
+
+.step { background: var(--card); border-radius: 16px; padding: 28px 32px; margin-bottom: 20px; border: 1px solid var(--border); box-shadow: 0 1px 3px rgba(0,0,0,.04); }
+.step-num { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700; font-size: 14px; margin-right: 10px; flex-shrink: 0; }
+.step-header { display: flex; align-items: center; margin-bottom: 12px; }
+.step-header h2 { font-size: 18px; font-weight: 600; }
+.step-desc { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+
+.console {
+  background: #1e1e2e; color: #cdd6f4; border-radius: 10px;
+  padding: 16px 20px; font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
+  font-size: 12px; line-height: 1.8; overflow-x: auto; margin: 12px 0;
+  max-height: 260px; overflow-y: auto;
+}
+.console .c-green { color: #a6e3a1; }
+.console .c-yellow { color: #f9e2af; }
+.console .c-blue { color: #89b4fa; }
+.console .c-ok { color: #a6e3a1; }
+.console .c-dim { color: #6c7086; }
+
+.screen { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin: 12px 0; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+.screen-title { background: #f1f5f9; padding: 8px 14px; font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.screen-dot { width: 10px; height: 10px; border-radius: 50%; }
+.screen-dot.r { background: #f87171; } .screen-dot.y { background: #fbbf24; } .screen-dot.g { background: #34d399; }
+.screen-body { padding: 20px; background: #fff; }
+
+.mock-btn { display: inline-block; padding: 6px 16px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: default; }
+.mock-btn.primary { background: #4f46e5; color: #fff; }
+.mock-btn.secondary { background: #e5e7eb; color: #374151; }
+
+.mock-progress { height: 8px; background: #e5e7eb; border-radius: 4px; margin: 8px 0; overflow: hidden; }
+.mock-progress div { height: 100%; border-radius: 4px; background: linear-gradient(90deg, #4f46e5, #7c3aed); animation: load 3s ease-in-out infinite; }
+@keyframes load { 0% { width: 0% } 30% { width: 45% } 70% { width: 80% } 100% { width: 100% } }
+
+.badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 99px; font-weight: 600; }
+.badge.ok { background: #ecfdf5; color: #059669; }
+.badge.warn { background: #fef3c7; color: #d97706; }
+.badge.info { background: #eef2ff; color: #4f46e5; }
+.badge.gray { background: #f3f4f6; color: #6b7280; }
+
+.file-tree { font-family: monospace; font-size: 13px; line-height: 2; padding: 12px; }
+.file-tree .dir { color: #4f46e5; font-weight: 600; }
+.file-tree .file { color: #374151; }
+.file-tree .comment { color: #9ca3af; }
+
+.desktop-mock { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px; padding: 24px; color: #fff; display: flex; gap: 16px; flex-wrap: wrap; }
+.desktop-icon { width: 72px; text-align: center; font-size: 11px; cursor: default; }
+.desktop-icon .icon-img { width: 48px; height: 48px; margin: 0 auto 6px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 24px; background: rgba(255,255,255,.15); }
+
+.choice-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 640px) { .choice-row { grid-template-columns: 1fr; } .container { padding: 16px; } .step { padding: 20px; } }
+
+.choice-card {
+  border: 2px solid var(--border); border-radius: 14px; padding: 20px;
+  text-align: center; cursor: default; transition: .2s;
+}
+.choice-card.pick { border-color: var(--accent); background: #f8f7ff; }
+.choice-card h3 { font-size: 16px; margin-bottom: 8px; }
+.choice-card p { font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+
+table { width: 100%; font-size: 12px; border-collapse: collapse; }
+th { text-align: left; padding: 8px; color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--border); }
+td { padding: 8px; border-bottom: 1px solid #f3f4f6; }
+tr.highlight { background: #f0fdf4; }
+
+.faq-item { margin-bottom: 16px; }
+.faq-item strong { color: var(--err); }
+.faq-item span { font-size: 13px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1><img src="data:image/png;base64,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" width="28" height="28" style="vertical-align:middle;border-radius:4px;" alt="Harven"> Harven AI 安装教程</h1>
+  <p style="font-size:15px;opacity:.88;">魔搭GGUF直连（默认）· 云模型可选 · 纯本地运行</p>
+  <div class="badge-row">
+    <span class="pill">25+ 云模型</span>
+    <span class="pill">本地模型可选</span>
+    <span class="pill">Windows / Mac / Linux</span>
+    <span class="pill">10 分钟搞定</span>
+  </div>
+</div>
+
+<div class="container">
+
+<div class="progress-wrap">
+  <div class="progress-bar"><div class="progress-fill" id="pf"></div></div>
+  <div class="step-indicator">
+    <span id="s1">1.下载</span><span id="s2">2.解压</span><span id="s3">3.Python</span>
+    <span id="s4">4.双击安装</span><span id="s5">5.检测Ollama</span><span id="s6">6.GGUF本地</span>
+    <span id="s7">7.云模型</span><span id="s8">8.对话</span>
+  </div>
+</div>
+
+<!-- ============ Step 1 ============ -->
+<div class="step" id="step1">
+  <div class="step-header"><span class="step-num">1</span><h2>下载安装包 — 桌面上就有</h2></div>
+  <div class="step-desc"><code>HarvenAI_v1.0.zip</code>（~7.5 MB）在桌面上。解压到你想放的文件夹即可。</div>
+  <div class="screen">
+    <div class="screen-title"><span class="screen-dot r"></span><span class="screen-dot y"></span><span class="screen-dot g"></span> 你桌面上会看到这些</div>
+    <div class="screen-body">
+      <div class="desktop-mock">
+        <div class="desktop-icon"><div class="icon-img">📦</div><span>HarvenAI_v1.0.zip</span></div>
+        <div class="desktop-icon"><div class="icon-img">📄</div><span>安装教程.html</span></div>
+        <div class="desktop-icon"><div class="icon-img"><img src="data:image/png;base64,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" width="28" height="28" style="vertical-align:middle;"></div><span>Harven AI</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ Step 2 ============ -->
+<div class="step" id="step2">
+  <div class="step-header"><span class="step-num">2</span><h2>解压到任意位置</h2></div>
+  <div class="step-desc">右键 <code>HarvenAI_v1.0.zip</code> → 「全部解压缩」→ 建议放到 H 盘根目录。</div>
+  <div class="screen">
+    <div class="screen-title"><span class="screen-dot r"></span><span class="screen-dot y"></span><span class="screen-dot g"></span> 解压后的目录 — 重点看「一键安装启动.bat」</div>
+    <div class="screen-body">
+      <div class="file-tree">
+        <span class="dir">📁 HarvenAI/</span><br>
+        &nbsp;&nbsp;<span class="file">▶ 一键安装启动.bat</span> <span class="comment">← 小白双击这个！</span><br>
+        &nbsp;&nbsp;<span class="file">▶ 启动HarvenAI.bat</span> <span class="comment">← 以后日常用这个</span><br>
+        &nbsp;&nbsp;<span class="file">📄 web_app.py</span> <span class="comment">← 主程序</span><br>
+        &nbsp;&nbsp;<span class="dir">📁 src/</span> <span class="comment">← 核心引擎（118 个模块）</span><br>
+        &nbsp;&nbsp;<span class="dir">📁 static/</span> <span class="comment">← 前端界面</span><br>
+        &nbsp;&nbsp;<span class="dir">📁 templates/</span><br>
+        &nbsp;&nbsp;<span class="dir">📁 data/skills/</span> <span class="comment">← 4 个预置技能</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ Step 3 ============ -->
+<div class="step" id="step3">
+  <div class="step-header"><span class="step-num">3</span><h2>前提（唯一）：安装 Python 3.10+</h2></div>
+  <div class="step-desc">
+    <span class="badge warn">唯一前提</span> 整个教程 <strong>只需这一个</strong>。Ollama 是后面可选的。<br>
+    去 <code>python.org</code> 下载安装。⚠️ <strong>安装时一定勾选底部「Add Python to PATH」！</strong>
+  </div>
+  <div class="screen">
+    <div class="screen-title"><span class="screen-dot r"></span><span class="screen-dot y"></span><span class="screen-dot g"></span> Python 安装界面 — 注意底部复选框</div>
+    <div class="screen-body">
+      <div style="border:2px solid #e5e7eb;border-radius:10px;padding:20px;max-width:420px;">
+        <div style="font-size:16px;font-weight:600;margin-bottom:12px;">Install Python 3.12</div>
+        <div style="display:flex;gap:10px;margin-bottom:14px;">
+          <span class="mock-btn primary">Install Now</span>
+          <span class="mock-btn secondary">Customize</span>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;background:#fef3c7;padding:10px 14px;border-radius:8px;border:2px solid #f59e0b;">
+          <span style="color:#f59e0b;font-size:20px;">☐</span>
+          <span style="font-weight:700;color:#92400e;">Add Python to PATH ← 必须勾上！</span>
+        </label>
+      </div>
+    </div>
+  </div>
+  <div style="margin-top:10px;font-size:13px;">
+    ✅ 验证：CMD 输入 <code>python --version</code>，显示版本号 = 成功
+  </div>
+</div>
+
+<!-- ============ Step 4 ============ -->
+<div class="step" id="step4">
+  <div class="step-header"><span class="step-num">4</span><h2>双击「一键安装启动.bat」→ 等 2-3 分钟</h2></div>
+  <div class="step-desc">
+    进入解压后的 <code>HarvenAI</code> 文件夹，双击 <code>一键安装启动.bat</code>。<br>
+    <span class="badge warn">注意</span> 首次运行 Windows 可能弹「Windows 保护了你的电脑」→ 点「更多信息」→「仍要运行」。
+  </div>
+  <div class="screen">
+    <div class="screen-title"><span class="screen-dot r"></span><span class="screen-dot y"></span><span class="screen-dot g"></span> 双击后弹出的黑窗口 — 自动执行 4 步</div>
+    <div class="screen-body">
+      <div class="console">
+<span class="c-green">═══════════════════════════════════════════</span>
+<span class="c-green">     Harven AI  — 私有本地 AI 大脑</span>
+<span class="c-green">     一键安装 & 启动（魔搭GGUF直连，无需Ollama）</span>
+<span class="c-green">═══════════════════════════════════════════</span>
+
+<span class="c-blue">[1/4] 检查 Python 环境...</span>
+<span class="c-ok">  Python 3.12.4 ✓</span>
+
+<span class="c-blue">[2/4] 准备 Python 虚拟环境...</span>
+<span class="c-ok">  虚拟环境已创建 ✓</span>
+
+<span class="c-blue">[3/4] 安装 Python 依赖包...</span>
+<span class="c-yellow">  正在安装（首次需 2-5 分钟，请耐心等待）...</span>
+
+<span class="c-blue">[4/4] 初始化配置文件...</span>
+<span class="c-ok">  config.yaml 已创建 ✓</span>
+      </div>
+    </div>
+  </div>
+  <div style="margin-top:8px;">
+    <div class="mock-progress" style="width:300px;"><div></div></div>
+    <span style="font-size:11px;color:#9ca3af;">安装 50+ 个 Python 包（Flask · FAISS · Ollama SDK …）</span>
+  </div>
+</div>
+
+<!-- ============ Step 5: Ollama 检测 ============ -->
+<div class="step" id="step5">
+  <div class="step-header"><span class="step-num" style="background:var(--warn);">5</span><h2>脚本检测 Ollama（可选）</h2></div>
+  <div class="step-desc">
+    安装完成后脚本会检测 Ollama。<strong>没有也没关系</strong> — Harven 默认用魔搭GGUF直连，纯本地运行。
+  </div>
+
+  <div class="choice-row">
+    <div class="screen">
+      <div class="screen-title"><span class="screen-dot r"></span><span class="screen-dot y"></span><span class="screen-dot g"></span> <span class="badge ok">Ollama 已安装</span></div>
+      <div class="screen-body">
+        <div class="console">
+<span class="c-ok">Ollama 已就绪 ✓ （本地模式可用）</span>
+        </div>
+        <div style="font-size:12px;color:#059669;margin-top:8px;">✅ 本地 + 云模型都能用，自动跳到第 6 步</div>
+      </div>
+    </div>
+    <div class="screen">
+      <div class="screen-title"><span class="screen-dot r"></span><span class="screen-dot y"></span><span class="screen-dot g"></span> <span class="badge gray">没装 Ollama</span></div>
+      <div class="screen-body">
+        <div class="console">
+<span class="c-dim">💡 未安装 Ollama — 不影响使用！</span>
+<span class="c-dim">   Harven 默认用魔搭GGUF直连（内置 llama.cpp）</span>
+<span class="c-dim">   纯本地运行，无需 API Key</span>
+        </div>
+        <div style="font-size:12px;color:#059669;margin-top:8px;">✅ 魔搭GGUF直连，纯本地，直接跳到第 6 步</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ Step 6: 首次向导（有 Ollama 的情况）============ -->
+<div class="step" id="step6">
+  <div class="step-header"><span class="step-num">6</span><h2>默认：魔搭GGUF 本地直连</h2></div>
+  <div class="step-desc">
+    <span class="badge ok">Harven 默认引擎</span> 无需任何外部服务，首次启动自动硬件检测 + 推荐模型：
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:12px;">
+    <div class="screen">
+      <div class="screen-title"><span class="screen-dot r"></span><span class="screen-dot y"></span><span class="screen-dot g"></span> 硬件自检 — 自动扫描 CPU / GPU / 内存</div>
+      <div class="screen-body">
+        <div class="console">
+<span class="c-blue">[HardwareDetector] 扫描硬件...</span>
+<span class="c-ok">CPU: Intel Core i7-13700F (16 核) ✓</span>
+<span class="c-ok">GPU: NVIDIA RTX 4070 SUPER (12GB VRAM) ✓</span>
+<span class="c-ok">RAM: 32.0 GB ✓</span>
+<span class="c-green">推荐模型: qwen2.5:14b (14B, ~10GB VRAM)</span>
+        </div>
+        <div class="mock-progress" style="margin-top:8px;width:100%;"><div></div></div>
+      </div>
+    </div>
+
+    <div class="screen">
+      <div class="screen-title"><span class="screen-dot r"></span><span class="screen-dot y"></span><span class="screen-dot g"></span> 选择模型 → 自动下载</div>
+      <div class="screen-body">
+        <table>
+          <tr><th>模型</th><th>VRAM</th><th>速度</th><th>适合</th></tr>
+          <tr class="highlight"><td style="font-weight:600;">qwen2.5:14b</td><td>10 GB</td><td>10-20 字/秒</td><td><span class="badge ok">推荐</span></td></tr>
+          <tr><td>qwen2.5:7b</td><td>5 GB</td><td>25-40 字/秒</td><td><span class="badge gray">轻量</span></td></tr>
+          <tr><td>deepseek-r1:14b</td><td>9 GB</td><td>8-15 字/秒</td><td><span class="badge gray">深度</span></td></tr>
+        </table>
+        <div style="margin-top:10px;font-size:11px;color:#6b7280;">选推荐的 qwen2.5:14b，点「下载并启动」→ 等 2-5 分钟下载（国内自动镜像加速）</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ Step 7: 没有 Ollama → 云模型 ============ -->
+<div class="step" id="step7" style="border:2px solid var(--accent);">
+  <div class="step-header"><span class="step-num" style="background:#059669;">7</span><h2>可选：接入云模型（更强推理能力）</h2></div>
+  <div class="step-desc">
+    想用更强模型？Harven 内置 25+ 云厂商，填个 Key 即可。默认本地魔搭GGUF也完全够用。
+  </div>
+
+  <div class="screen">
+    <div class="screen-title"><span class="screen-dot r"></span><span class="screen-dot y"></span><span class="screen-dot g"></span> 设置 → 模型管理 → 选择一个云模型，填入 Key</div>
+    <div class="screen-body">
+      <table style="margin-bottom:16px;">
+        <tr style="background:#f0fdf4;"><th>厂商</th><th>模型</th><th>价格</th><th>获取 Key</th></tr>
+        <tr><td style="font-weight:600;">🔥 DeepSeek</td><td>deepseek-chat</td><td>¥1/百万 token</td><td>platform.deepseek.com</td></tr>
+        <tr><td style="font-weight:600;">🌙 Kimi</td><td>moonshot-v1</td><td>¥12/百万 token</td><td>platform.moonshot.cn</td></tr>
+        <tr><td style="font-weight:600;">🫘 豆包</td><td>doubao-pro</td><td>¥0.8/百万 token</td><td>console.volcengine.com</td></tr>
+        <tr><td style="font-weight:600;">💬 通义千问</td><td>qwen-turbo</td><td>免费额度</td><td>dashscope.aliyun.com</td></tr>
+        <tr><td style="font-weight:600;">✨ 智谱</td><td>glm-4-flash</td><td>免费额度</td><td>open.bigmodel.cn</td></tr>
+      </table>
+      <div style="background:#eef2ff;padding:12px;border-radius:8px;font-size:12px;">
+        <strong>💡 推荐：DeepSeek</strong> — 最便宜（1 块钱能用 100 万汉字），国内注册秒过，5 分钟搞定。
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top:12px;font-size:13px;color:var(--muted);">
+    📌 <strong>一分钱不花</strong> → 通义千问和智谱有免费额度，注册即用。<br>
+    📌 每次对话自动选择最佳模型，无需手动切换。
+  </div>
+</div>
+
+<!-- ============ Step 8 ============ -->
+<div class="step" id="step8" style="background:#f0fdf4;border:2px solid #059669;">
+  <div class="step-header"><span class="step-num" style="background:#059669;">8</span><h2>完成！开始和 Harven 对话</h2></div>
+  <div class="screen">
+    <div class="screen-title"><span class="screen-dot r"></span><span class="screen-dot y"></span><span class="screen-dot g"></span> http://localhost:7000</div>
+    <div class="screen-body" style="text-align:center;padding:32px;">
+      <div style="margin-bottom:12px;"><img src="data:image/png;base64,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" width="48" height="48" style="border-radius:10px;"></div>
+      <div style="font-size:20px;font-weight:700;margin-bottom:4px;">Harven AI</div>
+      <div style="font-size:13px;color:#6b7280;margin-bottom:20px;">你的专属 AI 助手 · 已就绪</div>
+      <div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px;max-width:400px;margin:0 auto;text-align:left;font-size:12px;">
+        <div style="background:#eef2ff;padding:8px 12px;border-radius:6px;margin-bottom:8px;">你好！我是 Harven，帮你做什么？</div>
+        <div style="background:#f3f4f6;padding:8px 12px;border-radius:6px;text-align:right;">帮我写一份周报</div>
+      </div>
+      <div style="margin-top:12px;"><span class="mock-btn primary">发送</span></div>
+    </div>
+  </div>
+  <div style="margin-top:16px;">
+    <h3 style="font-size:15px;margin-bottom:8px;">之后怎么启动？</h3>
+    <table>
+      <tr><td style="font-weight:600;">Windows</td><td>双击 <code>启动HarvenAI.bat</code></td></tr>
+      <tr><td style="font-weight:600;">Linux</td><td><code>./start.sh</code></td></tr>
+      <tr><td style="font-weight:600;">macOS</td><td><code>./start.sh</code></td></tr>
+    </table>
+  </div>
+</div>
+
+<!-- ============ 两种路径对比 ============ -->
+<div class="step">
+  <div class="step-header"><span class="step-num" style="background:var(--accent);">⇲</span><h2>总结：两种安装路径</h2></div>
+  <div class="choice-row">
+    <div class="choice-card pick">
+      <h3>🏠 魔搭GGUF（默认推荐）</h3>
+      <p>Python → 双击 bat → 下载GGUF模型 → 开始</p>
+      <table>
+        <tr><td>前提</td><td style="font-weight:600;">Python 3.10+</td></tr>
+        <tr><td>额外安装</td><td style="color:#059669;font-weight:600;">无（内置 llama.cpp）</td></tr>
+        <tr><td>费用</td><td style="color:#059669;font-weight:600;">完全免费</td></tr>
+        <tr><td>能力</td><td>取决于你的 GPU / 模型大小</td></tr>
+        <tr><td>离线可用</td><td style="color:#059669;">✅ 可以</td></tr>
+        <tr><td>启动速度</td><td style="color:#d97706;">需下载模型（几分钟）</td></tr>
+      </table>
+    </div>
+    <div class="choice-card">
+      <h3>☁️ 云模型（可选）</h3>
+      <p>Python → 双击 bat → 填 API Key → 开始</p>
+      <table>
+        <tr><td>前提</td><td style="font-weight:600;">Python 3.10+</td></tr>
+        <tr><td>额外安装</td><td style="color:#059669;font-weight:600;">无</td></tr>
+        <tr><td>费用</td><td>¥1/百万字起，有免费额度</td></tr>
+        <tr><td>能力</td><td>25+ 厂商最强云端模型</td></tr>
+        <tr><td>离线可用</td><td>否</td></tr>
+        <tr><td>启动速度</td><td style="color:#059669;font-weight:600;">填 Key 即聊，零等待</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ============ FAQ ============ -->
+<div class="step">
+  <div class="step-header"><span class="step-num" style="background:var(--warn);">?</span><h2>常见问题</h2></div>
+
+  <div class="faq-item">
+    <strong>Q: 完全不想花钱，能用吗？</strong><br>
+    <span>A: 能！魔搭GGUF直连完全免费，纯本地运行。通义千问和智谱云模型也有免费额度。</span>
+  </div>
+
+  <div class="faq-item">
+    <strong>Q: 「一键安装启动.bat」双击闪退？</strong><br>
+    <span>A: 右键 → 以管理员身份运行。还闪退 = Python 没装（回到第 3 步）。</span>
+  </div>
+
+  <div class="faq-item">
+    <strong>Q: pip install 卡住了？</strong><br>
+    <span>A: 国内网可能慢，等 5 分钟就好。或换 pip 源：<code>pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/</code></span>
+  </div>
+
+  <div class="faq-item">
+    <strong>Q: 打开 localhost:7000 显示「无法连接」？</strong><br>
+    <span>A: 等 3 秒刷新，Flask 启动需要时间。看黑窗口有没有报错。</span>
+  </div>
+
+  <div class="faq-item">
+    <strong>Q: 想切换模型引擎？</strong><br>
+    <span>A: 设置 → 模型管理 → 魔搭GGUF（默认）/ Ollama（备选）/ 云模型（可选），随时切换。</span>
+  </div>
+</div>
+
+</div>
+
+<script>
+(function(){
+  var fill = document.getElementById('pf');
+  window.addEventListener('scroll', function(){
+    var pct = Math.min(100, Math.round((window.scrollY / (document.documentElement.scrollHeight - window.innerHeight)) * 100));
+    fill.style.width = pct + '%';
+    for(var i=1;i<=8;i++){
+      var el = document.getElementById('s'+i), step = document.getElementById('step'+i);
+      if(el && step){
+        el.classList.toggle('active', step.getBoundingClientRect().top < window.innerHeight * 0.5);
+      }
+    }
+  });
+})();
+</script>
+
+</body>
+</html>

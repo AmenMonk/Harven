@@ -1,0 +1,556 @@
+<!--
+  Harven AI - 首次启动引导页
+  Copyright 2026 AmenMonk <38552540@qq.com>
+  Licensed under Apache License 2.0
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>欢迎使用 Harven AI</title>
+    <link rel="stylesheet" href="/static/css/style.css?v=20260604m1">
+    <style>
+        body {
+            background: #0f0f23;
+            color: #e2e8f0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0;
+        }
+        .welcome-container {
+            max-width: 520px;
+            width: 90%;
+            text-align: center;
+        }
+        .welcome-logo {
+            width: 80px;
+            height: 80px;
+            border-radius: 20px;
+            margin: 0 auto 20px;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 36px;
+            box-shadow: 0 8px 32px rgba(99,102,241,0.3);
+        }
+        .welcome-title {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 6px;
+            background: linear-gradient(135deg, #a5b4fc, #c7d2fe);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .welcome-subtitle {
+            font-size: 14px;
+            color: #64748b;
+            margin-bottom: 32px;
+        }
+        /* 步骤指示器 */
+        .steps-bar {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0;
+            margin-bottom: 28px;
+        }
+        .step-dot {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.06);
+            border: 2px solid rgba(255,255,255,0.12);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            color: #64748b;
+            transition: all 0.3s;
+        }
+        .step-dot.active {
+            background: rgba(99,102,241,0.25);
+            border-color: rgba(99,102,241,0.6);
+            color: #a5b4fc;
+        }
+        .step-dot.done {
+            background: rgba(34,197,94,0.2);
+            border-color: rgba(34,197,94,0.5);
+            color: #4ade80;
+        }
+        .step-line {
+            width: 40px;
+            height: 2px;
+            background: rgba(255,255,255,0.08);
+            transition: background 0.3s;
+        }
+        .step-line.done { background: rgba(34,197,94,0.4); }
+
+        /* 步骤内容 */
+        .step-panel { display: none; text-align: left; }
+        .step-panel.active { display: block; }
+
+        .hw-detected {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 10px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        .hw-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            font-size: 13px;
+        }
+        .hw-label { color: #64748b; }
+        .hw-value { color: #e2e8f0; font-weight: 600; }
+        .hw-value.ok { color: #4ade80; }
+        .hw-value.warn { color: #fbbf24; }
+
+        .model-rec-card {
+            background: rgba(99,102,241,0.06);
+            border: 1px solid rgba(99,102,241,0.2);
+            border-radius: 10px;
+            padding: 14px 16px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .model-rec-card:hover {
+            border-color: rgba(99,102,241,0.4);
+            background: rgba(99,102,241,0.1);
+        }
+        .model-rec-card.selected {
+            border-color: rgba(99,102,241,0.7);
+            background: rgba(99,102,241,0.15);
+        }
+        .model-rec-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: #c7d2fe;
+            margin-bottom: 4px;
+        }
+        .model-rec-desc {
+            font-size: 12px;
+            color: #94a3b8;
+            line-height: 1.4;
+        }
+        .model-rec-meta {
+            font-size: 11px;
+            color: #64748b;
+            margin-top: 6px;
+        }
+        .model-rec-tags { margin-top: 6px; }
+        .model-rec-tags .tag {
+            display: inline-block;
+            font-size: 10px;
+            background: rgba(99,102,241,0.15);
+            color: #a5b4fc;
+            padding: 1px 6px;
+            border-radius: 3px;
+            margin-right: 4px;
+        }
+
+        /* 进度 */
+        .install-progress {
+            margin: 16px 0;
+            display: none;
+        }
+        .install-progress.show { display: block; }
+        .install-bar {
+            background: rgba(255,255,255,0.08);
+            border-radius: 6px;
+            height: 8px;
+            overflow: hidden;
+        }
+        .install-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #6366f1, #8b5cf6);
+            border-radius: 6px;
+            transition: width 0.5s ease;
+            width: 0%;
+        }
+        .install-text {
+            font-size: 12px;
+            color: #888;
+            margin-top: 6px;
+        }
+
+        .btn-welcome {
+            width: 100%;
+            padding: 12px;
+            border-radius: 10px;
+            border: none;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 16px;
+            transition: all 0.2s;
+        }
+        .btn-primary-w { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; }
+        .btn-primary-w:hover { opacity: 0.9; transform: translateY(-1px); }
+        .btn-primary-w:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .btn-skip {
+            background: transparent;
+            color: #64748b;
+            margin-top: 10px;
+            font-size: 13px;
+            border: none;
+            cursor: pointer;
+        }
+        .btn-skip:hover { color: #94a3b8; }
+
+        .success-check {
+            font-size: 48px;
+            margin-bottom: 12px;
+        }
+        .step-panel.center { text-align: center; }
+    </style>
+</head>
+<body>
+<div class="welcome-container">
+    <div class="welcome-logo">🧠</div>
+    <div class="welcome-title">欢迎使用 Harven AI</div>
+    <div class="welcome-subtitle">私有本地 AI 大脑 · 三步完成初始化</div>
+
+    <!-- 步骤指示器 -->
+    <div class="steps-bar">
+        <div class="step-dot active" id="stepDot1">1</div>
+        <div class="step-line" id="stepLine1"></div>
+        <div class="step-dot" id="stepDot2">2</div>
+        <div class="step-line" id="stepLine2"></div>
+        <div class="step-dot" id="stepDot3">3</div>
+        <div class="step-line" id="stepLine3"></div>
+        <div class="step-dot" id="stepDot4">4</div>
+    </div>
+
+    <!-- Step 1: 使用协议 -->
+    <div class="step-panel active" id="stepPanel1">
+        <div style="font-size:16px;font-weight:600;margin-bottom:12px;text-align:left;">📄 使用协议与免责声明</div>
+        <div id="eulaBox" style="max-height:260px;overflow-y:auto;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:14px;font-size:12px;line-height:1.7;color:#94a3b8;text-align:left;">
+            <p><strong>Harven AI 使用协议</strong></p>
+            <p>1. Harven AI 是纯本地运行的私有 AI，所有数据（对话、知识库、用户画像）均存储在您的本机，不会上传至任何云端服务器。</p>
+            <p>2. 本软件按"原样"提供，开发者不对使用本软件产生的任何直接或间接损失负责，包括但不限于数据丢失、模型输出错误、硬件损坏等。</p>
+            <p>3. 用户需自行确保其使用行为符合当地法律法规。禁止将本软件用于任何违法、侵权或危害他人的用途。</p>
+            <p>4. 本软件集成的第三方开源组件（Ollama、FAISS、PySide6 等）均遵守其各自的许可证协议（Apache 2.0 / MIT / BSD 等）。</p>
+            <p>5. Harven AI 永远免费，不收取任何费用，不设置付费会员。</p>
+            <p><strong>免责声明</strong></p>
+            <p>• 大语言模型可能产生不准确、不完整或具有误导性的输出。用户需自行判断并承担使用风险。</p>
+            <p>• 本软件不提供任何医疗、法律、金融等专业建议。如有需要，请咨询专业人士。</p>
+            <p>• 开发者保留随时修改本协议的权利，修改后的协议将在软件内公示。</p>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:14px;font-size:13px;cursor:pointer;">
+            <input type="checkbox" id="eulaCheck" onchange="toggleEulaNext()">
+            <span>我已阅读并同意《使用协议与免责声明》</span>
+        </label>
+        <button class="btn-welcome btn-primary-w" id="btnEulaNext" onclick="goStep(2)" disabled>下一步</button>
+        <button class="btn-skip" onclick="skipWizard()">跳过引导</button>
+    </div>
+
+    <!-- Step 2: 硬件检测 + 数据库初始化 -->
+    <div class="step-panel" id="stepPanel2">
+        <div class="hw-detected" id="hwDetected">
+            <div style="text-align:center;color:#64748b;font-size:13px;">检测硬件中...</div>
+        </div>
+        <!-- 数据库初始化检测 -->
+        <div id="dbCheck" style="margin-top:16px;display:none;">
+            <div style="font-size:13px;font-weight:600;margin-bottom:8px;">🗄️ 数据库状态</div>
+            <div id="dbStatus" style="font-size:12px;color:#94a3b8;line-height:1.6;"></div>
+            <button class="btn-welcome btn-primary-w" id="btnInitDB" onclick="initDatabase()" style="margin-top:10px;display:none;">初始化数据库</button>
+        </div>
+        <div style="font-size:12px;color:#64748b;line-height:1.6;margin-top:16px;">
+            💡 Harven AI 完全本地运行，所有数据不出本机。<br>
+            🔒 模型越大能力越强，但需足够显存才能流畅运行。
+        </div>
+        <button class="btn-welcome btn-primary-w" onclick="goStep(3)">下一步</button>
+        <button class="btn-skip" onclick="skipWizard()">跳过引导</button>
+    </div>
+
+    <!-- Step 3: 选择模型 -->
+    <div class="step-panel" id="stepPanel3">
+        <div style="font-size:13px;color:#94a3b8;margin-bottom:8px;">
+            根据您的硬件配置，推荐以下模型（可多选）：
+        </div>
+        <div style="font-size:11px;color:#ffd700;margin-bottom:12px;background:rgba(255,215,0,0.08);padding:8px;border-radius:6px;line-height:1.5;">
+            💡 <b>不下载也可以！</b><br>
+            · 下载本地模型 → 使用 🏠本地模式 和 🤝协作模式<br>
+            · 不下载 → 使用 🤖外脑模式（配外部 API Key，如 DeepSeek/豆包）<br>
+            · 以后随时可以在「设置 → 模型管理」中下载
+        </div>
+        <div id="modelRecList"></div>
+        <button class="btn-welcome btn-primary-w" id="btnInstallModels" onclick="installSelectedModels()" disabled>
+            安装选中模型（<span id="selCount">0</span>）
+        </button>
+        <button class="btn-skip" onclick="skipWizard()">跳过，我先用外脑模式 →</button>
+
+        <div class="install-progress" id="installProgress">
+            <div class="install-bar"><div class="install-fill" id="installFill"></div></div>
+            <div class="install-text" id="installText">准备中...</div>
+        </div>
+    </div>
+
+    <!-- Step 4: 完成 -->
+    <div class="step-panel center" id="stepPanel4">
+        <div class="success-check">✅</div>
+        <div style="font-size:18px;font-weight:600;margin-bottom:8px;">初始化完成！</div>
+        <div style="font-size:13px;color:#64748b;margin-bottom:20px;line-height:1.6;">
+            Harven AI 已准备就绪。<br>
+            您可以随时在「设置 → 模型管理」中安装更多模型。
+        </div>
+        <button class="btn-welcome btn-primary-w" onclick="finishWizard()">进入 Harven AI</button>
+    </div>
+</div>
+
+<script>
+let _selectedModels = [];
+let _hardware = {};
+let _installQueue = [];
+let _installIndex = 0;
+
+// ===== Step 导航 =====
+function goStep(n) {
+    [1,2,3,4].forEach(i => {
+        const panel = document.getElementById('stepPanel' + i);
+        if (panel) panel.classList.toggle('active', i === n);
+        const dot = document.getElementById('stepDot' + i);
+        if (dot) {
+            dot.classList.toggle('active', i === n);
+            dot.classList.toggle('done', i < n);
+        }
+        const line = document.getElementById('stepLine' + (i-1));
+        if (line) line.classList.toggle('done', i <= n);
+    });
+    if (n === 2) { detectHardware(); detectDB(); }
+    if (n === 3) loadRecommendations();
+}
+
+function setStepDone(n) {
+    const dot = document.getElementById('stepDot' + n);
+    if (dot) dot.classList.add('done');
+    if (n < 4) {
+        const line = document.getElementById('stepLine' + n);
+        if (line) line.classList.add('done');
+    }
+}
+
+function skipWizard() { finishWizard(); }
+
+// ===== Step 1: 硬件检测 =====
+async function detectHardware() {
+    try {
+        const r = await fetch('/api/models/hardware');
+        _hardware = await r.json();
+        const hw = _hardware;
+        const gpu = hw.gpu || {};
+        const vram = gpu.vram_gb || 0;
+        const ram  = hw.ram_gb || 0;
+
+        let vramClass = vram >= 8 ? 'ok' : vram >= 4 ? 'warn' : '';
+        let ramClass  = ram >= 16 ? 'ok' : ram >= 8 ? 'warn' : '';
+
+        document.getElementById('hwDetected').innerHTML = `
+            <div class="hw-row"><span class="hw-label">🖥️ 显卡</span><span class="hw-value ${vramClass}">${gpu.name || '未检测到'}</span></div>
+            <div class="hw-row"><span class="hw-label">⚡ 显存</span><span class="hw-value ${vramClass}">${vram} GB</span></div>
+            <div class="hw-row"><span class="hw-label">💾 内存</span><span class="hw-value ${ramClass}">${ram} GB</span></div>
+        `;
+        setStepDone(1);
+    } catch (e) {
+        document.getElementById('hwDetected').innerHTML =
+            '<div style="color:#f59e0b;font-size:13px;">硬件检测失败，但不影响使用。<br>你可以：① 下载魔搭GGUF模型 ② 填云 API Key 即用</div>';
+    }
+}
+detectHardware();
+
+// ===== 数据库初始化检测 =====
+async function detectDB() {
+    const dbCheck = document.getElementById('dbCheck');
+    const dbStatus = document.getElementById('dbStatus');
+    const btnInit = document.getElementById('btnInitDB');
+    dbCheck.style.display = 'block';
+    dbStatus.innerHTML = '检测中...';
+
+    try {
+        const r = await fetch('/api/settings/db-status');
+        const d = await r.json();
+        if (d.initialized) {
+            dbStatus.innerHTML = '✅ 数据库已初始化';
+            btnInit.style.display = 'none';
+            setStepDone(2);
+        } else {
+            dbStatus.innerHTML = '⚠️ 数据库未初始化，需要创建表结构';
+            btnInit.style.display = 'inline-block';
+        }
+    } catch (e) {
+        dbStatus.innerHTML = '❌ 检测失败';
+        btnInit.style.display = 'inline-block';
+    }
+}
+
+async function initDatabase() {
+    const dbStatus = document.getElementById('dbStatus');
+    const btnInit = document.getElementById('btnInitDB');
+    btnInit.disabled = true;
+    btnInit.textContent = '初始化中...';
+    dbStatus.innerHTML = '正在初始化数据库...';
+
+    try {
+        const r = await fetch('/api/settings/db-init', { method: 'POST' });
+        const d = await r.json();
+        if (d.success) {
+            dbStatus.innerHTML = '✅ 数据库初始化完成';
+            btnInit.style.display = 'none';
+            setStepDone(2);
+        } else {
+            dbStatus.innerHTML = '❌ 初始化失败：' + (d.error || '未知错误');
+            btnInit.disabled = false;
+            btnInit.textContent = '重试';
+        }
+    } catch (e) {
+        dbStatus.innerHTML = '❌ 初始化失败：网络错误';
+        btnInit.disabled = false;
+        btnInit.textContent = '重试';
+    }
+}
+
+// ===== Step 3: 加载推荐 =====
+async function loadRecommendations() {
+    const list = document.getElementById('modelRecList');
+    list.innerHTML = '<div style="text-align:center;color:#64748b;font-size:13px;padding:16px;">加载推荐中...</div>';
+    try {
+        const r  = await fetch('/api/models/recommend');
+        const rec = await r.json();
+        let html = '';
+
+        // 推荐模型
+        (rec.recommended || []).forEach(m => {
+            html += buildModelCard(m, true);
+        });
+        // 可安装
+        (rec.installable || []).forEach(m => {
+            if (!m.installed) html += buildModelCard(m, false);
+        });
+
+        list.innerHTML = html || '<div style="text-align:center;color:#64748b;font-size:13px;padding:16px;">暂无可安装模型</div>';
+    } catch (e) {
+        list.innerHTML = '<div style="color:#ef4444;font-size:13px;">加载失败</div>';
+    }
+}
+
+function buildModelCard(m, isRec) {
+    const tags = (m.tags || []).map(t => `<span class="tag">${t}</span>`).join('');
+    const statusIcon = m.status === 'tight' ? ' ⚠️显存紧张' : m.status === 'cpu_only' ? ' 🐢 CPU模式' : '';
+    return `
+        <div class="model-rec-card" id="mcard_${m.name.replace(/[^a-z0-9]/gi, '_')}" onclick="toggleModelSelect('${m.name.replace(/'/g, "\\'")}')">
+            <div class="model-rec-name">${m.name}${isRec ? ' ✨ 推荐' : ''}${statusIcon}</div>
+            <div class="model-rec-desc">${m.description || ''}</div>
+            <div class="model-rec-meta">${m.size} · 需 ${m.vram_gb}GB 显存</div>
+            <div class="model-rec-tags">${tags}</div>
+        </div>
+    `;
+}
+
+function toggleModelSelect(name) {
+    const idx = _selectedModels.indexOf(name);
+    if (idx >= 0) {
+        _selectedModels.splice(idx, 1);
+        const el = document.getElementById('mcard_' + name.replace(/[^a-z0-9]/gi, '_'));
+        if (el) el.classList.remove('selected');
+    } else {
+        _selectedModels.push(name);
+        const el = document.getElementById('mcard_' + name.replace(/[^a-z0-9]/gi, '_'));
+        if (el) el.classList.add('selected');
+    }
+    document.getElementById('selCount').textContent = _selectedModels.length;
+    document.getElementById('btnInstallModels').disabled = !_selectedModels.length;
+}
+
+// ===== Step 2: 安装模型 =====
+async function installSelectedModels() {
+    if (!_selectedModels.length) return;
+    _installQueue = [..._selectedModels];
+    _installIndex = 0;
+
+    const btn = document.getElementById('btnInstallModels');
+    btn.disabled = true;
+    btn.textContent = '安装中...';
+
+    const prog = document.getElementById('installProgress');
+    prog.classList.add('show');
+
+    installNext();
+}
+
+async function installNext() {
+    if (_installIndex >= _installQueue.length) {
+        // 全部完成
+        setStepDone(2);
+        goStep(3);
+        return;
+    }
+    const model = _installQueue[_installIndex];
+    const total = _installQueue.length;
+    const current = _installIndex + 1;
+
+    document.getElementById('installText').textContent = `正在安装 ${model}（${current}/${total}）...`;
+
+    try {
+        await fetch('/api/ollama/pull', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model })
+        });
+
+        // 轮询进度
+        await pollPullProgress(model, total, current);
+    } catch (e) {
+        document.getElementById('installText').textContent = `❌ ${model} 安装失败`;
+        setTimeout(() => { _installIndex++; installNext(); }, 2000);
+    }
+}
+
+async function pollPullProgress(model, total, current) {
+    return new Promise(resolve => {
+        const check = setInterval(async () => {
+            try {
+                const r = await fetch(`/api/ollama/pull-status?model=${encodeURIComponent(model)}`);
+                const s = await r.json();
+                const pct = s.progress || 0;
+                const totalPct = ((_installIndex + pct/100) / total) * 100;
+                document.getElementById('installFill').style.width = totalPct + '%';
+
+                if (s.status === 'done') {
+                    clearInterval(check);
+                    _installIndex++;
+                    installNext();
+                    resolve();
+                } else if (s.status === 'error') {
+                    clearInterval(check);
+                    _installIndex++;
+                    installNext();
+                    resolve();
+                }
+            } catch (e) {
+                clearInterval(check);
+                _installIndex++;
+                installNext();
+                resolve();
+            }
+        }, 2000);
+    });
+}
+
+// ===== Step 3: 完成 =====
+async function finishWizard() {
+    try {
+        await fetch('/api/settings/first-run/complete', { method: 'POST' });
+    } catch (e) {}
+    window.location.href = '/';
+}
+</script>
+</body>
+</html>

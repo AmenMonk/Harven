@@ -1,0 +1,12 @@
+# Harven AI — 跨平台一键部署
+# Windows/macOS/Linux: docker compose up -d
+version: "3.8"
+services:
+  harven:
+    build: .
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./data:/app/data
+      - ./config.yaml:/app/config.yaml
+    restart: unless-stopped

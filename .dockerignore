@@ -1,0 +1,67 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+*.egg-info
+
+# 虚拟环境
+venv/
+env/
+.venv/
+
+# 数据（运行时通过 volume 挂载）
+data/sqlite/*.db
+data/faiss/*.index
+data/faiss/*.json
+data/isolated_dbs/*.db
+data/knowledge/*
+data/models/whisper-base/*.bin
+data/*.json
+
+# 开发文件
+*.bat
+*.bak
+*.log
+*.txt
+test_output.txt
+import_*.txt
+start_*.txt
+crash_log.txt
+start_err.txt
+_web_debug.txt
+
+# 备份
+*.zip
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 开发文档和脚本（不需要打包进镜像）
+docs/
+_dev_scripts/
+.workbuddy/
+
+# Windows 专有（云端不需要）
+cloudflare_tunnel.py
+启动HarvenAI.bat
+启动HarvenAI_公网版.bat
+
+# 旧路径兼容（均已移至 docs/ 和 _dev_scripts/，保留以防根目录残留）
+灵识开发文档_v1.md
+灵识开发文档_v2.md
+HarvenAI_*.md
+OpenClaw*.md
+check_*.py
+verify_*.py
+fix_*.py
+clear_data.py
+split_app_js.py
+count_prompt.py

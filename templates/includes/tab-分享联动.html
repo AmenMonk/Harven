@@ -1,0 +1,104 @@
+<!-- Tab: 手机联动 -->
+<div class="tab-panel" id="tab-share" style="display:none;">
+    <div class="settings-grid">
+        <div style="background:linear-gradient(135deg,#1a1a3e,#2d2d5e);border-radius:12px;padding:16px;margin-bottom:16px;border:1px solid #a78bfa;">
+            <div style="font-weight:600;color:#a78bfa;margin-bottom:6px;">📱 手机 + 公网联动</div>
+            <div style="font-size:12px;color:#94a3b8;">扫码生成一次性 Token，手机浏览器即可访问哈文</div>
+        </div>
+        <div class="setting-group">
+            <label data-i18n="web.share.label_1">本地访问地址</label>
+            <code id="localAddrDisplay" style="background:#1a1a2e;padding:4px 8px;border-radius:4px;color:#a78bfa;">检测中...</code>
+            <div class="setting-desc" data-i18n="web.share.desc_1">确保手机和电脑在同一局域网</div>
+        </div>
+        <div class="setting-group">
+            <label data-i18n="web.share.label_2">生成连接二维码</label>
+            <div style="display:flex;gap:10px;align-items:flex-start;">
+                <div id="qrCodeContainer" style="background:#fff;padding:10px;border-radius:8px;width:200px;height:200px;display:flex;align-items:center;justify-content:center;color:#666;font-size:13px;">
+                    点击「生成二维码」
+                </div>
+                <div style="flex:1;">
+                    <button class="btn-primary btn-sm" onclick="generateMobileQR()" style="margin-bottom:8px;" data-i18n="web.share.button_1">📱 生成二维码</button>
+                    <div class="setting-desc" data-i18n="web.share.desc_2">有效期 15 分钟，扫码即用</div>
+                    <div id="mobileTokenInfo" style="font-size:11px;margin-top:6px;word-break:break-all;"></div>
+                </div>
+            </div>
+        </div>
+        <div class="setting-group">
+            <label style="font-weight:600;" data-i18n="web.share.label_3">连接设备</label>
+            <div id="mobileDevicesList" style="font-size:12px;color:#888;">暂无连接</div>
+        </div>
+        <hr style="border-color:#2a2a4a;margin:12px 0;">
+        <div style="font-size:11px;color:#666;line-height:1.6;">
+            💡 <b>安全提示：</b>Token 一次性使用，15 分钟过期。<br>
+            🔒 连接仅限局域网，不经过公网。<br>
+            📶 如果二维码无效，检查防火墙 7000 端口是否开放。
+        </div>
+    </div>
+</div>
+
+<script>
+// 切到手机tab时自动检测IP
+function detectLocalAddr() {
+    var el = document.getElementById('localAddrDisplay');
+    if (!el || el.dataset.detected) return;
+    el.dataset.detected = '1';
+    fetch('/api/mobile/qrcode?name=detect&hours=0.01')
+        .then(r => r.json())
+        .then(d => {
+            if (d.qr_url) {
+                var match = d.qr_url.match(/https?:\/\/[^/]+/);
+                if (match) el.textContent = match[0];
+            }
+            if (d.local_ip && d.port) {
+                el.textContent = 'http://' + d.local_ip + ':' + d.port;
+            }
+        })
+        .catch(() => { el.textContent = '检测失败，请确认服务运行中'; });
+}
+
+async function generateMobileQR() {
+    var c = document.getElementById('qrCodeContainer');
+    c.innerHTML = '<span style="color:#f59e0b;" data-i18n="web.share.span_1">⏳ 生成中...</span>';
+    try {
+        var r = await fetch('/api/mobile/qrcode', {method:'GET'});
+        var d = await r.json();
+        if (d.qrcode) {
+            // base64 PNG直接用<img>渲染
+            c.innerHTML = '<img src="data:image/png;base64,' + d.qrcode + '" style="width:180px;height:180px;image-rendering:pixelated;"/>';
+            document.getElementById('mobileTokenInfo').innerHTML = 
+                '<span style="color:#0f0;">✅ Token: </span>' + 
+                '<code style="font-size:10px;">' + (d.token||'').substring(0,30) + '...</code>';
+            // 更新地址显示
+            var addrEl = document.getElementById('localAddrDisplay');
+            if (addrEl && d.local_ip) {
+                addrEl.textContent = 'http://' + d.local_ip + ':' + (d.port||7000);
+            }
+            setTimeout(loadMobileDevices, 2000);
+        } else {
+            c.innerHTML = '<span style="color:#e53e3e;" data-i18n="web.share.span_2">生成失败: ' + (d.error||'未知错误') + '</span>';
+        }
+    } catch(e) {
+        c.innerHTML = '<span style="color:#e53e3e;" data-i18n="web.share.span_3">网络错误，请确认服务运行中</span>';
+    }
+}
+
+async function loadMobileDevices() {
+    try {
+        var r = await fetch('/api/mobile/devices');
+        var d = await r.json();
+        var list = document.getElementById('mobileDevicesList');
+        if (d.devices && d.devices.length > 0) {
+            list.innerHTML = d.devices.map(function(dev){
+                return '<div style="margin-bottom:4px;">📱 ' + dev.name + 
+                    ' <span style="color:#888;font-size:11px;" data-i18n="web.share.span_4">' + 
+                    (dev.last_seen||'刚刚') + '</span></div>';
+            }).join('');
+        } else {
+            list.innerHTML = '<span style="color:#888;" data-i18n="web.share.span_5">暂无设备连接</span>';
+        }
+    } catch(e) {}
+}
+
+// 自动加载
+setTimeout(loadMobileDevices, 1000);
+</script>

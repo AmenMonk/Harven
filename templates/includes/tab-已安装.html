@@ -1,0 +1,43 @@
+<!-- Tab: 已安装 -->
+                <div class="tab-panel" id="modelTabContentInstalled">
+                    <div class="setting-group">
+                        <label data-i18n="web.installed.label_1">本地模型</label>
+                        <div id="installedModels" class="installed-models">加载中...</div>
+                    </div>
+                    <div class="setting-group" style="margin-top:12px;padding:10px;background:rgba(34,197,94,0.08);border:1px dashed rgba(34,197,94,0.3);border-radius:6px;">
+                        <label style="margin-bottom:4px;" data-i18n="web.installed.label_2">📥 导入本地 GGUF 模型</label>
+                        <div class="setting-desc" style="margin-bottom:8px;" data-i18n="web.installed.desc_1">从 HuggingFace/魔搭/任意位置下载的 .gguf 文件，选择后自动复制到 data/models/</div>
+                        <input type="file" id="importGGUFFile" accept=".gguf" style="display:none;" onchange="importLocalGGUF(this)">
+                        <button class="btn-primary btn-sm" onclick="document.getElementById('importGGUFFile').click()" style="background:#22c55e;border-color:#22c55e;" data-i18n="web.installed.button_1">
+                            📁 选择 .gguf 文件
+                        </button>
+                        <span id="importGGUFStatus" style="margin-left:10px;font-size:12px;color:#888;"></span>
+                    </div>
+                </div>
+
+<script>
+async function importLocalGGUF(input) {
+    var file = input.files[0];
+    if (!file) return;
+    var status = document.getElementById('importGGUFStatus');
+    status.textContent = '⏳ 正在导入 ' + file.name + '...';
+    status.style.color = '#f59e0b';
+    var formData = new FormData();
+    formData.append('file', file);
+    try {
+        var r = await fetch('/api/models/import-gguf', { method: 'POST', body: formData });
+        var data = await r.json();
+        if (data.success) {
+            status.textContent = '✅ 已导入: ' + data.filename + ' (' + data.size_mb + 'MB) → 重启后生效';
+            status.style.color = '#22c55e';
+        } else {
+            status.textContent = '❌ ' + (data.error || '导入失败');
+            status.style.color = '#ef4444';
+        }
+    } catch(e) {
+        status.textContent = '❌ 网络错误: ' + e.message;
+        status.style.color = '#ef4444';
+    }
+    input.value = '';
+}
+</script>

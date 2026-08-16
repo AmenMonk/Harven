@@ -1,0 +1,13 @@
+<!-- 面板区域：在侧边栏底部按钮下方 -->
+<div class="panels-section" id="panelsSection" style="padding:0 0 8px 0;">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 12px;">
+    <span style="font-size:11px;color:var(--text-secondary);font-weight:500;">我的面板</span>
+    <button id="btnAddPanel" onclick="if(window.openPanelManager)openPanelManager()"
+      style="background:var(--bg-hover);border:0.5px solid var(--border);border-radius:4px;color:var(--text-secondary);cursor:pointer;font-size:13px;width:22px;height:22px;display:flex;align-items:center;justify-content:center;"
+      title="添加面板">+</button>
+  </div>
+  <div id="panelList" style="padding:0 8px;">
+    <!-- JS 动态填充 -->
+    <div style="text-align:center;color:var(--text-tertiary);font-size:11px;padding:8px 0;">加载中...</div>
+  </div>
+</div>

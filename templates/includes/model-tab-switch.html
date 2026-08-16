@@ -1,0 +1,27 @@
+<script>
+    // 模型管理 Tab 切换
+    function switchModelTab(tab, btn) {
+        ['installed','market','pull'].forEach(t => {
+            const el = document.getElementById('modelTabContent' + t.charAt(0).toUpperCase() + t.slice(1));
+            if (el) el.style.display = t === tab ? 'block' : 'none';
+        });
+        document.querySelectorAll('#btnModelTabInstalled, #btnModelTabMarket, #btnModelTabPull').forEach(b => {
+            if (b) b.classList.remove('active');
+        });
+        if (btn) btn.classList.add('active');
+
+        // 懒加载
+        if (tab === 'market') {
+            const rec = document.getElementById('modelRecommend');
+            const mkt = document.getElementById('modelMarketList');
+            if (rec && !rec.dataset.loaded) {
+                rec.dataset.loaded = '1';
+                if (typeof loadModelMarketRecommend === 'function') loadModelMarketRecommend();
+            }
+            if (mkt && !mkt.dataset.loaded) {
+                mkt.dataset.loaded = '1';
+                if (typeof loadModelMarket === 'function') loadModelMarket();
+            }
+        }
+    }
+    </script>

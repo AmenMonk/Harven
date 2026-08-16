@@ -1,0 +1,33 @@
+<!-- Tab: Skills -->
+                <div class="tab-panel" id="tab-skills">
+                    <div class="settings-grid">
+                        <!-- ★ 推荐工具 -->
+                        <div id="recommendedTools" class="plugin-list" style="margin-bottom:16px;">
+                            <div class="plugin-empty">加载中...</div>
+                        </div>
+                        <hr style="border-color:#2a2a4a;margin:8px 0;">
+                        <!-- 技能下载渠道 -->
+                        <div class="setting-section-title" data-i18n="web.skills.title_1">🔗 技能下载渠道</div>
+                        <div class="setting-desc" style="margin-bottom:8px;" data-i18n="web.skills.desc_1">从以下平台浏览和导入 Skills，点击链接即可打开</div>
+                        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">
+                            <a href="https://github.com/topics/harven-skill" target="_blank" class="btn-tag" style="text-decoration:none;">🐙 GitHub</a>
+                            <a href="https://hf-mirror.com/models?pipeline_tag=text-generation&sort=trending" target="_blank" class="btn-tag" style="text-decoration:none;">🤗 Hugging Face</a>
+                            <a href="https://modelscope.cn/models" target="_blank" class="btn-tag" style="text-decoration:none;">🪞 ModelScope</a>
+                            <a href="https://github.com/openclaw/openclaw/tree/main/skills" target="_blank" class="btn-tag" style="text-decoration:none;">🦞 OpenClaw Skills</a>
+                            <div id="rhChannelTabs" style="display:contents;"></div>
+                        </div>
+                        <hr style="border-color:#2a2a4a;margin:8px 0;">
+                        <div class="setting-section-title" data-i18n="web.skills.title_2">⚡ 技能列表</div>
+                        <div class="setting-desc" style="margin-bottom:12px;" data-i18n="web.skills.desc_2">Skills 是 Markdown 格式的技能提示词，触发关键词匹配后自动注入对话。内置技能可禁用，自定义技能可编辑删除。</div>
+                        <div class="setting-group">
+                            <div id="skillsList" class="plugin-list">
+                                <div class="plugin-empty">加载中...</div>
+                            </div>
+                        </div>
+                        <div class="setting-group" style="display:flex;gap:8px;flex-wrap:wrap;">
+                            <button class="btn-primary btn-sm" onclick="showCreateSkillDialog()" data-i18n="web.skills.button_1">➕ 新建技能</button>
+                            <button class="btn-secondary btn-sm" onclick="loadSkills()" data-i18n="web.skills.button_2">🔄 刷新</button>
+                        </div>
+
+                    </div>
+                </div>

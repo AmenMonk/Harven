@@ -1,0 +1,164 @@
+<!-- Tab: AI模型 -->
+                <div class="tab-panel" id="tab-model">
+                    <!-- 子导航 -->
+                    <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;padding:0 2px;" id="modelSubNav">
+                        <button class="btn-secondary btn-sm model-sub-btn active" data-subtab="main" data-i18n="web.aimodel.button_1">⚙️ 模型设置</button>
+                        <button class="btn-secondary btn-sm model-sub-btn" data-subtab="multi" data-i18n="web.aimodel.button_2">🔀 多模型</button>
+                        <button class="btn-secondary btn-sm model-sub-btn" data-subtab="hardware" data-i18n="web.aimodel.button_3">🖥️ 硬件</button>
+                        <button class="btn-secondary btn-sm model-sub-btn" data-subtab="installed" data-i18n="web.aimodel.button_4">📦 已安装</button>
+                        <button class="btn-secondary btn-sm model-sub-btn" data-subtab="market" data-i18n="web.aimodel.button_5">🛒 模型市场</button>
+                        <button class="btn-secondary btn-sm model-sub-btn" data-subtab="pull" data-i18n="web.aimodel.button_6">⬇️ 手动拉取</button>
+                        <button class="btn-secondary btn-sm model-sub-btn" data-subtab="dual" style="background:#f59e0b20;border-color:#f59e0b40;" data-i18n="web.aimodel.button_7">⚙️ 模型配置</button>
+                    </div>
+                    <script>
+                    // ★ 事件委托：不依赖外部 JS 加载顺序，按钮自身携带逻辑
+                    (function(){
+                        document.getElementById('modelSubNav').addEventListener('click', function(e) {
+                            var btn = e.target.closest('.model-sub-btn');
+                            if (!btn) return;
+                            var subTab = btn.getAttribute('data-subtab');
+                            if (!subTab) return;
+                            if (typeof window.switchModelSubTab === 'function') {
+                                window.switchModelSubTab(subTab, btn);
+                            } else {
+                                // 降级备用：直接操作面板（★ 2026-07-05: 用 modelMainContent 代替 tab-model 保持子导航可见）
+                                var panels = ['modelMainContent','tab-multimodel','modelTabContentInstalled','modelTabContentMarket','modelTabContentPull','tab-hardware','tab-local-models','modelTabContentDualConfig'];
+                                var idMap = {main:'modelMainContent',multi:'tab-multimodel',hardware:'tab-hardware',installed:'modelTabContentInstalled',market:'modelTabContentMarket',pull:'modelTabContentPull',local:'tab-local-models',dual:'modelTabContentDualConfig'};
+                                panels.forEach(function(id){var el=document.getElementById(id);if(el){el.classList.remove('active');el.style.display='none';}});
+                                document.querySelectorAll('.model-sub-btn').forEach(function(b){b.classList.remove('active');});
+                                btn.classList.add('active');
+                                var tid=idMap[subTab];if(tid){var el=document.getElementById(tid);if(el){el.classList.add('active');el.style.display='block';}}
+                            }
+                        });
+                        setTimeout(function(){
+                            document.getElementById('modelSubNav').style.display = 'flex';
+                            console.log('[Harven SelfCheck] modelSubNav: delegate ACTIVE');
+                        }, 500);
+                    })();
+                    </script>
+                    <div class="settings-grid" id="modelMainContent">
+                        <div class="setting-section-title" data-i18n="web.aimodel.title_1">🤖 模型选择</div>
+                        <div class="setting-group">
+                            <label>当前模型 <span style="font-size:10px;color:#888;" data-i18n="web.aimodel.span_1">（在 ⚙️ 模型配置 页面切换）</span></label>
+                            <div id="currentModelDisplay" style="padding:10px 12px;background:#1e1e3a;border:1px solid #2a2a4a;border-radius:8px;font-size:14px;color:#e2e8f0;display:flex;justify-content:space-between;align-items:center;">
+                                <span id="curModelName" data-i18n="web.aimodel.span_2">⏳ 加载中...</span>
+                            </div>
+                            <select id="setModel" onchange="previewModel(this.value)" style="display:none;"><option value="">--</option></select>
+                            <script>
+                            (function(){
+                                async function _fillCurModel() {
+                                    try {
+                                        var r = await fetch('/api/models/local-all');
+                                        var d = await r.json();
+                                        var oc = d.ollama_current || '';
+                                        var eff = d.current || (oc ? 'ollama:' + oc : '');
+                                        var cur = d.models.find(function(m){return eff && m.id === eff;});
+                                        var el = document.getElementById('curModelName');
+                                        if (cur) el.innerHTML = cur.icon + ' <b>' + cur.name + '</b> <span style="font-size:10px;color:#888;">(' + cur.source + ')</span>';
+                                        else el.textContent = '未选择';
+                                    } catch(e) { console.error(e); }
+                                }
+                                setTimeout(_fillCurModel, 800);
+                            })();
+                            </script>
+                        </div>
+                        <div class="setting-group" style="display:none;">
+                            <select id="setModelHidden" onchange="previewModel(this.value)">
+                                <option value="" data-i18n="web.aimodel.option_1">⏳ 加载中...</option>
+                            </select>
+                            <script>
+                            (function(){
+                                if (document.readyState === 'loading') {
+                                    document.addEventListener('DOMContentLoaded', function() { setTimeout(_fillHidden, 1500); });
+                                } else { setTimeout(_fillHidden, 1500); }
+                                async function _fillHidden() {
+                                    var sel = document.getElementById('setModelHidden');
+                                    if (!sel) return;
+                                    try {
+                                        var r = await fetch('/api/ollama/models');
+                                        var models = await r.json();
+                                        if (models && models.length) {
+                                            sel.innerHTML = '';
+                                            models.filter(function(m){return m!=='nomic-embed-text:latest';}).forEach(function(m){
+                                                sel.innerHTML += '<option value="'+m+'">'+m+'</option>';
+                                            });
+                                        }
+                                    } catch(e) {}
+                                }
+                            })();
+                            </script>
+                        </div>
+                        <div class="setting-group">
+                            <label data-i18n="web.aimodel.label_1">推理模式</label>
+                            <select id="setReasoning">
+                                <option value="standard" selected data-i18n="web.aimodel.option_2">标准模式</option>
+                                <option value="fast" data-i18n="web.aimodel.option_3">快速模式（轻量模型优先）</option>
+                                <option value="deep" data-i18n="web.aimodel.option_4">深度模式（高级模型优先）</option>
+                            </select>
+                            <div class="setting-desc" data-i18n="web.aimodel.desc_1">标准=当前模型 / 快速=自动用轻量模型 / 深度=自动用高级模型</div>
+                        </div>
+                        <div class="setting-group">
+                            <label data-i18n="web.aimodel.label_2">多大模型智能调度</label>
+                            <select id="setScheduling">
+                                <option value="auto" selected data-i18n="web.aimodel.option_5">自动调度（根据问题复杂度选模型）</option>
+                                <option value="manual" data-i18n="web.aimodel.option_6">手动指定（始终使用选中的模型）</option>
+                            </select>
+                        </div>
+                        <div class="setting-section-title" style="margin-top:20px" data-i18n="web.aimodel.title_2">
+                            📦 模型管理
+                        </div>
+                        <div class="setting-group">
+                            <label data-i18n="web.aimodel.label_3">本地引擎连接状态</label>
+                            <div id="modelStatusDetail" class="setting-status">检测中...</div>
+                            <div id="ollamaDownloadHint" style="display:none; margin-top:8px; padding:10px 14px; background:#1e1e2e; border:1px solid #f59e0b; border-radius:8px;">
+                                <div style="color:#f59e0b; font-size:13px; margin-bottom:6px;">⚠️ 未检测到本地引擎，需要先安装才能使用本地模型</div>
+                                <a href="https://ollama.com/download" target="_blank" rel="noopener" style="display:inline-block; padding:6px 16px; background:linear-gradient(135deg,#f59e0b,#d97706); color:#fff; border-radius:6px; text-decoration:none; font-size:13px;">📥 前往 Ollama 官网下载</a>
+                                <span style="color:#888; font-size:11px; margin-left:8px;" data-i18n="web.aimodel.span_3">安装后重启 Harven 自动识别</span>
+                            </div>
+                        </div>
+                        <!-- ===== 🆚 双路径：魔搭 vs Ollama 引擎 ===== -->
+                        <div class="setting-section-title" style="margin-top:24px;" data-i18n="web.aimodel.title_3">🆚 获取模型方式</div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+                            <!-- 路径A：魔搭直连 -->
+                            <div style="background:linear-gradient(135deg,#1a2e1a,#1a3e2a);border:2px solid #22c55e;border-radius:10px;padding:14px;">
+                                <div style="font-weight:700;color:#4ade80;font-size:14px;margin-bottom:6px;">🇨🇳 魔搭直连（推荐）</div>
+                                <div style="font-size:11px;color:#94a3b8;line-height:1.6;margin-bottom:8px;">
+                                    ✅ 国内满速 · 无需科学上网<br>
+                                    ✅ 零依赖 · 不需要装任何软件<br>
+                                    ✅ GGUF 模型 → 哈文直接运行<br>
+                                    ✅ 自带 Qwen/DeepSeek/百川等
+                                </div>
+                                <a href="https://modelscope.cn/models" target="_blank" rel="noopener" style="display:block;text-align:center;padding:6px;background:#22c55e;color:#fff;border-radius:6px;text-decoration:none;font-size:12px;font-weight:600;">🚀 从魔搭选择下载（新标签页）</a>
+                            </div>
+                            <!-- 路径B：Ollama 引擎 -->
+                            <div style="background:linear-gradient(135deg,#1e1e2e,#2d2d3e);border:2px solid #6366f1;border-radius:10px;padding:14px;">
+                                <div style="font-weight:700;color:#818cf8;font-size:14px;margin-bottom:6px;">🐪 Ollama 引擎（可选）</div>
+                                <div style="font-size:11px;color:#94a3b8;line-height:1.6;margin-bottom:8px;">
+                                    ✅ 命令管理模型 方便切换<br>
+                                    ✅ 社区模型丰富 官方维护<br>
+                                    ⚠️ 需安装 本地引擎服务<br>
+                                    ⚠️ 首次下载可能较慢
+                                </div>
+                                <div style="font-size:10px;color:#666;line-height:1.4;margin-bottom:8px;">
+                                    💡 适合：需要频繁切换模型、使用官方 Qwen/Llama 等主流模型
+                                </div>
+                                <a href="https://ollama.com/download" target="_blank" rel="noopener" style="display:block;text-align:center;padding:6px;background:#6366f1;color:#fff;border-radius:6px;text-decoration:none;font-size:12px;font-weight:600;">📥 下载安装 Ollama</a>
+                            </div>
+                        </div>
+                        <div class="setting-group">
+                            <label data-i18n="web.aimodel.label_4">本地引擎地址</label>
+                            <input type="text" id="setOllamaUrl" value="http://localhost:11434" data-i18n-ph="web.aimodel.placeholder_1" placeholder="本地引擎 API 地址">
+                        </div>
+                        <div class="setting-section-title" style="margin-top:20px" data-i18n="web.aimodel.title_4">⚙️ 高级参数</div>
+                        <div class="setting-group">
+                            <label>温度 <span id="tempValue" class="setting-hint">0.7</span></label>
+                            <input type="range" id="setTemperature" min="0" max="1.5" step="0.1" value="0.7" oninput="document.getElementById('tempValue').textContent=this.value">
+                            <div class="range-labels"><span data-i18n="web.aimodel.span_4">精确严谨</span><span data-i18n="web.aimodel.span_5">创意发散</span></div>
+                        </div>
+                        <div class="setting-group">
+                            <label data-i18n="web.aimodel.label_5">最大上下文轮数</label>
+                            <input type="number" id="setContextTurns" value="20" min="5" max="100" step="5">
+                            <div class="setting-desc" data-i18n="web.aimodel.desc_2">保留最近N轮对话作为上下文（越多越占显存）</div>
+                        </div>
+                    </div>
+                </div>

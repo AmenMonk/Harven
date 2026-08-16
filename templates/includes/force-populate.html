@@ -1,0 +1,31 @@
+<script>
+    (function() {
+        if (sessionStorage.getItem('harven_cache_bust_v2')) return;
+        setTimeout(async function() {
+            console.log('[ForcePopulate] 🚀 开始强制填充模型下拉框... typeof populateModelSelect =', typeof populateModelSelect);
+            try {
+                const r = await fetch('/api/ollama/models');
+                const models = await r.json();
+                console.log('[ForcePopulate] API返回原始数据:', JSON.stringify(models));
+                const chatModels = (models || []).filter(m => m !== 'nomic-embed-text:latest');
+                console.log('[ForcePopulate] 过滤后聊天模型:', chatModels);
+                const sel = document.getElementById('setModel');
+                if (sel && chatModels.length > 0) {
+                    sel.innerHTML = '';
+                    chatModels.forEach(m => {
+                        const opt = document.createElement('option');
+                        opt.value = m;
+                        opt.textContent = m;
+                        sel.appendChild(opt);
+                    });
+                    console.log('[ForcePopulate] ✅ setModel 已填充', chatModels.length, '个模型');
+                } else {
+                    console.warn('[ForcePopulate] ❌ setModel=' + !!sel + ' chatModels=' + chatModels.length);
+                }
+            } catch(e) {
+                console.error('[ForcePopulate] 失败:', e);
+            }
+            sessionStorage.setItem('harven_cache_bust_v2', '1');
+        }, 2000);
+    })();
+    </script>

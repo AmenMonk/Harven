@@ -1,0 +1,50 @@
+<!-- Tab: 渠道接入 -->
+                <div class="tab-panel" id="tab-channels">
+                    <div class="settings-grid">
+                        <div class="setting-section-title" data-i18n="web.channels.title_1">📡 多渠道接入</div>
+                        <div class="setting-desc" style="margin-bottom:12px;" data-i18n="web.channels.desc_1">将 Harven AI 接入飞书、钉钉、Telegram 或自定义 Webhook，让 AI 在更多场景自动响应。</div>
+
+                        <!-- 添加渠道 -->
+                        <div class="setting-group" style="background:var(--bg-secondary);padding:16px;border-radius:8px;border:1px solid var(--border);margin-bottom:16px;">
+                            <div class="setting-section-title" style="font-size:13px;margin-bottom:12px;" data-i18n="web.channels.title_2">➕ 添加新渠道</div>
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+                                <div>
+                                    <label style="font-size:12px;color:var(--text-secondary);" data-i18n="web.channels.label_1">渠道类型</label>
+                                    <select id="newChannelType" onchange="updateChannelConfigHint()" style="width:100%;box-sizing:border-box;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:13px;">
+                                        <option value="webhook" data-i18n="web.channels.option_1">🌐 通用 Webhook</option>
+                                        <option value="feishu" data-i18n="web.channels.option_2">🐦 飞书机器人</option>
+                                        <option value="dingtalk" data-i18n="web.channels.option_3">🔔 钉钉机器人</option>
+                                        <option value="telegram">✈️ Telegram Bot</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style="font-size:12px;color:var(--text-secondary);" data-i18n="web.channels.label_2">渠道名称</label>
+                                    <input type="text" id="newChannelName" data-i18n-ph="web.channels.placeholder_1" placeholder="例如：团队飞书群" style="width:100%;box-sizing:border-box;">
+                                </div>
+                            </div>
+                            <div id="channelConfigArea" style="margin-bottom:10px;">
+                                <!-- 动态生成 -->
+                            </div>
+                            <div id="channelHintArea" style="background:#f0f4ff;border-radius:6px;padding:10px;font-size:12px;color:#555;margin-bottom:10px;"></div>
+                            <button class="btn-primary btn-sm" onclick="addChannel()" data-i18n="web.channels.button_1">📡 添加渠道</button>
+                        </div>
+
+                        <!-- 渠道列表 -->
+                        <div class="setting-group">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                                <label data-i18n="web.channels.label_3">已配置渠道</label>
+                                <button class="btn-secondary btn-sm" onclick="loadChannels()" data-i18n="web.channels.button_2">🔄 刷新</button>
+                            </div>
+                            <div id="channelList" class="plugin-list"><div class="plugin-empty">点击刷新加载...</div></div>
+                        </div>
+
+                        <!-- Webhook URL 说明 -->
+                        <div class="setting-group">
+                            <div style="background:#e8f4fd;border-radius:8px;padding:12px;border:1px solid #90caf9;font-size:12px;color:#1565c0;">
+                                <b>📌 Webhook 接入地址</b>：<br>
+                                添加渠道后，配置对应平台将消息发送到：<br>
+                                <code id="webhookBaseUrl" style="background:#fff;padding:2px 6px;border-radius:4px;font-size:11px;word-break:break-all;"></code><code style="background:#fff;padding:2px 6px;border-radius:4px;font-size:11px;">/api/webhook/&lt;channel_id&gt;</code>
+                            </div>
+                        </div>
+                    </div>
+                </div>

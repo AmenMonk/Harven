@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Harven AI — 移动端</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg-primary: #0f0f1a;
+            --bg-secondary: #1a1a2e;
+            --bg-tertiary: #25253d;
+            --text-primary: #e0e0f0;
+            --text-secondary: #a0a0c0;
+            --accent: #5a5aff;
+            --accent-hover: #4444dd;
+            --success: #22c55e;
+            --danger: #ef4444;
+            --border: #2a2a4a;
+        }
+        body {
+            font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* 顶部栏 */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+        .header-logo { font-size: 24px; }
+        .header-title { font-size: 16px; font-weight: 600; flex: 1; margin-left: 12px; }
+        .header-status {
+            font-size: 11px;
+            padding: 4px 8px;
+            border-radius: 12px;
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+        }
+        .header-status.connected { background: #22c55e20; color: var(--success); }
+        .header-status.disconnected { background: #ef444420; color: var(--danger); }
+
+        /* 聊天区域 */
+        .chat-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .message {
+            max-width: 85%;
+            padding: 12px 16px;
+            border-radius: 16px;
+            font-size: 15px;
+            line-height: 1.5;
+            word-wrap: break-word;
+        }
+        .message.user {
+            align-self: flex-end;
+            background: var(--accent);
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+        .message.assistant {
+            align-self: flex-start;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+            border-bottom-left-radius: 4px;
+        }
+        .message.system {
+            align-self: center;
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+            font-size: 12px;
+            padding: 8px 12px;
+            border-radius: 12px;
+        }
+
+        /* 输入区域 */
+        .input-container {
+            display: flex;
+            gap: 8px;
+            padding: 12px 16px;
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+        .input-container textarea {
+            flex: 1;
+            padding: 12px 16px;
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            font-size: 15px;
+            font-family: inherit;
+            resize: none;
+            outline: none;
+            min-height: 44px;
+            max-height: 120px;
+        }
+        .input-container textarea:focus { border-color: var(--accent); }
+        .btn-send {
+            width: 44px;
+            height: 44px;
+            border: none;
+            border-radius: 50%;
+            background: var(--accent);
+            color: white;
+            font-size: 18px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            transition: background 0.2s;
+        }
+        .btn-send:hover { background: var(--accent-hover); }
+        .btn-send:disabled { background: #444; cursor: not-allowed; }
+
+        /* 通知 */
+        .notification {
+            position: fixed;
+            top: 60px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--bg-secondary);
+            border: 1px solid var(--accent);
+            border-radius: 12px;
+            padding: 12px 20px;
+            max-width: 90%;
+            z-index: 1000;
+            animation: slideDown 0.3s ease;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        @keyframes slideDown {
+            from { opacity: 0; transform: translate(-50%, -20px); }
+            to { opacity: 1; transform: translate(-50%, 0); }
+        }
+
+        /* 加载动画 */
+        .typing-indicator {
+            display: flex;
+            gap: 4px;
+            padding: 12px 16px;
+        }
+        .typing-indicator span {
+            width: 8px;
+            height: 8px;
+            background: var(--text-secondary);
+            border-radius: 50%;
+            animation: typing 1.4s infinite;
+        }
+        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes typing {
+            0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+            30% { transform: translateY(-8px); opacity: 1; }
+        }
+
+        /* 滚动条 */
+        .chat-container::-webkit-scrollbar { width: 4px; }
+        .chat-container::-webkit-scrollbar-track { background: transparent; }
+        .chat-container::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    </style>
+</head>
+<body>
+    <!-- 顶部栏 -->
+    <div class="header">
+        <div class="header-logo">🐥</div>
+        <div class="header-title">Harven AI</div>
+        <div class="header-status" id="connStatus">检测中...</div>
+    </div>
+
+    <!-- 聊天区域 -->
+    <div class="chat-container" id="chatContainer">
+        <div class="message system">👋 欢迎使用 Harven AI 移动端<br>请输入消息开始对话</div>
+    </div>
+
+    <!-- 输入区域 -->
+    <div class="input-container">
+        <textarea id="msgInput" placeholder="输入消息..." rows="1"></textarea>
+        <button class="btn-send" id="btnSend" onclick="sendMessage()">➤</button>
+    </div>
+
+    <script>
+        // 配置
+        const TOKEN = new URLSearchParams(window.location.search).get('token') || '';
+        let convId = null;
+        let isSending = false;
+        let pollingInterval = null;
+
+        // 初始化
+        (async function() {
+            await checkConnection();
+            if (TOKEN) {
+                startPolling();
+            }
+        })();
+
+        // 检查连接状态
+        async function checkConnection() {
+            const statusEl = document.getElementById('connStatus');
+            try {
+                const res = await fetch('/api/server/info');
+                if (res.ok) {
+                    const data = await res.json();
+                    statusEl.className = 'header-status connected';
+                    statusEl.textContent = '✅ 已连接';
+                    return true;
+                }
+            } catch (e) {}
+            statusEl.className = 'header-status disconnected';
+            statusEl.textContent = '❌ 未连接';
+            return false;
+        }
+
+        // 发送消息
+        async function sendMessage() {
+            const input = document.getElementById('msgInput');
+            const msg = input.value.trim();
+            if (!msg || isSending) return;
+
+            // 显示用户消息
+            appendMessage('user', msg);
+            input.value = '';
+            autoResize(input);
+            isSending = true;
+            document.getElementById('btnSend').disabled = true;
+
+            // 显示等待动画
+            const typingEl = appendTyping();
+
+            try {
+                const res = await fetch('/api/mobile/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        token: TOKEN,
+                        message: msg,
+                        conv_id: convId
+                    })
+                });
+                const data = await res.json();
+
+                // 移除等待动画
+                typingEl.remove();
+
+                if (data.error) {
+                    appendMessage('system', '❌ ' + data.error);
+                } else {
+                    appendMessage('assistant', data.reply);
+                    convId = data.conv_id;
+                }
+            } catch (e) {
+                typingEl.remove();
+                appendMessage('system', '❌ 发送失败：' + e.message);
+            }
+
+            isSending = false;
+            document.getElementById('btnSend').disabled = false;
+            input.focus();
+        }
+
+        // 追加消息
+        function appendMessage(role, content) {
+            const container = document.getElementById('chatContainer');
+            const el = document.createElement('div');
+            el.className = 'message ' + role;
+            el.textContent = content;
+            container.appendChild(el);
+            container.scrollTop = container.scrollHeight;
+            return el;
+        }
+
+        // 追加等待动画
+        function appendTyping() {
+            const container = document.getElementById('chatContainer');
+            const el = document.createElement('div');
+            el.className = 'typing-indicator';
+            el.innerHTML = '<span></span><span></span><span></span>';
+            container.appendChild(el);
+            container.scrollTop = container.scrollHeight;
+            return el;
+        }
+
+        // 自动调整输入框高度
+        function autoResize(textarea) {
+            textarea.style.height = 'auto';
+            textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
+        }
+
+        // 显示通知
+        function showNotification(title, body) {
+            const el = document.createElement('div');
+            el.className = 'notification';
+            el.innerHTML = `<strong>${title}</strong><br>${body}`;
+            document.body.appendChild(el);
+            setTimeout(() => el.remove(), 5000);
+
+            // 尝试系统通知
+            if ('Notification' in window && Notification.permission === 'granted') {
+                new Notification(title, { body: body });
+            }
+        }
+
+        // 轮询通知
+        function startPolling() {
+            if (pollingInterval) clearInterval(pollingInterval);
+            pollingInterval = setInterval(async () => {
+                try {
+                    const res = await fetch('/api/mobile/notifications?token=' + TOKEN);
+                    const data = await res.json();
+                    if (data.notifications && data.notifications.length > 0) {
+                        data.notifications.forEach(n => {
+                            showNotification('Harven AI', n.message);
+                        });
+                        // 标记已读
+                        await fetch('/api/mobile/notifications/read', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ token: TOKEN })
+                        });
+                    }
+                } catch (e) {}
+            }, 3000);
+        }
+
+        // 事件监听
+        document.getElementById('msgInput').addEventListener('input', function() {
+            autoResize(this);
+        });
+        document.getElementById('msgInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        // 请求通知权限
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission();
+        }
+    </script>
+</body>
+</html>
