@@ -1,94 +1,280 @@
-﻿# 🦆 Harven AI — 本地优先的个人AI助手
+﻿# 🦆 Harven AI — Personal AI Brain
+
+**Not another chat UI. Multi-model collaboration: local brain thinks, external brain analyzes, vertical models execute. 5-layer memory never forgets. AI builds your UI panels.**
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Platform: Windows/Linux/macOS](https://img.shields.io/badge/Platform-Windows%2FLinux%2FmacOS-green)](#downloads)
+[![Python: 3.13 built-in](https://img.shields.io/badge/Python-3.13%20built--in-orange)](#downloads)
+[![Bilingual: 中文/EN](https://img.shields.io/badge/i18n-中文%2FEN-yellow)](#bilingual)
 
-## 什么是 Harven AI？
+个人专属AI大脑 — 纯本地运行，隐私安全，永久免费。
 
-Harven AI 是一个**本地优先**的个人AI助手，数据留在你的电脑上，不花钱，不开云端账号。
+---
 
-### 核心特点
+## 📥 Downloads
 
-- 🔒 **本地优先** — 数据在自己电脑上，隐私安全
-- 🆓 **永久免费** — 本地模型（Ollama）不花钱，外脑API有免费额度
-- 🧠 **多模型协作** — 通用模型思考 + 垂直模型执行（音乐/图片/语音/医疗）
-- 📋 **Skill系统** — 可执行脚本编排多模型完成长效任务
-- 📊 **面板系统** — 记账/健身/待办等可视化UI面板
-- 🏠 **家庭场景** — 记账/提醒/管理/监控
+| Platform | Size | Python | Launch |
+|----------|------|--------|--------|
+| **[Windows](https://github.com/AmenMonk/Harven/releases/latest)** | 16.1 MB | Built-in 3.13 | Double-click `.bat` |
+| **[Linux](https://github.com/AmenMonk/Harven/releases/latest)** | 37.4 MB | Built-in 3.13.15 | Double-click `.desktop` |
+| **[macOS](https://github.com/AmenMonk/Harven/releases/latest)** | 52.1 MB | Built-in 3.13.15 (Universal) | Double-click `.command` |
 
-## 快速开始
+> 📖 [Documentation Center](https://github.com/AmenMonk/Harven/releases/latest) (guide + technical docs)
 
-### 安装
+**No Python installation required** — all platforms ship with built-in Python 3.13.
 
-1. 确保已安装 [Python 3.12+](https://www.python.org/) 和 [Ollama](https://ollama.ai)
-2. 克隆仓库：
-   ```bash
-   git clone https://github.com/YOUR_USERNAME/HarvenAI.git
-   cd HarvenAI
-   ```
-3. 运行一键安装：
-   ```bash
-   # Windows
-   一键安装启动.bat
-   ```
-4. 或手动安装：
-   ```bash
-   python -m venv .venv
-   .venv\Scripts\activate
-   pip install -r requirements.txt
-   copy config.example.yaml config.yaml
-   # 编辑 config.yaml 填入API Key
-   python web_app.py
-   ```
+---
 
-### 使用
+## 🤔 Why Harven AI?
 
-- 双击桌面"哈文.lnk"启动
-- 或运行 `启动HarvenAI.bat`
+| Feature | Harven AI | ChatGPT | OpenWebUI | OpenClaw |
+|---------|-----------|---------|-----------|----------|
+| **Privacy** | ✅ 100% local | ❌ Cloud | ✅ Local | ✅ Local |
+| **Cost** | ✅ Free forever | ❌ $20/mo | ✅ Free | ✅ Free |
+| **Offline** | ✅ Works offline | ❌ No | ✅ Yes | ✅ Yes |
+| **Memory** | ✅ 5-layer, never forgets | ❌ Forgets across chats | ⚠️ Session only | ⚠️ File-based |
+| **Knowledge Base** | ✅ Built-in FAISS + 40 formats | ❌ None | ❌ None | ⚠️ Via plugins |
+| **Multi-model Collaboration** | ✅ Analyze→Tune→Execute | ❌ Single model | ❌ Single model | ❌ Single model |
+| **Vertical Models** | ✅ Music/Image/Voice/Medical | ⚠️ Limited | ❌ None | ❌ None |
+| **AI Builds UI Panels** | ✅ AI generates panels | ❌ No | ❌ No | ❌ No |
+| **Self-Modifying Code** | ✅ Controlled evolution | ❌ No | ❌ No | ❌ No |
+| **Skill + Bundle Ecosystem** | ✅ HarvenHub market | ❌ Plugins | ⚠️ Limited | ✅ Skills |
+| **IoT Device Control** | ✅ AI-generated drivers | ❌ No | ❌ No | ❌ No |
+| **Open Source** | ✅ Apache 2.0 | ❌ Closed | ✅ Open | ✅ MIT |
 
-## 功能
+---
 
-### 对话模式
-- 🏠 **本地模式** — 本地模型+知识库+Skills+画像
-- 🤖 **外脑模式** — 外部模型（DeepSeek/GLM等）+知识库+Skills
-- 🎨 **垂直模式** — 音乐生成/图片生成/语音合成/医疗问答
+## 🌟 Core Innovations (4 Unique Features)
 
-### Skill系统
-- 📒 记账助手 — 收支管理+SQLite持久化
-- 📋 代码审计 — P0/P1/P2问题检测
-- 📊 财务月结 — 查数据→统计→对比→生成报告
-- 💪 健康追踪 — 运动/体重/睡眠记录
-- 🎵 音乐生成 — MusicGen本地生成
-- 🎵 歌曲制作 — 多模型协作（写词→作曲→配声→合成）
+### 1. 🧬 Controlled Evolution (独创)
+AI modifies its own code — safely.
+```
+User: "帮我加一个天气查询功能"
+  → Harven generates code proposal
+  → User reviews description
+  → Approve / Reject
+  → Apply (with rollback)
+```
+**Can modify:** skills/ templates/ static/ config.yaml
+**Cannot touch:** engine.py web_app.py (core blacklist)
 
-### 面板系统
-- 创建面板（5种模板：记账/健身/待办/库存/空白）
-- 7种字段类型（文本/数字/日期/下拉/多行文本/时间/图片）
-- 表格视图+卡片视图切换
-- 统计图表（汇总卡片+分类柱状图）
+### 2. 🧠 5-Layer Memory (永不遗忘)
+| Layer | Function |
+|-------|----------|
+| L0 Raw Dialog | Full SQLite persistence, never lost |
+| L1 Task Memory | AI semantic extraction, structured storage |
+| L2 Long-term | Cross-dialog knowledge consolidation |
+| Active Retrieval | Auto-pull relevant history during chat |
+| Owner Profile | Remembers your preferences, identity, habits |
 
-### 协作模式
-- 🚫 关闭 — 纯对话，安全
-- ☁️ 智能协作 — Skill编排+外脑+垂直模型
-- 🏠 本地协作 — Skill编排+本地模型+垂直模型
+*vs ChatGPT: forgets everything when chat ends. vs OpenClaw: file-based MEMORY.md.*
 
-## 技术栈
+### 3. 🤝 Collaboration Mode (多模型分工)
+| Mode | Flow | Use Case |
+|------|------|----------|
+| ☁️ Cloud-Local | External brain analyzes → tune params → **local vertical model executes** | Privacy + capability |
+| 🏠 Local-Dual | Local general model schedules → tune params → vertical model executes | Fully offline |
 
-- **后端**：Python + Flask + SQLite + FAISS
-- **前端**：HTML + Bootstrap5 + JavaScript
-- **AI**：Ollama（本地）+ DeepSeek/GLM/豆包等（外脑）
-- **垂直模型**：MusicGen / Stable Diffusion / Bark / 华佗
-- **桌面**：pywebview
+*Single-model chatbots can't do this. Harven orchestrates multiple models like a team.*
 
-## 贡献
+### 4. 🎨 Vertical Model Orchestration (专业执行)
+| Model | Capability |
+|-------|-----------|
+| MusicGen | Generate music from text |
+| Stable Diffusion | Image generation |
+| Bark | Voice synthesis |
+| MiniCPM-V | Image understanding |
+| HuaTuo | Medical Q&A |
 
-欢迎提交 Issue 和 Pull Request！
+*Vertical models execute independently — no knowledge base/skills/persona interference.*
 
-1. Fork 本仓库
-2. 创建分支：`git checkout -b feature/你的功能`
-3. 提交：`git commit -m "添加XX功能"`
-4. 推送：`git push origin feature/你的功能`
-5. 发起 Pull Request
+---
 
-## License
+## 🗺️ Feature Panorama (25+ Features)
 
-Apache License 2.0 — 可自由使用、修改、分发。
+### 💬 Conversation & Reasoning
+- 🏠 **Local Mode** — Local model + knowledge base + skills + persona
+- 🤖 **External Brain** — GPT/DeepSeek/GLM/Doubao + knowledge base + skills
+- 🎨 **Vertical Mode** — Music/image/voice/medical specialized execution
+- 🤝 **Collaboration Mode** — Multi-model teamwork (cloud-local / local-dual)
+- 🌐 **Web Search** — Bing built-in + SearXNG enhancement
+- 🎙️ **Voice Input** — faster-whisper STT, language follows UI
+
+### 🧠 Memory & Knowledge
+- 📚 **3-Layer Knowledge Base** — Documents (40+ formats) → FAISS vectors → Auto-injection
+- 🧠 **5-Layer Memory** — L0 raw + L1 task + L2 long-term + active retrieval + owner profile
+- 🗂️ **Knowledge Packs** — Shareable knowledge bundles
+- 📦 **Bundle** — Skill + Agent + Knowledge one-click solution
+
+### 🔧 Tools & Automation
+- ⚡ **Skill System** — Executable scripts orchestrating multi-model tasks
+- 🤖 **Agent (专项培养)** — Role-based personas with trigger-word routing
+- 📊 **UI Panel System** — AI builds accounting/fitness/todo panels (iframe sandbox)
+- 🔄 **Workflow Editor** — Visual flow orchestration
+- ⏰ **Scheduled Tasks** — apscheduler-based automation
+- 📡 **Monitor Center** — Auto-track topic updates
+- 🧬 **Controlled Evolution** — AI modifies its own code (user-approved)
+
+### 🔒 Security & Privacy
+- 🛡️ **3-Layer Defense** — File scan (5 checks) + Code sandbox (Docker) + Device fingerprint
+- 🦠 **Antivirus** — ClamAV integration
+- 🔐 **Data Vault** — Encrypted sensitive info storage
+- 🔑 **Privacy Levels** — Control what external brain sees
+- 🆔 **Device Binding** — Prevent unauthorized cloning
+
+### 🌐 Connectivity
+- 📱 **Mobile Link** — Scan QR for remote chat
+- 💬 **IM Channels** — WeChat Work / DingTalk / Feishu
+- 🏠 **IoT Control** — MQTT/HTTP/WebSocket + **AI-generated drivers**
+- 🌍 **Public Network** — Access from phone anywhere
+- 🛒 **HarvenHub Market** — Community skill/agent/bundle sharing
+
+### 🎨 Customization
+- 🌗 **Themes** — Dark/Light/System
+- 📝 **Bilingual i18n** — 中文/English (853 keys, full coverage)
+- 🦆 **Brand Customization** — Custom name/icon/avatar
+- 💾 **Backup & Restore** — One-click data vault
+- 🛠️ **Fallback Mode** — Auto-recovery from failures
+
+---
+
+## 🚀 Quick Start
+
+### Windows
+```bash
+# 1. Download HarvenAI_v0.3.1_Windows.zip
+# 2. Extract
+# 3. Double-click 安装哈文.bat
+# 4. Browser opens http://localhost:7000
+# 5. Password: harven2026
+```
+
+### Linux
+```bash
+# 1. Download HarvenAI_v0.3.1_Linux.zip
+unzip HarvenAI_v0.3.1_Linux.zip -d HarvenAI
+cd HarvenAI
+bash install.sh    # Installs dependencies + creates desktop shortcut
+# Double-click Harven AI icon on desktop
+```
+
+### macOS
+```bash
+# 1. Download HarvenAI_v0.3.1_macOS.zip
+unzip HarvenAI_v0.3.1_macOS.zip -d HarvenAI
+cd HarvenAI
+bash install.sh    # Installs dependencies + creates desktop shortcut
+# Double-click HarvenAI.command on desktop
+```
+
+**No Python installation needed** — built-in Python 3.13 on all platforms.
+
+---
+
+## 🏗️ Technical Architecture
+
+| Metric | Value |
+|--------|-------|
+| **Python modules** | 113 |
+| **REST API endpoints** | 80+ |
+| **Lines of code** | 160,000+ |
+| **Built-in skills** | 10 |
+| **i18n keys** | 853 (zh_CN + en_US) |
+| **Supported file formats** | 40+ (txt/md/csv/pdf/docx/xlsx/pptx) |
+
+### Tech Stack
+| Layer | Technology |
+|-------|-----------|
+| **Backend** | Python + Flask + SQLite + FAISS |
+| **Frontend** | HTML + Bootstrap5 + JavaScript (SSE streaming) |
+| **AI** | Ollama (local) + DeepSeek/GLM/Doubao/OpenAI (external) |
+| **Vertical Models** | MusicGen / Stable Diffusion / Bark / MiniCPM-V / HuaTuo |
+| **Desktop** | pywebview (optional) |
+| **Voice** | faster-whisper (STT) |
+| **Search** | Bing + SearXNG |
+| **Sandbox** | Docker (preferred) / subprocess (fallback) |
+
+### Cross-Platform Support
+| Platform | Python Source | Package Manager | Screenshot | Trash |
+|----------|-------------|-----------------|------------|-------|
+| Windows | Built-in 3.13 | winget | Win+Shift+S | Clear-RecycleBin |
+| Linux | Built-in 3.13.15 | apt/yum/pacman | scrot | rm ~/.local/share/Trash |
+| macOS | Built-in 3.13.15 (Universal) | brew | screencapture | rm ~/.Trash |
+
+---
+
+## 🌍 Bilingual (中英双语)
+
+Harven AI is fully bilingual — interface, AI responses, voice recognition, and system messages all switch together.
+
+| Component | 中文 | English |
+|-----------|------|---------|
+| UI (28 tabs) | ✅ | ✅ |
+| AI responses | ✅ | ✅ |
+| Voice STT | zh | en |
+| Command routing | ✅ | ✅ |
+| FC prompts | ✅ | ✅ |
+
+Settings → Language → "界面与回答语言" → 跟随系统 / 简体中文 / English
+
+---
+
+## 🤝 Contributing
+
+Contributions welcome! 
+
+1. Fork the repository
+2. Create feature branch: `git checkout -b feature/your-feature`
+3. Commit: `git commit -m "Add: your feature"`
+4. Push: `git push origin feature/your-feature`
+5. Open a Pull Request
+
+### Development Setup
+```bash
+git clone https://github.com/AmenMonk/Harven.git
+cd Harven
+python -m venv venv
+source venv/bin/activate  # Linux/macOS
+# venv\Scripts\activate   # Windows
+pip install -r requirements.txt
+cp config.yaml.example config.yaml
+python web_app.py
+```
+
+### Project Structure
+```
+HarvenAI/
+├── src/core/          # 30+ kernel modules (engine, memory, security, etc.)
+├── skills/            # 10 built-in skills (accounting, code audit, music, etc.)
+├── templates/         # Web UI (index.html + 28 setting tabs)
+├── static/            # JS/CSS/icons
+├── locales/           # i18n (zh_CN.json + en_US.json)
+├── data/              # User data (sqlite, faiss, knowledge, skills)
+├── docs/              # Documentation center
+├── web_app.py         # Flask web server (80+ API endpoints)
+└── platform.py        # Cross-platform abstraction
+```
+
+---
+
+## 📄 License
+
+**Apache License 2.0** — Free to use, modify, and distribute.
+
+---
+
+## 👤 Author
+
+**AmenMonk** · 📧 38552540@qq.com
+
+> 🦆 Harven AI — Your personal AI brain that lives on your computer, not in the cloud.
+> 
+> 哈文 — 住在电脑里的AI大脑，数据主权在你手里。
+
+---
+
+## ⭐ Star History
+
+If you find Harven AI useful, please consider giving it a star! ⭐
+
+[![Star History Chart](https://api.star-history.com/svg?repos=AmenMonk/Harven&type=Date)](https://star-history.com/#AmenMonk/Harven&Date)
