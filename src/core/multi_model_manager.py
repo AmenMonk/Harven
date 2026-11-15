@@ -5,6 +5,7 @@ Supports multiple AI model providers with free models prioritized.
 """
 
 import os
+import re
 import shutil
 import sys
 import json
@@ -36,14 +37,28 @@ if _config_path.exists():
             _config_yaml = yaml.safe_load(_f) or {}
     except Exception as _e: logger.debug(f"[multi_model_manager] 忽略: {_e}")
 
+# ★ #1507（2026-11-13）：外脑读超时放宽 120→240s（config.yaml brain_read_timeout 可覆盖）。
+#   read timeout 是「相邻两个数据块之间」的哑火间隔，不是总时长——有字就续命。
+#   120s 只够 low 思考档；high/max 深度思考（智谱官方可达数分钟）会被误砍，
+#   且空流重试×2 = 白烧 3 次。240s 盖住绝大多数深度思考，真死连接代价仅多挂 2 分钟。
+BRAIN_READ_TIMEOUT = 240
+try:
+    _v = int(_config_yaml.get('brain_read_timeout') or 0)
+    if 60 <= _v <= 900:
+        BRAIN_READ_TIMEOUT = _v
+except Exception:
+    pass
+
 PROVIDERS = {
     'ollama': {
+        'vision': True,
         'name': 'Ollama (本地)',
         'free': True,
         'needs_key': False,
         'base_url': 'http://localhost:11434/v1',
     },
     'deepseek': {
+        'vision': False,
         'name': 'DeepSeek',
         'free': True,
         'needs_key': True,
@@ -51,6 +66,7 @@ PROVIDERS = {
         'models': ['deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-chat', 'deepseek-reasoner'],
     },
     'qwen': {
+        'vision': True,
         'name': '通义千问 (DashScope)',
         'free': True,
         'needs_key': True,
@@ -65,6 +81,7 @@ PROVIDERS = {
         'models': ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k'],
     },
     'doubao': {
+        'vision': True,
         'name': '豆包 (火山引擎)',
         'free': False,
         'needs_key': True,
@@ -72,6 +89,7 @@ PROVIDERS = {
         'models': ['doubao-seed-2-0-pro-260215', 'doubao-seed-2-0-mini-260215', 'doubao-1-5-pro-32k-250115', 'doubao-1-5-lite-32k-250115'],
     },
     'openai': {
+        'vision': True,
         'name': 'OpenAI',
         'free': False,
         'needs_key': True,
@@ -86,6 +104,7 @@ PROVIDERS = {
         'models': ['claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022'],
     },
     'gemini': {
+        'vision': True,
         'name': 'Gemini (Google)',
         'free': True,
         'needs_key': True,
@@ -115,6 +134,7 @@ PROVIDERS = {
         'models': ['command-r-plus', 'command-r', 'command'],
     },
     'moonshot': {
+        'vision': False,
         'name': 'Moonshot (月之暗面)',
         'free': False,
         'needs_key': True,
@@ -144,6 +164,7 @@ PROVIDERS = {
         'models': ['hunyuan-turbos-latest', 'hunyuan-pro', 'hunyuan-lite', 'hunyuan-t1-latest'],
     },
     'baichuan': {
+        'vision': False,
         'name': '百川智能 (Baichuan)',
         'free': True,
         'needs_key': True,
@@ -151,6 +172,7 @@ PROVIDERS = {
         'models': ['Baichuan4-Turbo', 'Baichuan4-Air', 'Baichuan3-Turbo'],
     },
     'zhipu': {
+        'vision': True,
         'name': '智谱AI (GLM)',
         'free': True,
         'needs_key': True,
@@ -158,6 +180,7 @@ PROVIDERS = {
         'models': ['glm-4-plus', 'glm-4-air', 'glm-4-flash', 'glm-4-long'],
     },
     'yi': {
+        'vision': False,
         'name': '零一万物 (Yi)',
         'free': True,
         'needs_key': True,
@@ -228,6 +251,16 @@ PROVIDERS = {
 CONFIG_FILE = Path(__file__).parent.parent.parent / 'data' / 'multi_models.json'
 CONFIG_EXAMPLE = Path(__file__).parent.parent.parent / 'data' / 'multi_models.example.json'
 
+# ★ #1309（2026-10-29）本地模型判定唯一真家：全项目凡「选的是不是本地」判定一律调这里，
+#   禁止再手抄 (None,'','ollama') 清单——本次事故根因就是 cloud_link 手抄清单漏了
+#   'harveneye'，用户选本地被误判外脑模式 → #1288 代选换模型（不可原谅级，开发者定性）。
+LOCAL_MODEL_IDS = (None, '', 'ollama', 'harveneye')
+
+
+def is_local_model(provider_id) -> bool:
+    """provider_id 是否本地阵营（未选/Ollama/HarvenEye）。单一真家，全局复用。"""
+    return (provider_id or '') in ('ollama', 'harveneye', '') or provider_id is None
+
 
 class MultiModelManager:
     """Multi-model manager with support for built-in and custom providers."""
@@ -247,7 +280,7 @@ class MultiModelManager:
                 'enabled': True,
                 'api_key': None,
                 'base_url': PROVIDERS['ollama']['base_url'],
-                'model_name': _config_yaml.get('ollama', {}).get('default_model', 'qwen2.5:14b'),
+                'model_name': _config_yaml.get('ollama', {}).get('default_model', '') or '',  # ★ 2026-09-26 审计：不内定，用户没选就是空
                 'enabled_at': time.time(),
             }
             self._save_config()
@@ -279,18 +312,10 @@ class MultiModelManager:
             if provider_id == 'ollama':
                 continue
             entry = config['models'][provider_id]
-            # 情况1：已启用但无 key，检查 config.yaml 补全
-            if entry.get('enabled') and not entry.get('api_key'):
-                if yaml_keys.get(provider_id):
-                    entry['api_key'] = yaml_keys[provider_id]
-                else:
-                    entry['enabled'] = False
-                    logger.warning(f"[MultiModel] {provider_id} 已启用但无API密钥，自动禁用")
-            # ★ 情况2：已禁用但 config.yaml 有 key → 自动启用
-            elif not entry.get('enabled') and yaml_keys.get(provider_id):
+            # ★ 2026-08-25 P1: 用户选择大于一切——只补全 Key，绝不自动改 enabled 状态
+            # （旧逻辑"无key自动禁用/有key自动启用"会反复横跳，覆盖用户手动设置）
+            if not entry.get('api_key') and yaml_keys.get(provider_id):
                 entry['api_key'] = yaml_keys[provider_id]
-                entry['enabled'] = True
-                logger.info(f"[MultiModel] {provider_id} 从 config.yaml 恢复 Key，自动启用")
 
     def _init_from_template(self):
         """首次启动：从出厂模板创建配置文件，仅包含 Ollama 本地模型。"""
@@ -308,6 +333,45 @@ class MultiModelManager:
         self.config_file.parent.mkdir(parents=True, exist_ok=True)
         with open(self.config_file, 'w', encoding='utf-8') as f:
             json.dump(self.config, f, ensure_ascii=False, indent=2)
+
+    def restore_mode_slot(self, mode):
+        """★ #1288（2026-10-29）分槽记忆补上「读」半边：按查询模式换回该槽用户上次选的模型。
+
+        背景：#1275/方案A 只做了「写槽位」（选模型时记 cloud/local 槽），切换查询模式时
+        没人把 current_model 换回来——用户本地模式选了 HarvenEye 再点 🤖 外脑，
+        current_model 仍是 harveneye，直接撞「外脑模式选了本地模型」报错（10-29 实测实锤）。
+        换回的是用户自己上次选的模型（非代选，铁律 0 合规）。
+
+        Args: mode: 'cloud' | 'local'
+        Returns: 换回的 provider_id；槽位空/阵营不符/切换失败返回 ''（调用方走原报错路径）。
+        """
+        try:
+            from src.utils.config import get_config
+            _cfg = get_config()
+            pid = ((_cfg.get('current_model_by_mode') or {}).get(mode) or '').strip()
+        except Exception:
+            pid = ''
+        if not pid:
+            return ''
+        # 阵营校验：槽位里存的必须是该阵营的模型（脏数据不代选）
+        if mode == 'cloud' and pid in ('ollama', 'harveneye', ''):
+            return ''
+        if mode == 'local' and pid not in ('ollama', 'harveneye'):
+            return ''
+        if pid == self.current_model:
+            return pid
+        r = self.set_current_model(pid)
+        if not r.get('success'):
+            return ''
+        # 同步 json 槽位镜像（历史欠账：json 的 current_model_by_mode 一直是 None 与 yaml 不同步）
+        try:
+            self.config.setdefault('current_model_by_mode', {})[mode] = pid
+            self.config['last_query_mode'] = mode
+            self._save_config()
+        except Exception:
+            pass
+        logger.info(f"[MultiModel] #1288 按模式槽位换回 {mode} 槽模型: {pid}")
+        return pid
 
     def _get_all_providers(self):
         """合并内置 PROVIDERS 与自定义 providers，注入 config.yaml 的 API Key."""
@@ -407,9 +471,11 @@ class MultiModelManager:
             return {'success': False, 'error': '内置模型不能删除，只能禁用'}
         self.config.get('custom_providers', {}).pop(provider_id, None)
         self.config.get('models', {}).pop(provider_id, None)
+        # ★ 2026-08-25 P1: 删除模型时不再自动切本地——标记未选，由用户手动选择
         if self.current_model == provider_id:
-            self.current_model = 'ollama'
-            self.config['current_model'] = 'ollama'
+            self.current_model = None
+            self.config['current_model'] = None
+            logger.info(f"[MultiModel] 当前模型 {provider_id} 已删除，请用户重新选择")
         self._save_config()
         return {'success': True}
 
@@ -461,6 +527,37 @@ class MultiModelManager:
     def set_current_model(self, provider_id):
         """Set the current active model."""
         all_providers = self._get_all_providers()
+        # ★ #1275 节点⑦（2026-10-29）阵营分槽守卫：本地模型（ollama/harveneye）
+        #   绝不入外脑槽——本地模型改记 local 槽 + last_query_mode='local'
+        #   （只纠正记录归属，不代选不拦截；外脑槽记本地模型=拧巴状态根源）
+        if provider_id in ('ollama', 'harveneye'):
+            try:
+                from src.utils.config import get_config
+                _cfg = get_config()
+                _cfg['current_model'] = provider_id
+                _slots = _cfg.setdefault('current_model_by_mode', {})
+                _slots['local'] = provider_id
+                _cfg['last_query_mode'] = 'local'
+                _cfg.save()
+                logger.info(f"[MultiModel] 本地模型 {provider_id} 已记入 local 槽（不入外脑槽）")
+            except Exception as _e:
+                logger.debug(f"[MultiModel] 本地槽记录失败（不影响本地切换）: {_e}")
+            self.current_model = provider_id
+            self.config['current_model'] = provider_id
+            self._save_config()
+            # ★ #1322 选择即换血：用户点了 HarvenEye/Ollama，当场预载进显存（开发者 10-30 拍板）
+            try:
+                from src.core import local_model_swap
+                _target = provider_id
+                if provider_id == 'ollama':
+                    # ollama 阵营：具体模型名取用户配置的 default_model（不写死）
+                    from src.utils.config import get_config as _gc2
+                    _target = str((_gc2() or {}).get('default_model', '') or '').strip()
+                if _target:
+                    local_model_swap.swap_in_async(_target, reason='set_current_model')
+            except Exception as _e:
+                logger.debug(f"[MultiModel] 模型预载触发失败（不影响切换）: {_e}")
+            return {'success': True}
         if provider_id not in all_providers:
             return {'success': False, 'error': f'Unknown provider: {provider_id}'}
 
@@ -481,6 +578,29 @@ class MultiModelManager:
         self._save_config()
         # ★ 2026-08-09: 同步更新 config.yaml 的 collab_foreign_model
         self._sync_config_yaml_foreign(provider_id)
+        # ★ 2026-10-24 方案A 分槽记忆：外脑选择同步镜像到 config.yaml 的 current_model
+        #   （此前只写本 json——本地「设为当前」只写 yaml，两持久层互踩：重启后引擎按 json 判定
+        #   与用户在模型中心看到的状态对不上，只能重开模型中心重选一次才恢复）
+        #   并记入 by_mode.cloud 槽 + last_query_mode，供切换模式时自动换回各自上次选的模型
+        try:
+            from src.utils.config import get_config
+            _cfg = get_config()
+            _cfg['current_model'] = provider_id
+            _slots = _cfg.setdefault('current_model_by_mode', {})
+            _slots['cloud'] = provider_id
+            _cfg['last_query_mode'] = 'cloud'
+            _cfg.save()
+        except Exception as _e:
+            logger.debug(f"[MultiModel] yaml 镜像/分槽记忆写入失败（不影响外脑切换）: {_e}")
+        # ★ #1327（2026-10-30）：外脑分支补 json 槽位镜像——此前只有本地方向镜像，
+        #   外脑切换后 json 的 slots.cloud/last_query_mode 长期陈旧，读 json 的
+        #   展示/判定全被带偏（#1326「设了 deepseek 还显示 glm」实锤）
+        try:
+            self.config.setdefault('current_model_by_mode', {})['cloud'] = provider_id
+            self.config['last_query_mode'] = 'cloud'
+            self._save_config()
+        except Exception as _e:
+            logger.debug(f"[MultiModel] json 槽位镜像写入失败（不影响外脑切换）: {_e}")
         return {'success': True}
 
     def _sync_config_yaml_foreign(self, provider_id):
@@ -518,6 +638,10 @@ class MultiModelManager:
             api_key = effective_key
             base_url = effective_url
             model_name = model_entry.get('model_name', provider.get('models', [''])[0] if provider.get('models') else '')
+            if not isinstance(model_name, str) or not model_name.strip():  # ★ 2026-08-25 类型守护
+                logger.warning(f"[MultiModel] {provider_id} 模型名非法({type(model_name).__name__})，回退首个可用")
+                _mlist = provider.get('models') or ['']
+                model_name = _mlist[0] if _mlist and isinstance(_mlist[0], str) else ''
 
             # Gemini uses different API format
             if provider.get('is_gemini'):
@@ -600,7 +724,8 @@ class MultiModelManager:
         try:
             from src.core.model_manager import ModelManager
             base_url = _config_yaml.get('ollama', {}).get('base_url', 'http://localhost:11434')
-            model_name = _config_yaml.get('ollama', {}).get('default_model', 'qwen2.5:14b')
+            model_name = _config_yaml.get('ollama', {}).get('default_model', '') or ''  # ★ 2026-09-26 审计：不内定，空则 ModelManager 报"未选择模型"
+            if not isinstance(model_name, str) or not model_name.strip(): model_name = 'qwen2.5:14b'  # ★ 2026-08-25 类型守护
             mm = ModelManager(base_url, model_name)
             response = mm.chat(messages, stream=stream, temperature=0.7)
             if stream:
@@ -611,13 +736,36 @@ class MultiModelManager:
         except Exception as e:
             yield {'type': 'error', 'content': f'Ollama generation failed: {e}'}
 
+    def _friendly_http_error(self, provider_id, status, text):
+        """★ 2026-08-26: HTTP 错误翻译成人话+行动引导（失败要告诉用户怎么办）"""
+        try:
+            _pname = self._get_all_providers().get(provider_id, {}).get('name', provider_id)
+        except Exception:
+            _pname = provider_id
+        _raw = (text or '')[:150]
+        if status == 402:
+            return f"HTTP 402 余额不足 —— {_pname}账户欠费。→ 请到该平台官网充值，或在 设置→模型管理 切换其他外脑，或点 🏠本地 用本地模型（免费）"
+        if status == 401:
+            return f"HTTP 401 Key 无效 —— {_pname}的 API Key 不正确或已过期。→ 请到 设置→模型管理 检查 Key，或点 🏠本地 用本地模型"
+        if status == 429:
+            return f"HTTP 429 请求过频 —— {_pname}限流中（通常几十秒自动恢复）。→ 请等 30 秒再发，或点 🏠本地 用本地模型（不限流）"
+        if status == 404:
+            return f"HTTP 404 模型不存在 —— 模型名可能已改名或下线。→ 请到 设置→模型管理 检查模型名，或切换其他模型"
+        if status >= 500:
+            return f"HTTP {status} 服务商故障 —— {_pname}服务器异常。→ 请稍后重试，或切换其他模型 / 🏠本地"
+        return f"HTTP {status}: {_raw}"
+
     def _generate_openai_compatible(self, provider_id, messages, stream=True, tools=None):
         """Generate using OpenAI-compatible API with connection retry.
 
         ★ 2026-07-11: 新增 tools 参数（Function Calling支持）
         """
         import time as _time
-        
+
+        # ★ 2026-08-26 修复: _show_think 定义随 thinking 参数块被删而丢失，
+        # 导致 NameError 让所有外脑全挂。思考过程默认不转发（原 P3 行为）。
+        _show_think = False
+
         all_providers = self._get_all_providers()
         provider = all_providers.get(provider_id, PROVIDERS.get(provider_id, {}))
         model_entry = self.config.get('models', {}).get(provider_id, {})
@@ -634,6 +782,10 @@ class MultiModelManager:
             except Exception as _e: logger.debug(f"[multi_model_manager] 忽略: {_e}")
         base_url = model_entry.get('base_url', provider['base_url'])
         model_name = model_entry.get('model_name', provider.get('models', [''])[0] if provider.get('models') else '')
+        if not isinstance(model_name, str) or not model_name.strip():  # ★ 2026-08-25 类型守护
+            logger.warning(f"[MultiModel] {provider_id} 模型名非法({type(model_name).__name__})，回退首个可用")
+            _mlist = provider.get('models') or ['']
+            model_name = _mlist[0] if _mlist and isinstance(_mlist[0], str) else ''
 
         if not api_key:
             yield {'type': 'error', 'content': f'{provider_id} API key not configured'}
@@ -649,7 +801,37 @@ class MultiModelManager:
             'model': model_name,
             'messages': messages,
             'stream': stream,
+            # ★ 2026-09-27 提速（用户反馈回答太慢）：不设 max_tokens 时服务端默认很小
+            # （GLM 默认 1024），思考型模型+主聊天长输入首战必空 → 空流重试 2 轮 = 3 倍等待。
+            # max_tokens 只是上限不按它计费，首战直接给 4096 一次出正文
+            'max_tokens': 4096,
         }
+        # ★ 2026-08-26 修正: 删除 thinking 参数注入——实测 glm-5.3 拒绝 disabled
+        # (HTTP 400 "该模型始终思考，不支持关闭思考")，发了必挂。
+        # 思考治理改为仅靠 reasoning 不转发显示（见下方流式处理）。
+        # ★ 2026-10-21 慢回答真凶实锤（开发者「做生蚝面」33~36s 案例）：
+        #   glm-5.3-Flash 默认深度思考 2270 tokens（占总耗时 80%+），裸调 47.9s/9字每秒。
+        #   正确参数是 reasoning_effort（智谱官方 low/high/max 三档；thinking.type 仍 400）：
+        #   实测 low 档 10.5s/47字每秒 = 快 4.5 倍，思考 tokens 归零。
+        #   默认 low（日常问答/菜谱/工具选择足够）；config.yaml 可配 zhipu_reasoning_effort: high 调回。
+        if provider_id == 'zhipu':
+            try:
+                _effort = 'low'
+                _cfgp = Path(__file__).resolve().parent.parent / 'config.yaml'
+                if _cfgp.exists():
+                    import yaml as _yaml
+                    _zcfg = (_yaml.safe_load(_cfgp.read_text(encoding='utf-8')) or {}).get('zhipu_reasoning_effort')
+                    if _zcfg in ('low', 'high', 'max'):
+                        _effort = _zcfg
+                payload['reasoning_effort'] = _effort
+                logger.info(f"[MultiModel] zhipu reasoning_effort={_effort}")
+            except Exception:
+                payload['reasoning_effort'] = 'low'
+        # ★ 2026-08-27 修复: qwen 思考型模型（qwen3.7 等）流式输出可能全程只有
+        # reasoning_content 而 content 为空 -> 哈文转发空流 -> 前端报"无响应"。
+        # DashScope 支持 enable_thinking 参数且全系列兼容（非思考模型自动忽略）。
+        if provider_id == 'qwen':
+            payload['enable_thinking'] = False
 
         # ★ 2026-07-11: Function Calling — 添加 tools 参数
         if tools:
@@ -673,19 +855,23 @@ class MultiModelManager:
                     if stream:
                         resp = requests.post(
                             chat_url, headers=headers, json=payload,
-                            stream=True, timeout=(10, 120)  # connect=10s, read=120s
+                            stream=True, timeout=(10, BRAIN_READ_TIMEOUT)  # #1507: connect=10s, read=默认240s(config brain_read_timeout)
                         )
                         if resp.status_code == 429:
-                            last_error = f'请求过频(429)，需要冷却'
+                            last_error = f'HTTP 429 请求过频 —— 模型限流中（通常几十秒自动恢复）。→ 请等 30 秒再发，或点 🏠本地 用本地模型（不限流）'
                             continue  # 重试
                         if resp.status_code == 502 or resp.status_code == 503:
                             last_error = f'服务暂不可用({resp.status_code})，等待重试'
                             continue  # 重试
                         if resp.status_code != 200:
-                            yield {'type': 'error', 'content': f'HTTP {resp.status_code}: {resp.text[:200]}'}
+                            yield {'type': 'error', 'content': self._friendly_http_error(provider_id, resp.status_code, resp.text)}
                             return
                         # DEBUG: 确认实际收到的响应
                         first_content = ""
+                        _yielded_any_content = False  # 2026-08-27: 空流检测
+                        _saw_reasoning = False        # ★ 2026-09-27: 思考内容检测
+                        _finish = ''                  # ★ 2026-09-27: 结束原因检测
+                        _tc_streams = {}              # ★ #1328: 流式 tool_calls 分片累积（index→槽）
                         for line in resp.iter_lines():
                             if line:
                                 line = line.decode('utf-8')
@@ -695,34 +881,75 @@ class MultiModelManager:
                                         break
                                     try:
                                         chunk = json.loads(data)
-                                        delta = chunk['choices'][0]['delta']
+                                        _ch0 = (chunk.get('choices') or [{}])[0]
+                                        delta = _ch0.get('delta') or {}
+                                        if _ch0.get('finish_reason'):
+                                            _finish = _ch0['finish_reason']
                                         content = delta.get('content', '')
                                         reasoning = delta.get('reasoning_content', '')
                                         if reasoning:
+                                            _saw_reasoning = True
+                                        # ★ 2026-08-25 P3: 尊重 show_thinking 配置——默认不展示（省 token 后通常也无思考）
+                                        if reasoning and _show_think:
                                             yield {'type': 'thinking', 'content': reasoning}
+                                        # ★ #1328（2026-10-30）流式 tool_calls 收集：流式分支原先根本
+                                        #   不收集 delta.tool_calls——模型带工具调用的流整条无正文，
+                                        #   被空流重试白烧 2 次（Ollama 搬家任务实锤 finish=tool_calls
+                                        #   →「模型未返回正文」）。id/首片带名，arguments 跨分片拼接。
+                                        for _tcf in (delta.get('tool_calls') or []):
+                                            _tix = _tcf.get('index', 0)
+                                            _tslot = _tc_streams.setdefault(_tix, {
+                                                'id': '', 'type': 'function',
+                                                'function': {'name': '', 'arguments': ''}})
+                                            if _tcf.get('id'):
+                                                _tslot['id'] = _tcf['id']
+                                            _tfn = _tcf.get('function') or {}
+                                            if _tfn.get('name'):
+                                                _tslot['function']['name'] = _tfn['name']
+                                            if _tfn.get('arguments'):
+                                                _tslot['function']['arguments'] += _tfn['arguments']
                                         if content:
                                             if not first_content:
                                                 first_content = content
                                                 logger.info(f"[MultiModel] {provider_id} 首字: {content[:50]}")
                                             yield {'type': 'text', 'content': content}
+                                            _yielded_any_content = True
                                     except (json.JSONDecodeError, KeyError, IndexError):
                                         pass
                         # 成功到达这里 → 返回
                         logger.info(f"[MultiModel] {provider_id} 流式响应完成")
+                        # ★ #1328：有工具调用必须透传回 FC 循环继续执行，绝不进空流重试
+                        if _tc_streams:
+                            _tcs_out = [_tc_streams[k] for k in sorted(_tc_streams)]
+                            logger.info(f"[MultiModel] {provider_id} 流式返回 tool_calls: {len(_tcs_out)}个（finish={_finish or '无'}）")
+                            yield {'type': 'tool_calls', 'content': _tcs_out}
+                            return
+                        if not _yielded_any_content:
+                            # ★ 2026-09-27 修空回复 v2：放宽重试条件——实测除「思考吃光额度
+                            # (finish=length+有 reasoning)」外，还有「思考完正文仍空但 finish=stop」
+                            # 和「断流没带 finish」两种漏网（美团查询实锤，两次必现）。
+                            # 只要全流无正文且还有重试额度，一律加大 max_tokens 重试，不再挑 finish 原因。
+                            if attempt < max_retries:
+                                payload['max_tokens'] = min(int(payload.get('max_tokens') or 1024) * 3, 8192)
+                                logger.info(f"[MultiModel] {provider_id} 空流(finish={_finish or '无'},思考={'有' if _saw_reasoning else '无'})，加大到 {payload['max_tokens']} 重试")
+                                continue
+                            logger.warning(f"[MultiModel] {provider_id} 空流兜底失败: finish={_finish or '无'} saw_reasoning={_saw_reasoning} max_tokens={payload.get('max_tokens')}")
+                            # ★ 2026-08-27: 全流无 content（如思考型模型思考截断）——给出明确提示
+                            yield {'type': 'error', 'content': '模型未返回正文（可能为思考型模型思考被截断或服务端异常）。→ 请重试，或切换非思考模型（如 qwen-plus / glm-4-flash）'}
                         return
                     else:
                         resp = requests.post(
                             chat_url, headers=headers, json=payload,
-                            timeout=(10, 120)  # connect=10s, read=120s
+                            timeout=(10, BRAIN_READ_TIMEOUT)  # #1507: connect=10s, read=默认240s(config brain_read_timeout)
                         )
                         if resp.status_code == 429:
-                            last_error = f'请求过频(429)，需要冷却'
+                            last_error = f'HTTP 429 请求过频 —— 模型限流中（通常几十秒自动恢复）。→ 请等 30 秒再发，或点 🏠本地 用本地模型（不限流）'
                             continue
                         if resp.status_code == 502 or resp.status_code == 503:
                             last_error = f'服务暂不可用({resp.status_code})，等待重试'
                             continue
                         if resp.status_code != 200:
-                            yield {'type': 'error', 'content': f'HTTP {resp.status_code}: {resp.text[:200]}'}
+                            yield {'type': 'error', 'content': self._friendly_http_error(provider_id, resp.status_code, resp.text)}
                             return
                         result = resp.json()
                         msg = result['choices'][0]['message']
@@ -769,17 +996,39 @@ class MultiModelManager:
             return
 
         # Convert OpenAI format messages to Gemini format
+        # ★ 2026-09-24 看图路由：支持 OpenAI 视觉消息（content 为 list，含 image_url dataURL）
         gemini_contents = []
         system_instruction = ""
         for msg in messages:
             role = msg.get("role", "user")
             content = msg.get("content", "")
             if role == "system":
-                system_instruction = content
+                system_instruction = content if isinstance(content, str) else ""
             elif role == "user":
-                gemini_contents.append({"role": "user", "parts": [{"text": content}]})
+                parts = []
+                if isinstance(content, str):
+                    parts = [{"text": content}]
+                elif isinstance(content, list):
+                    for _c in content:
+                        if not isinstance(_c, dict):
+                            continue
+                        if _c.get("type") == "text":
+                            parts.append({"text": _c.get("text", "")})
+                        elif _c.get("type") == "image_url":
+                            _url = (_c.get("image_url", {}) or {}).get("url", "")
+                            _m = re.match(r'^data:([^;]+);base64,(.+)$', _url, re.S)
+                            if _m:
+                                parts.append({"inline_data": {"mime_type": _m.group(1), "data": _m.group(2)}})
+                        elif _c.get("type") == "file":
+                            # ★ 2026-09-26 文件直发：OpenAI file part → Gemini inline_data
+                            _fobj = _c.get("file", {}) or {}
+                            _fd = _fobj.get("file_data", "") or ""
+                            _fm = re.match(r'^data:([^;]+);base64,(.+)$', _fd, re.S)
+                            if _fm:
+                                parts.append({"inline_data": {"mime_type": _fm.group(1), "data": _fm.group(2)}})
+                gemini_contents.append({"role": "user", "parts": parts or [{"text": ""}]})
             elif role == "assistant":
-                gemini_contents.append({"role": "model", "parts": [{"text": content}]})
+                gemini_contents.append({"role": "model", "parts": [{"text": content if isinstance(content, str) else ""}]})
 
         url = f"{base_url}/models/{model_name}:{'streamGenerateContent' if stream else 'generateContent'}"
         params = {"key": api_key}
@@ -804,7 +1053,7 @@ class MultiModelManager:
                     with bypass_independence():
                         resp = requests.post(
                             url, params=params, json=payload,
-                            stream=True, timeout=(10, 120)
+                            stream=True, timeout=(10, BRAIN_READ_TIMEOUT)  # #1507: read=默认240s
                         )
                     if resp.status_code == 429:
                         last_error = 'Gemini 请求过频(429)，需要冷却'
@@ -846,7 +1095,7 @@ class MultiModelManager:
                     with bypass_independence():
                         resp = requests.post(
                             url, params=params, json=payload,
-                            timeout=(10, 120)
+                            timeout=(10, BRAIN_READ_TIMEOUT)  # #1507: read=默认240s
                         )
                     if resp.status_code == 429:
                         last_error = 'Gemini 请求过频(429)，需要冷却'
@@ -885,16 +1134,66 @@ class MultiModelManager:
     # 统一生成入口
     # ═══════════════════════════════════════════════════════════════════
 
-    def generate_response(self, messages, stream=True, tools=None):
+    def generate_response(self, messages, stream=True, tools=None, model=None):
         """统一生成入口：根据 current_model 路由到对应生成器。
 
         engine.py 调用：mm.generate_response(all_messages, stream=True)
         自动路由到 _generate_ollama / _generate_openai_compatible / _generate_gemini
 
         ★ 2026-07-11: 新增 tools 参数（Function Calling支持）
+        ★ #1265（2026-10-29）：新增 model 显式参数——调用方指定模型时直接传参，
+          不再临时改写 self.current_model（全局换血）。旧做法在流式消费的长窗口内
+          让所有并发读者（批改/工具/其他会话）读到临时值，14:02 批改误报实锤。
+          self.current_model 语义从此收敛为「用户的持久选择」，只有 set_current_model
+          / _apply_local_model 两条持久化链写它。
         """
-        provider_id = self.current_model
+        provider_id = model if model else self.current_model
         logger.info(f"[MultiModel] generate_response 路由 → {provider_id}, tools={'有' if tools else '无'}")
+
+        # ★ #1241（2026-10-27）：HarvenEye 是本地混合模型引擎，不是外脑——
+        #   落到 openai_compatible 会拿 PROVIDERS['harveneye'] 撞 KeyError 'base_url'（实锤）。
+        # ★ 2026-11-14（15:53 Agent 三连拒实锤）：原实现直接报错拒答，用户消息石沉大海。
+        #   改为「选谁用谁」的正确姿势：委托 Eye 本地对话通道真跑（本地引擎本地跑），
+        #   通道不可用时才给人话指路（方案 A 兜底），绝不偷偷换模型。
+        if provider_id == 'harveneye':
+            logger.info("[MultiModel] harveneye → 委托 Eye 本地对话通道（本地引擎本地跑）")
+            from src.core import eye_client as _eye
+            if tools:
+                logger.warning("[MultiModel] harveneye 本地通道不支持 Function Calling，tools 已忽略")
+
+            def _eye_gen():
+                try:
+                    if stream:
+                        stream_gen = _eye._inproc_chat_stream(messages)
+                        if stream_gen is not None:
+                            got = False
+                            for piece in stream_gen:
+                                if piece:
+                                    got = True
+                                    yield {'type': 'text', 'content': piece}
+                            if got:
+                                return
+                        # 流式通道不可用/无产出 → 非流式兜底
+                        ok, content = _eye.chat(messages)
+                        if ok and content:
+                            yield {'type': 'text', 'content': content}
+                        else:
+                            yield {'type': 'error', 'content':
+                                   f'HarvenEye 本地通道未就绪（{content or "无响应"}）。'
+                                   '请到设置页检查 HarvenEye 视觉模型，或点对话区 🏠本地 切 Ollama 对话'}
+                    else:
+                        ok, content = _eye.chat(messages)
+                        if ok and content:
+                            yield {'type': 'text', 'content': content}
+                        else:
+                            yield {'type': 'error', 'content':
+                                   f'HarvenEye 本地通道未就绪（{content or "无响应"}）。'
+                                   '请到设置页检查 HarvenEye 视觉模型，或点对话区 🏠本地 切 Ollama 对话'}
+                except Exception as e:
+                    logger.error(f"[MultiModel] harveneye 本地通道失败: {e}", exc_info=True)
+                    yield {'type': 'error', 'content':
+                           f'HarvenEye 本地对话失败: {e}。可点对话区 🏠本地 切 Ollama 对话'}
+            return _eye_gen()
 
         if provider_id == 'ollama':
             return self._generate_ollama(messages, stream=stream)

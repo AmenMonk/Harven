@@ -31,7 +31,18 @@ def _shell(cmd: str) -> str:
             cmd, shell=True, capture_output=True, text=True, timeout=10,
             encoding="utf-8", errors="replace"
         )
-        return result.stdout.strip() + result.stderr.strip()
+        # ★ 2026-09-22 修复(#814)：不再把 stderr 拼进返回值。
+        #   旧逻辑 stdout+stderr 拼接，命令缺失/失败时 stderr 报错文本
+        #   （如 "...operable program or batch file."）会被当成指纹值
+        #   存进绑定文件，导致重启发疯式 CPU/BIOS/主板 ❌ 不匹配。
+        out = (result.stdout or "").strip()
+        if result.returncode != 0 or not out:
+            return ""
+        low = out.lower()
+        if ("not recognized" in low or "operable program" in low
+                or "不是内部或外部命令" in out):
+            return ""
+        return out
     except Exception:
         return ""
 

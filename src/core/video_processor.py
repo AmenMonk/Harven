@@ -216,17 +216,28 @@ def analyze_video(model_manager, text, video_path, system_prompt=None, stream=Tr
     yield ("thinking", f"已抽取 {len(frames)} 个关键帧，正在逐帧分析...")
 
     # 3. 逐帧分析
-    from src.core.image_processor import analyze_image, get_available_models
+    # ★ #1204（2026-10-25 开发者死命令）：只用用户选的主模型，严禁扫描代选；不能看图如实报错
+    from src.core.image_processor import analyze_image, model_supports_vision, installed_vision_models
 
-    available = get_available_models(model_manager.base_url)
-    vision_model = None
-    for name in available:
-        if any(v in name.lower() for v in ["llava", "minicpm-v", "qwen2-vl", "bakllava", "moondream"]):
-            vision_model = name
-            break
-
-    if not vision_model:
-        vision_model = model_manager.model
+    vision_model = (getattr(model_manager, 'model', '') or '').strip()
+    _cur_name = vision_model or '（未选）'
+    # ★ #1267：主模型=HarvenEye → 视频逐帧走 Eye 视觉通道（帧循环内分支），跳过字面名检查
+    from src.core import eye_client as _eyecli
+    _eye_video = _eyecli.is_selected()
+    if not _eye_video:
+        try:
+            if not vision_model or not model_supports_vision(vision_model, base_url=model_manager.base_url):
+                vision_model = None
+        except Exception:
+            vision_model = None
+    if not vision_model and not _eye_video:
+        try:
+            _hint = ' / '.join(installed_vision_models(base_url=model_manager.base_url)[:4])
+        except Exception:
+            _hint = ''
+        yield ("error", f"当前本地模型「{_cur_name}」不支持看图（视频逐帧分析需要）。"
+                        f"请到 设置 → 模型中心 自己换一个能看图的本地模型（已装可选：{_hint or '还没有'}），或切到外脑模式。")
+        return
 
     frame_descriptions = []
 
@@ -236,30 +247,43 @@ def analyze_video(model_manager, text, video_path, system_prompt=None, stream=Tr
 
             # 构建帧分析请求
             frame_prompt = "请简洁描述这一帧画面中的内容（人物、场景、动作、文字等），50字以内。"
-            message = {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": frame_prompt},
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"file://{frame_path}"}
-                    }
-                ]
-            }
 
-            messages = []
-            if system_prompt:
-                messages.append({"role": "system", "content": system_prompt})
-            messages.append(message)
+            # ★ #1267（2026-10-29）：主模型=HarvenEye → Eye 视觉通道逐帧分析
+            from src.core import eye_client as _eyecli
+            if _eyecli.is_selected():
+                import base64 as _b64m
+                with open(frame_path, 'rb') as _f:
+                    _fb64 = _b64m.b64encode(_f.read()).decode()
+                _ok, _ans = _eyecli.vision_chat(frame_prompt, [_fb64], timeout=120.0,
+                                                system=system_prompt or '')
+                if not _ok:
+                    raise RuntimeError(_ans)
+                description = str(_ans).strip()
+            else:
+                message = {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": frame_prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"file://{frame_path}"}
+                        }
+                    ]
+                }
 
-            response = model_manager.client.chat.completions.create(
-                model=vision_model,
-                messages=messages,
-                stream=False,
-                max_tokens=200,
-            )
+                messages = []
+                if system_prompt:
+                    messages.append({"role": "system", "content": system_prompt})
+                messages.append(message)
 
-            description = response.choices[0].message.content.strip()
+                response = model_manager.client.chat.completions.create(
+                    model=vision_model,
+                    messages=messages,
+                    stream=False,
+                    max_tokens=200,
+                )
+
+                description = response.choices[0].message.content.strip()
             frame_descriptions.append({
                 "frame": i + 1,
                 "time_sec": round(i * max(1, info["duration_sec"] / len(frames)), 1),

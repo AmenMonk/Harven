@@ -113,16 +113,11 @@ async function checkEvolutionUpdates() {
  */
 async function requestEvolution(version, downloadUrl) {
     try {
-        const response = await fetch('/api/evolution/request', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                version: version,
-                download_url: downloadUrl,
-            }),
+        const { data } = await evoPost('/api/evolution/request', {
+            version: version,
+            download_url: downloadUrl,
         });
-
-        const data = await response.json();
+        if (!data) return;
         if (data.success) {
             alert(`进化请求已提交，ID: ${data.log_id}，请等待批准`);
             await loadEvolutionHistory();
@@ -224,6 +219,30 @@ function getEvolutionActions(log) {
 }
 
 /**
+ * ★ 2026-11-15: 进化写操作统一入口（密码门）——先发请求；若后端返回 401 password_required（受保护动作），
+ * 再弹窗收集管理员密码重试一次。密码门关闭（password_protected_actions 未含 evolution）时零打扰。
+ */
+async function evoPost(url, payload = {}) {
+    const doPost = (body) => fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+    let resp = await doPost(payload);
+    let data = await resp.json().catch(() => ({}));
+    if (resp.status === 401 && data.code === 'password_required') {
+        const pwd = prompt('🔒 该操作需要管理员密码（受保护的进化操作）：', '');
+        if (!pwd) {
+            alert('已取消：未输入管理员密码');
+            return null;
+        }
+        resp = await doPost({ ...payload, password: pwd });
+        data = await resp.json().catch(() => ({}));
+    }
+    return { resp, data };
+}
+
+/**
  * 批准进化
  */
 async function approveEvolution(logId) {
@@ -232,14 +251,13 @@ async function approveEvolution(logId) {
     }
 
     try {
-        const response = await fetch(`/api/evolution/${logId}/approve`, {
-            method: 'POST',
-        });
-
-        const data = await response.json();
+        const { resp, data } = await evoPost(`/api/evolution/${logId}/approve`);
+        if (!data) return;
         if (data.success) {
             alert('批准成功');
             await loadEvolutionHistory();
+        } else if (resp.status === 403 && data.code === 'password_wrong') {
+            alert('批准失败: 管理员密码错误');
         } else {
             alert(`批准失败: ${data.error || '未知错误'}`);
         }
@@ -257,14 +275,13 @@ async function rejectEvolution(logId) {
     }
 
     try {
-        const response = await fetch(`/api/evolution/${logId}/reject`, {
-            method: 'POST',
-        });
-
-        const data = await response.json();
+        const { resp, data } = await evoPost(`/api/evolution/${logId}/reject`);
+        if (!data) return;
         if (data.success) {
             alert('拒绝成功');
             await loadEvolutionHistory();
+        } else if (resp.status === 403 && data.code === 'password_wrong') {
+            alert(`拒绝失败: 管理员密码错误`);
         } else {
             alert(`拒绝失败: ${data.error || '未知错误'}`);
         }
@@ -282,15 +299,14 @@ async function rollbackEvolution(logId) {
     }
 
     try {
-        const response = await fetch(`/api/evolution/${logId}/rollback`, {
-            method: 'POST',
-        });
-
-        const data = await response.json();
+        const { resp, data } = await evoPost(`/api/evolution/${logId}/rollback`);
+        if (!data) return;
         if (data.success) {
             alert('回滚成功');
             await loadCurrentVersion();
             await loadEvolutionHistory();
+        } else if (resp.status === 403 && data.code === 'password_wrong') {
+            alert(`回滚失败: 管理员密码错误`);
         } else {
             alert(`回滚失败: ${data.error || '未知错误'}`);
         }
@@ -451,14 +467,11 @@ window.HarvenEvolution = {
         const comment = prompt(`批准提案 #${id}，可输入批注（可选）：`, '');
         if (comment === null) return; // 取消
         try {
-            const r = await fetch(`/api/evolution/proposals/${id}/approve`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ comment: comment || '' }),
-            });
-            const d = await r.json();
-            if (d.success) { toast && toast('✅ 提案已批准'); this.loadProposals(); }
-            else { toast && toast('批准失败: ' + (d.error || '未知错误')); }
+            const { resp, data } = await evoPost(`/api/evolution/proposals/${id}/approve`, { comment: comment || '' });
+            if (!data) return;
+            if (data.success) { toast && toast('✅ 提案已批准'); this.loadProposals(); }
+            else if (resp.status === 403 && data.code === 'password_wrong') { toast && toast('❌ 管理员密码错误'); }
+            else { toast && toast(`批准失败: ${data.error || '未知错误'}`); }
         } catch(e) { toast && toast('请求失败: ' + e.message); }
     },
 
@@ -466,14 +479,10 @@ window.HarvenEvolution = {
         const comment = prompt(`拒绝提案 #${id}，请说明原因：`, '');
         if (comment === null) return;
         try {
-            const r = await fetch(`/api/evolution/proposals/${id}/reject`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ comment: comment || '' }),
-            });
-            const d = await r.json();
-            if (d.success) { toast && toast('提案已拒绝'); this.loadProposals(); }
-            else { toast && toast('拒绝失败: ' + (d.error || '未知错误')); }
+            const { resp, data } = await evoPost(`/api/evolution/proposals/${id}/reject`, { comment: comment || '' });
+            if (!data) return;
+            if (data.success) { toast && toast('提案已拒绝'); this.loadProposals(); }
+            else { toast && toast(`拒绝失败: ${data.error || '未知错误'}`); }
         } catch(e) { toast && toast('请求失败: ' + e.message); }
     },
 

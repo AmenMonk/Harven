@@ -10,7 +10,7 @@ Werkzeug==3.1.8
 # ========== AI / 模型 ==========
 openai==2.41.0        # 兼容 SDK，连接 Ollama / 云端模型
 modelscope>=1.20      # ModelScope 模型下载（国内GGUF镜像）
-llama-cpp-python>=0.3  # 本地 GGUF 推理引擎（无需Ollama）
+# llama-cpp-python>=0.3  # 本地 GGUF 推理（可选，Windows 路径过长会失败；Ollama 是主推理）
 litellm==1.88.0       # 多模型统一接口
 
 # ========== 向量检索 ==========
@@ -26,7 +26,11 @@ tiktoken==0.13.0        # Token 计数
 
 # ========== 语音 / 音视频 ==========
 faster-whisper==1.2.1  # 本地语音转写
+zhconv==1.4.3  # ★(#818) 手机语音识别结果繁→简（纯离线）
 opencv-python-headless==4.13.0.92  # 视频处理（无 GUI）
+# 可选：NVIDIA 显卡加速语音识别（#821，4070 等用户解除注释，约 +700MB，装完自动走 GPU）
+# nvidia-cublas-cu12
+# nvidia-cudnn-cu12
 
 # ========== 桌面版 UI（可选 — Web UI 是主要界面，PySide6 仅旧版桌面端用）==========
 # ★ 2026-08-17: 跨平台说明
@@ -69,4 +73,27 @@ watchdog==6.0.0
 # exa-py>=1.0   # 需要 Exa API Key，按需安装
 
 # 本地 embedding 回退（知识库用，可选）
-# sentence-transformers>=3.0   # 当 Ollama 不可用时替代 FAISS embedding
+sentence-transformers==6.1.0  # ★(#795) 默认嵌入后端（bge-small-zh 本地向量，解除 Ollama 依赖）
+
+# 云端中转通道（手机远程，#803~#812）— 09-22 补：新装环境曾因缺此包「连接服务器失败」
+websockets==16.1.1
+# 系统监控（设置页内存/磁盘/进程读取）— 09-22 补：新装环境曾因缺此包监控失效
+psutil==7.2.2
+
+# 文档导入/RSS监控/分词 — 09-22 #846 补
+python-docx==1.2.0
+feedparser==6.0.14
+jieba==0.42.1
+
+# xlsx工具/IoT MQTT — 09-22 #846 补
+openpyxl==3.1.5
+paho-mqtt==2.1.0
+
+# 二维码生成（手机扫码绑定）— 09-22 #846 补
+qrcode==8.2
+
+# ★ 2026-11-12 能力五件套：OCR 识字 + 车牌识别（模型随包内置，零下载）
+# ⚠️ 铁律：这两个必须 --no-deps 安装！它们声明依赖 opencv-python，
+#    会顶掉本项目在用的 opencv 变体（11-12 cv2.pyd 被顶实锤，safe-delete 拦下才没炸）
+#    安装命令：pip install --no-deps rapidocr_onnxruntime==1.2.3 hyperlpr3==0.1.3
+#    运行依赖（onnxruntime/PyYAML/numpy/Pillow）主清单已全覆盖

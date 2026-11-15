@@ -1,0 +1,6 @@
+﻿OK  src\core\engine.py
+OK  src\core\panel_assist.py
+OK  src\core\acc_categories.py
+OK  static\panel-assist.js
+OK  tests\test_acc_unify.py
+OK  tests\test_acc_unify2.py

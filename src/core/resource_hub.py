@@ -492,7 +492,12 @@ class PyPIAdapter(ChannelAdapter):
                 "Accept": "application/json",
             })
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
+                raw = resp.read().decode("utf-8", errors="ignore")
+                # PyPI 搜索页返回 HTML（无公开 JSON 搜索 API），非 JSON 静默跳过（#1498 不再刷 ERROR）
+                if not raw.lstrip().startswith(("{", "[")):
+                    logger.debug("[PyPI] 搜索返回非 JSON（HTML 页），跳过解析")
+                    return []
+                data = json.loads(raw)
                 seen = set()
                 for item in data.get("results", [])[:limit * 2]:
                     name = item.get("name", "")
@@ -594,7 +599,8 @@ class WingetAdapter(ChannelAdapter):
             import subprocess
             result = subprocess.run(
                 ["winget", "search", query, "--accept-source-agreements"],
-                capture_output=True, text=True, timeout=self.timeout,
+                capture_output=True, timeout=self.timeout,
+                encoding="utf-8", errors="replace",  # 系统默认 GBK 解 UTF-8 输出会崩线程（#1498）
                 cwd=os.path.dirname(os.path.abspath(__file__)),
             )
             if result.returncode != 0:

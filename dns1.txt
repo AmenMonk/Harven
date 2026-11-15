@@ -1,0 +1,15 @@
+﻿nslookup : 非权威应答:
+所在位置 行:445 字符: 1
++ nslookup harvenhub.com 2>&1 | Out-File H:\HarvenAI\dns1.txt -Encoding ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (非权威应答::String) [], RemoteExceptio 
+   n
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+服务器:  UnKnown
+Address:  fe80::1
+
+名称:    harvenhub.com
+Address:  82.157.182.80
+

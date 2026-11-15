@@ -1,0 +1,15 @@
+﻿python.exe : [safe-delete][SAFE_DELETE_FAIL_CLOSED] {"target": "H:\\HarvenAI\\_
+tmp_r1.txt", "reason": "trash-failed", "detail": "[safe-delete] 鎿嶄綔澶辫触: ERROR H
+:\\HarvenAI\\_tmp_r1.txt: Error during a `trash` operation: Unknown { descripti
+on: \"Some operations were aborted\" }"}
+所在位置 行:451 字符: 1
++ & H:\HarvenAI\.venv\Scripts\python.exe H:\HarvenAI\_tmp_finish.py 2>& ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([safe-delete][S...e aborted\" }"} 
+   :String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+OK  src\core\panel_assist.py
+OK  src\core\panel_assist_routes.py
+璺宠繃 _tmp_r1.txt [safe-delete] 鎿嶄綔澶辫触: ERROR H:\HarvenAI\_tmp_r1.txt: Error during a `trash` operation: Unknown { description: "Some operations were aborted" }
+娓呯悊涓存椂鏂囦欢 11 涓?

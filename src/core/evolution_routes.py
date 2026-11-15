@@ -22,6 +22,27 @@ logger = logging.getLogger(__name__)
 bp = Blueprint('evolution', __name__, url_prefix='/api')
 
 
+def _pwd_gate():
+    """★ 2026-11-15 受保护动作密码门（方案A①+②）：
+    security.password_protected_actions 含 'evolution' 时，修改类端点
+    （批准/回滚/请求进化/批准提案）必须携带管理员密码：
+    body.password 或 X-Admin-Password 请求头。
+    拒绝/创建提案不拦（无修改能力，保持受控进化 UX：AI 可提提案，人批密码才生效）。"""
+    from src.core.security_guard import is_protected_action, verify_admin_password
+    if not is_protected_action('evolution'):
+        return None
+    data = request.get_json(silent=True) or {}
+    pwd = (str(data.get('password') or '').strip()
+           or (request.headers.get('X-Admin-Password') or '').strip())
+    if not pwd:
+        return jsonify({'success': False,
+                        'error': '此操作受管理员密码保护，请输入密码后重试',
+                        'code': 'password_required'}), 401
+    if not verify_admin_password(pwd):
+        return jsonify({'success': False, 'error': '密码错误', 'code': 'password_wrong'}), 403
+    return None
+
+
 @bp.route('/evolution/version', methods=['GET'])
 def get_version():
     """获取当前版本信息"""
@@ -50,7 +71,12 @@ def check_updates():
 def request_evolution():
     """请求进化"""
     try:
+        _g = _pwd_gate()
+        if _g:
+            return _g
         data = request.get_json(force=True, silent=True) or {}
+        # ★ 2026-11-15: 密码门放行后剔除密码，避免明文落盘（package 会整体存进 evolution_log.json）
+        data.pop('password', None)
         mgr = get_evolution_manager()
         result = mgr.request_evolution(data)
         return jsonify(result)
@@ -63,6 +89,9 @@ def request_evolution():
 def approve_evolution(log_id):
     """批准进化"""
     try:
+        _g = _pwd_gate()
+        if _g:
+            return _g
         mgr = get_evolution_manager()
         result = mgr.approve_evolution(log_id)
         return jsonify(result)
@@ -87,6 +116,9 @@ def reject_evolution(log_id):
 def rollback_evolution(log_id):
     """回滚进化"""
     try:
+        _g = _pwd_gate()
+        if _g:
+            return _g
         mgr = get_evolution_manager()
         result = mgr.rollback_evolution(log_id)
         return jsonify(result)
@@ -139,6 +171,9 @@ def create_proposal():
 def approve_proposal(proposal_id):
     """批准进化提案"""
     try:
+        _g = _pwd_gate()
+        if _g:
+            return _g
         data = request.get_json(force=True, silent=True) or {}
         comment = data.get('comment', '')
         mgr = get_evolution_manager()

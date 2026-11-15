@@ -1,0 +1,5 @@
+﻿**测试**：_test_batch2.py 16 项 15 PASS + 1 项是测试脚本没处理 404 异常（后端 404 分支实际正确，单独复验过 {"error":"面板不存在:..."}）；快车道分域 T1-T4 全对（homework/exam/progress/vision）；新表入库+清理实测通过；staging 同步 15 文件 MD5 全一致
+
+**⚠️ 重启记录**：旧进程 20560 taskkill /F 成功（非管理员进程不用 sudo），新进程跑在后台任务 dctzze，改动已生效
+
+**经验**：PowerShell 工具 stdout 大概率被吞 → 一律 Out-File 落盘再 Read；Start-Job 被沙箱拦截不能用

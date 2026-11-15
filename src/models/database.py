@@ -324,6 +324,20 @@ def get_messages(conversation_id, limit=50):
     ).fetchall()
     conn.close()
     result = [dict(r) for r in reversed(rows)]
+    # ★ #1304（2026-10-29）source 友好化（读时转换，不动存量数据）：
+    #   mobile_relay 是内部通道标识，被手机端原样渲染成乱码样标签（22:22 实测实锤）；
+    #   其他 source（SPA 回复方「外脑/本地/垂直」标签）不受影响
+    import json as _json
+    for _m in result:
+        try:
+            _meta = _m.get('metadata')
+            if isinstance(_meta, str) and 'mobile_relay' in _meta:
+                _md = _json.loads(_meta)
+                if isinstance(_md, dict) and _md.get('source') == 'mobile_relay':
+                    _md['source'] = '📱 手机'
+                    _m['metadata'] = _json.dumps(_md, ensure_ascii=False)
+        except Exception:
+            pass
     return result
 
 

@@ -64,6 +64,7 @@ _MAGIC_SIGNATURES = {
     b"ID3": ".mp3",               # MP3 (ID3v2 tag)
     b"\xff\xfb": ".mp3",          # MP3 (MPEG frame sync)
     b"\xff\xf3": ".mp3",          # MP3 (MPEG v2.5)
+    b"#!AMR": ".amr",             # ★ #954: AMR 录音（华为/部分安卓系统录音机默认格式）
 }
 
 _CLAMAV_AVAILABLE = None
@@ -152,8 +153,12 @@ def check_magic_bytes(filepath: str, expected_ext: str = None) -> Tuple[bool, st
             break
 
     if detected_type is None:
-        # 无法识别 Magic Bytes，标记为可疑
-        return False, f"无法识别的文件类型（Magic Bytes: {header[:4].hex()}）"
+        # ★ 2026-09-23: MP4/M4A 容器（华为等手机 WebView 录音默认 audio/mp4）—— ftyp box 在偏移 4
+        if len(header) >= 8 and header[4:8] == b"ftyp":
+            detected_type = ".mp4"
+        else:
+            # 无法识别 Magic Bytes，标记为可疑
+            return False, f"无法识别的文件类型（Magic Bytes: {header[:4].hex()}）"
 
     if detected_type == ".exe" or detected_type == ".elf":
         return False, f"检测到可执行文件（Magic Bytes 匹配 {detected_type}）"
@@ -164,6 +169,11 @@ def check_magic_bytes(filepath: str, expected_ext: str = None) -> Tuple[bool, st
         OFFICE_ZIP_EXTENSIONS = {'.docx', '.pptx', '.xlsx', '.xlsm', '.odt', '.odp', '.ods', '.epub', '.apk', '.jar', '.war'}
         if detected_type == '.zip' and expected_ext in OFFICE_ZIP_EXTENSIONS:
             return True, f"Office文件 {expected_ext}（ZIP容器格式）"
+        # ★ 2026-09-23 音频家族互认：手机录音容器可能是 webm/mp4/wav 任意一种（随机型而定），
+        # 录音的扩展名与实际容器不符属于正常现象，不算伪装攻击（转写引擎 PyAV 均可解码）
+        AUDIO_EXTENSIONS = {'.wav', '.webm', '.mp3', '.m4a', '.mp4', '.ogg', '.flac', '.aac', '.amr'}
+        if detected_type in AUDIO_EXTENSIONS and expected_ext in AUDIO_EXTENSIONS:
+            return True, f"音频文件 {expected_ext}（实际容器 {detected_type}，均属录音格式）"
         return False, f"文件扩展名不匹配: 声称为 {expected_ext}，实际为 {detected_type}（Magic Bytes）"
 
     return True, f"文件类型: {detected_type}"

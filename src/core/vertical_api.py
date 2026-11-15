@@ -40,7 +40,10 @@ _ADAPTERS_DIR = Path(__file__).parent.parent.parent / "data" / "vertical_adapter
 _LAYOUTS_DIR = Path(__file__).parent.parent.parent / "data" / "ui_layouts"
 
 # ═══════════════════════════════════════════════════════════════
-# 6 个内置垂直模型定义（元数据驱动）
+# 内置垂直模型定义（元数据驱动）
+# ★ A批A2(2026-09-13): 翻译/代码生成/数据分析是 engine="model" 的伪模型（只是提示词模板套
+#   当前对话模型），不再冒充垂直模型 —— pseudo=True 不进垂直列表；翻译/写代码直接在聊天框说，
+#   数据分析走 pandas FC 工具。定义保留是为了兼容旧画板/历史记录的 model_id 引用（仍可执行）。
 # ═══════════════════════════════════════════════════════════════
 
 _BUILTIN_MODELS = [
@@ -56,7 +59,10 @@ _BUILTIN_MODELS = [
         "description": "AI 图片生成 — 输入文字描述，生成图片",
         "engine": "tool_executor",
         "executor_method": "run_image_gen",
-        "task_keywords": ["画", "生成图片", "画图", "绘制", "插画", "海报", "logo", "图片", "image", "draw", "paint"],
+        # ★ 2026-11-15: 清空触发词（方案 A ③）——本条目为旧画板/历史引用保留户口（executor_method 仍可执行），
+        #   但触发词与 z-image 条目几乎全同，且模型不可用时仍参与抢答（_detect_vertical_task 平分先注册者赢），
+        #   导致「画…」消息被死条目截胡。清空后不再参与匹配，画图由 z-image 正常接管。
+        "task_keywords": [],
         # ★ 2026-07-04: 能力边界 + 专业建议（参谋模式）
         "capability": {
             "can_do": ["生成静态图片", "支持写实/动漫/油画/水彩等风格", "分辨率 256-1024px"],
@@ -76,37 +82,92 @@ _BUILTIN_MODELS = [
         }
     },
     {
-        "id": "musicgen-small",
-        "name": "MusicGen Small",
+        # ★ 2026-11-14: MusicGen Small 已卸载，替换为 ACE-Step v1-3.5B（Apache 2.0，支持人声歌曲）
+        "id": "ace-step",
+        "name": "ACE-Step 音乐",
         "icon": "🎵",
-        "license": "CC-BY-NC 4.0",
-        "commercial_use": False,
-        "license_warning": "⚠️ 本模型为 CC-BY-NC 4.0 许可，不可用于商业用途",
+        "license": "Apache 2.0",
+        "commercial_use": True,
+        "license_warning": "",
         "type": "music_generation",
         "canvas_type": "music_generation",
-        "description": "AI 音乐生成 — 根据参数生成原创音乐",
+        "description": "AI 音乐生成 — 纯音乐/带人声歌曲（3.5B 本地模型）",
         "engine": "tool_executor",
-        "executor_method": "run_musicgen",
+        "executor_method": "run_ace_step",
         "task_keywords": ["作曲", "音乐", "写曲", "生成音乐", "编曲", "曲子", "旋律", "music", "song", "compose",
-                          # ★ 2026-07-03 扩展：覆盖用户常见表达（首歌/风格/乐器/场景）
                           "首歌", "一首歌", "写歌", "做歌", "做曲", "写一首", "生成歌", "唱首歌",
                           "乡村", "摇滚", "爵士", "流行乐", "古典", "电子乐", "布鲁斯", "民谣", "国风", "古风", "交响", "管弦", "史诗",
                           "钢琴曲", "吉他曲", "小提琴", "古筝", "二胡", "琵琶", "笛子", "贝斯", "萨克斯", "非洲鼓",
                           "BGM", "背景音乐", "配乐", "原声带",
                           "欢快", "悲伤", "忧伤", "舒缓", "激昂", "浪漫", "忧郁"],
-        # ★ 2026-07-04: 能力边界 + 专业建议（参谋模式）
         "capability": {
-            "can_do": ["生成纯伴奏音乐", "5-30秒短曲", "支持 blues/jazz/rock/classical/electronic/folk/country/pop/metal/中国传统/史诗 风格", "可调 BPM/情绪/乐器"],
-            "cannot_do": ["人声演唱", "歌词生成", "长曲(>30秒)", "多乐段拼接", "精确旋律控制（只能描述风格让AI自由生成）"],
-            "max_limits": "单次最长 30 秒，CPU 模式生成约 2-5 分钟",
-            "advisor_tips": "忧伤→小调+慢板(60-80BPM)+钢琴/弦乐；欢快→大调+快板(120-140BPM)+吉他/合成器；史诗→大调+中板(90-110BPM)+管弦；浪漫→大调+慢板(60-80BPM)+钢琴/吉他。首次生成建议用 auto 让AI自由发挥。",
+            "can_do": ["纯音乐/伴奏", "带人声歌曲（输入歌词即可演唱）", "10-240 秒长曲", "中英日韩多语言歌词", "国风/流行/古典/电子等全风格"],
+            "cannot_do": ["克隆指定歌手音色", "精确旋律控制（哼唱转写）", "多轨分拆（伴奏/人声分离）"],
+            "max_limits": "单次最长 240 秒，4070 显卡 30 秒曲约 10-30 秒生成",
+            "advisor_tips": "纯音乐歌词填 [inst] 或留空。带人声：写 [verse] [chorus] 段落歌词放 lyrics，风格标签放 prompt（如 'chinese traditional, guzheng, peaceful'）。想要人声清晰可加 'vocal, female voice'。",
         },
         "params": {
-            "style": {"type": "select", "label": "风格", "default": "auto", "options": ["auto 自动", "blues 布鲁斯", "jazz 爵士乐", "rock 摇滚", "classical 古典", "electronic 电子", "folk 民谣", "country 乡村", "pop 流行", "metal 金属", "chinese-traditional 中国传统", "epic 史诗"]},
-            "mood": {"type": "select", "label": "情绪", "default": "auto", "options": ["auto 自动", "happy 欢快", "sad 悲伤", "calm 平静", "energetic 充满活力", "mysterious 神秘", "romantic 浪漫", "melancholic 忧郁"]},
-            "instrument": {"type": "select", "label": "乐器", "default": "auto", "options": ["auto 自动", "piano 钢琴", "guitar 吉他", "violin 小提琴", "drums 架子鼓", "flute 长笛", "orchestra 管弦乐团", "synth 合成器"]},
-            "duration": {"type": "range", "label": "时长(秒)", "default": 15, "min": 5, "max": 60, "step": 5},
-            "bpm": {"type": "range", "label": "BPM 速度", "default": 120, "min": 60, "max": 200, "step": 10},
+            "prompt": {"type": "textarea", "label": "风格描述(英文标签)", "default": "", "placeholder": "如: chinese traditional, guzheng, peaceful, acoustic", "required": True},
+            "lyrics": {"type": "textarea", "label": "歌词(可选)", "default": "[inst]", "placeholder": "[inst]=纯音乐；写 [verse]/[chorus] 段落歌词则生成人声歌曲"},
+            "duration": {"type": "range", "label": "时长(秒)", "default": 30, "min": 10, "max": 240, "step": 5},
+            "steps": {"type": "range", "label": "生成步数(质量)", "default": 27, "min": 8, "max": 60, "step": 1},
+            "seed": {"type": "text", "label": "随机种子(可选)", "default": "-1", "placeholder": "-1=随机, 固定数字=复现"},
+        }
+    },
+    {
+        # ★ 2026-11-14 新增: Z-Image-Turbo（阿里通义 6B，Apache 2.0，8 步极速出图）
+        "id": "z-image-turbo",
+        "name": "Z-Image 图片",
+        "icon": "🖼️",
+        "license": "Apache 2.0",
+        "commercial_use": True,
+        "license_warning": "",
+        "type": "image_generation",
+        "canvas_type": "image_generation",
+        "description": "AI 图片生成 — 中文理解好，8 步极速出图（6B 本地模型）",
+        "engine": "tool_executor",
+        "executor_method": "run_zimage",
+        "task_keywords": ["画", "生成图片", "画图", "绘制", "插画", "海报", "logo", "图片", "image", "draw", "paint",
+                          "画一张", "生成一张", "照片级", "写实照片"],
+        "capability": {
+            "can_do": ["中文描述直接出图（无需英文）", "写实照片级/插画/海报", "1024×1024 高清", "文字渲染能力较强"],
+            "cannot_do": ["动态视频/动画", "精确编辑已有图片（局部重绘）", "超高分辨率(>1536px)"],
+            "max_limits": "单张图，8 步约 60 秒/张（1024×1024）",
+            "advisor_tips": "Z-Image 中文理解很强，直接用中文描述画面即可，比英文标签更准。描述越具体越好：主体+动作+环境+光线+风格（如'一只橘猫趴在窗台晒太阳，窗外海边雪景，暖色调摄影'）。",
+        },
+        "params": {
+            "prompt": {"type": "textarea", "label": "画面描述", "default": "", "placeholder": "直接用中文描述想要的画面...", "required": True},
+            "width": {"type": "range", "label": "宽度", "default": 1024, "min": 512, "max": 1536, "step": 64},
+            "height": {"type": "range", "label": "高度", "default": 1024, "min": 512, "max": 1536, "step": 64},
+            "steps": {"type": "range", "label": "步数", "default": 8, "min": 4, "max": 20, "step": 1},
+            "seed": {"type": "text", "label": "随机种子(可选)", "default": "-1", "placeholder": "-1=随机, 固定数字=复现"},
+        }
+    },
+    {
+        # ★ 2026-11-14 新增: Wan2.2 T2V A14B（阿里通义，Apache 2.0，文生视频双专家）
+        "id": "wan22-video",
+        "name": "Wan2.2 视频",
+        "icon": "🎬",
+        "license": "Apache 2.0",
+        "commercial_use": True,
+        "license_warning": "",
+        "type": "video_generation",
+        "canvas_type": "video_generation",
+        "description": "AI 视频生成 — 文字生成短视频（14B 本地模型，较慢）",
+        "engine": "tool_executor",
+        "executor_method": "run_wan22",
+        "task_keywords": ["生成视频", "做视频", "短视频", "文生视频", "动画视频", "video",
+                          "视频生成", "一段视频"],
+        "capability": {
+            "can_do": ["中文描述生成 3-8 秒短视频", "480p 电影感画面", "复杂运镜和物理动态"],
+            "cannot_do": ["长视频（>8秒）", "1080p 高清（显存不够）", "图生视频（本条目纯文生）", "带音频"],
+            "max_limits": "5 秒 480p 生成约 20-40 分钟，请耐心等待",
+            "advisor_tips": "描述用'主体+动作+场景+镜头感'结构（如'一只橘猫在雪地窗台打哈欠，室内暖光，电影感'）。生成较慢（约半小时），适合等得起的场景。",
+        },
+        "params": {
+            "prompt": {"type": "textarea", "label": "画面描述", "default": "", "placeholder": "描述视频内容：主体+动作+场景+镜头感...", "required": True},
+            "seconds": {"type": "range", "label": "时长(秒)", "default": 5, "min": 3, "max": 8, "step": 1},
+            "steps": {"type": "range", "label": "步数(质量)", "default": 30, "min": 15, "max": 50, "step": 5},
             "seed": {"type": "text", "label": "随机种子(可选)", "default": "-1", "placeholder": "-1=随机, 固定数字=复现"},
         }
     },
@@ -148,6 +209,7 @@ _BUILTIN_MODELS = [
         "canvas_type": "code_generation",
         "description": "AI 代码生成 — 描述需求，生成代码",
         "engine": "model",
+        "pseudo": True,
         "task_keywords": ["写代码", "生成代码", "编程", "代码", "函数", "脚本", "code", "function", "script"],
         # ★ 2026-07-04: 能力边界 + 专业建议（参谋模式）
         "capability": {
@@ -174,6 +236,7 @@ _BUILTIN_MODELS = [
         "canvas_type": "data_analysis",
         "description": "AI 数据分析 — 上传数据，自动分析并生成图表",
         "engine": "model",
+        "pseudo": True,
         "task_keywords": ["分析数据", "数据分析", "统计", "图表", "可视化", "数据", "analysis", "chart", "statistics"],
         # ★ 2026-07-04: 能力边界 + 专业建议（参谋模式）
         "capability": {
@@ -200,6 +263,7 @@ _BUILTIN_MODELS = [
         "canvas_type": "translation",
         "description": "AI 文档翻译 — 多语言互译",
         "engine": "model",
+        "pseudo": True,
         "task_keywords": ["翻译", "translate", "译成", "翻译成", "互译"],
         # ★ 2026-07-04: 能力边界 + 专业建议（参谋模式）
         "capability": {
@@ -301,6 +365,17 @@ def execute_vertical_model():
     model_id = data.get('model_id', '')
     params = data.get('params', {})
     action = data.get('action', 'generate')
+    # ★ 2026-09-15 开发者令#1：附件通道 —— 图片/音频/视频/文章随表单一起发
+    attachments = data.get('attachments') or []
+    if not isinstance(attachments, list):
+        attachments = []
+    att_images, att_text = [], ''
+    if attachments:
+        try:
+            att_images, att_text = _process_attachments(attachments[:4])
+        except Exception as att_e:
+            logger.error(f"[Vertical] 附件处理失败: {att_e}", exc_info=True)
+            return jsonify({"success": False, "error": f"附件处理失败: {str(att_e)[:150]}"}), 200
 
     # 先从内置模型找
     model = next((m for m in _BUILTIN_MODELS if m['id'] == model_id), None)
@@ -328,10 +403,17 @@ def execute_vertical_model():
                     result = _execute_discovered_transformers(dm, params)
                     return jsonify(result)
                 elif dm and dm.get('loader') == 'ollama':
-                    return jsonify({
-                        "success": False,
-                        "error": f"Ollama模型 {dm['id']} 请在模型设置里选择使用"
-                    }), 200
+                    # ★ 2026-09-15 方案1（已批准准）：Ollama 来源的发现模型直接走 Ollama 引擎执行
+                    #   （原逻辑吐老提示"请在模型设置里选择使用"——列表页 engine='ollama' 但执行入口
+                    #    查不到 discovered 模型，掉进这个旧兜底；现在复用已实测的 _execute_via_ollama）
+                    _om = {
+                        'id': f"discovered_{dm['id'].replace('/', '_').replace(':', '_')}",
+                        'name': f"{dm.get('icon', '📦')} {dm['name']}",
+                        'ollama_model': dm['id'],  # 原始模型名（minicpm-v:8b）
+                        'type': dm.get('category', 'general'),
+                    }
+                    logger.info(f"[Vertical] discovered Ollama模型执行: {dm['id']}")
+                    return jsonify(_execute_via_ollama(_om, params, images=att_images, extra_text=att_text))
             except Exception as e:
                 logger.error(f"[Vertical] discovered模型执行失败: {e}")
             return jsonify({
@@ -341,6 +423,11 @@ def execute_vertical_model():
         return jsonify({"success": False, "error": f"未知模型: {model_id}"}), 400
 
     engine = model.get('engine', 'tool_executor')
+
+    # ★ 2026-09-15: 附件只支持 Ollama 引擎模型（minicpm-v 等看图/转写模型）；其他引擎给出友好提示
+    if attachments and engine != 'ollama':
+        return jsonify({"success": False,
+                        "error": "这个模型暂时只支持文字输入。图片/音频/视频请用看图·理解类模型（如 👁️ minicpm-v:8b）"}), 200
 
     try:
         if engine == 'tool_executor':
@@ -360,14 +447,14 @@ def execute_vertical_model():
             
             if t.is_alive():
                 # 超时
-                return jsonify({"success": False, "error": "执行超时（10分钟），MusicGen 可能仍在后台运行，请稍后检查 data/media/ 目录"}), 504
+                return jsonify({"success": False, "error": "执行超时（10分钟），生成任务可能仍在后台运行，请稍后检查 data/media/ 目录"}), 504
             if result_box["error"]:
                 raise result_box["error"]
             result = result_box["result"]
         elif engine == 'model':
             result = _execute_via_model(model, params)
         elif engine == 'ollama':
-            result = _execute_via_ollama(model, params)
+            result = _execute_via_ollama(model, params, images=att_images, extra_text=att_text)
         elif engine == 'llama_cpp':
             result = _execute_via_llama_cpp(model, params)
         elif engine == 'dynamic':
@@ -539,10 +626,24 @@ def _execute_via_tool_executor(model, params):
     method = getattr(executor, method_name)
     model_id = model['id']
 
+    # ★ 2026-11-14: 按方法签名智能传参（修复 run_zimage 不认 style 的 TypeError）
+    #   旧代码硬传 style= 给所有 image_generation，Z-Image 签名没有 style 直接炸
+    import inspect as _inspect
+    sig = _inspect.signature(method)
+    accepted = set(sig.parameters.keys()) - {'self', 'model_id'}
+
     if model['type'] == 'image_generation':
-        prompt = params.get('prompt', '')
-        style = params.get('style', 'realistic')
-        result = method(model_id, prompt, style=style)
+        kwargs = {}
+        if 'prompt' in accepted:
+            kwargs['prompt'] = params.get('prompt', '')
+        # 通用数值/文本参数：签名里有才传（width/height/steps/seed/style/size/negative_prompt...）
+        for key in ('width', 'height', 'steps', 'seed', 'style', 'negative_prompt', 'guidance_scale'):
+            if key in accepted and key in params:
+                kwargs[key] = params[key]
+        # 参数名别名：size -> width/height（老 SD 面板）
+        if 'size' in accepted and 'size' in params and 'width' not in kwargs:
+            kwargs['size'] = params['size']
+        result = method(model_id, **kwargs)
     elif model['type'] == 'music_generation':
         prompt = _build_music_prompt(params)
         duration = int(params.get('duration', 15))
@@ -583,32 +684,192 @@ def _build_music_prompt(params):
 # 适配器：model 路径（代码/数据/翻译 — 通过语言模型生成）
 # ═══════════════════════════════════════════════════════════════
 
-def _execute_via_ollama(model, params):
-    """通过Ollama执行垂直模型（如华佗医疗模型）"""
+# ═══════════════════════════════════════════════════════════════
+# ★ 2026-09-15 开发者令#1: 附件通道 —— 图片直传 / 视频ffmpeg抽帧 / 音频faster-whisper转写 / 文章抽文
+# ═══════════════════════════════════════════════════════════════
+
+_WHISPER_MODEL = None  # 懒加载单例（base 模型 ~145MB，首次用时下载）
+
+
+_IMG_EXTS = ('.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp')
+_VID_EXTS = ('.mp4', '.webm', '.mkv', '.mov', '.avi')
+_AUD_EXTS = ('.mp3', '.wav', '.m4a', '.flac', '.ogg')
+
+
+def _dataurl_to_bytes(dataurl: str, ext: str = '.bin'):
+    """dataURL → (bytes, 后缀)；纯 base64（无前缀）也兼容。ext 优先用文件名后缀"""
+    import base64, re as _re
+    m = _re.match(r'^data:[^;]+;base64,(.+)$', dataurl or '', _re.S)
+    raw = base64.b64decode(m.group(1) if m else dataurl)
+    return raw, ext or '.bin'
+
+
+def _video_to_frame_b64s(raw: bytes, ext: str, max_frames: int = 6):
+    """视频 → 均匀抽帧（ffmpeg，最长取前5分钟，缩放到宽640）→ base64 列表"""
+    import base64, os, subprocess, tempfile, shutil
+    ffmpeg = shutil.which('ffmpeg')
+    if not ffmpeg:
+        raise RuntimeError('电脑上没有 ffmpeg，看不了视频（可到 winget 安装：winget install Gyan.FFmpeg）')
+    tmpdir = tempfile.mkdtemp(prefix='hv_vid_')
+    try:
+        src = os.path.join(tmpdir, f'in{ext}')
+        with open(src, 'wb') as f:
+            f.write(raw)
+        # 取时长（ffprobe 失败就默认前 60 秒）
+        duration = 60.0
+        try:
+            probe = subprocess.run(
+                [ffmpeg.replace('ffmpeg', 'ffprobe'), '-v', 'error', '-show_entries',
+                 'format=duration', '-of', 'csv=p=0', src],
+                capture_output=True, text=True, timeout=30)
+            duration = min(float(probe.stdout.strip()), 300.0)
+        except Exception:
+            pass
+        b64s = []
+        step = max(duration / max_frames, 0.5)
+        for i in range(max_frames):
+            ts = min(i * step, max(duration - 0.1, 0))
+            out = os.path.join(tmpdir, f'f{i}.jpg')
+            rr = subprocess.run(
+                [ffmpeg, '-y', '-ss', f'{ts:.1f}', '-i', src, '-frames:v', '1',
+                 '-vf', 'scale=640:-2', '-q:v', '5', out],
+                capture_output=True, timeout=60)
+            if rr.returncode == 0 and os.path.exists(out) and os.path.getsize(out) > 500:
+                with open(out, 'rb') as fimg:
+                    b64s.append(base64.b64encode(fimg.read()).decode())
+        if not b64s:
+            raise RuntimeError('视频抽帧失败：格式可能不支持或文件损坏')
+        return b64s
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def _transcribe_audio(raw: bytes, ext: str) -> str:
+    """音频 → faster-whisper 本地转写文本（模型走 ModelScope 国内直连下载，~138MB）"""
+    import os, tempfile
+    global _WHISPER_MODEL
+    # ★ 2026-09-15 实测：系统代理（127.0.0.1:4720）会把外网下载打断 → 禁代理；
+    #   HF 官方/镜像在本机网络全堵（502/SSL断/直连超时）→ 改走 ModelScope（哈文模型安装器同款通道）
+    for _k in ('HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy'):
+        os.environ.pop(_k, None)
+    try:
+        from faster_whisper import WhisperModel
+    except ImportError:
+        raise RuntimeError('本地还没有听音模型（faster-whisper 未安装），暂时听不了音频')
+    tmpdir = tempfile.mkdtemp(prefix='hv_aud_')
+    try:
+        src = os.path.join(tmpdir, f'in{ext}')
+        with open(src, 'wb') as f:
+            f.write(raw)
+        if _WHISPER_MODEL is None:
+            _model_src = 'base'  # 兜底：HF 路径（有代理的用户能下）
+            try:
+                from modelscope import snapshot_download
+                _model_src = snapshot_download('pengzhendong/faster-whisper-base')
+            except Exception as me:
+                logger.warning(f"[Vertical] ModelScope 下载听音模型失败，回退 HF: {me}")
+            _WHISPER_MODEL = WhisperModel(_model_src, device='cpu', compute_type='int8')
+        segments, _info = _WHISPER_MODEL.transcribe(src, language='zh', beam_size=3)
+        text = ''.join(s.text for s in segments).strip()
+        return text or '（音频里没有听清可识别的语音内容）'
+    finally:
+        import shutil
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def _extract_document_text(raw: bytes, name: str) -> str:
+    """文章/文档 → 纯文本（txt/md 直接读，docx 用 python-docx，pdf 用 pypdf）"""
+    lower = (name or '').lower()
+    if lower.endswith(('.docx',)):
+        import io, docx
+        d = docx.Document(io.BytesIO(raw))
+        return '\n'.join(p.text for p in d.paragraphs if p.text.strip())
+    if lower.endswith(('.pdf',)):
+        import io
+        from pypdf import PdfReader
+        reader = PdfReader(io.BytesIO(raw))
+        return '\n'.join((page.extract_text() or '') for page in reader.pages[:30])
+    return raw.decode('utf-8', errors='replace')
+
+
+def _process_attachments(atts):
+    """附件列表 → (图片base64列表, 附加文本)。图片/视频→图，音频→转写文本，文章→文本
+
+    ★ 类型判定：先看文件名后缀，再看 MIME —— 修"txt 被误判成图片"（2026-09-15 测试抓到）
+    """
+    import os as _os
+    images, texts = [], []
+    for att in atts:
+        if not isinstance(att, dict):
+            continue
+        name = att.get('name', '附件')
+        mime = (att.get('type') or att.get('mime') or '').lower()
+        dataurl = att.get('dataUrl') or att.get('data') or ''
+        if not dataurl:
+            continue
+        suffix = _os.path.splitext(name or '')[1].lower()
+        if suffix in _IMG_EXTS or mime.startswith('image/'):
+            import base64, re as _re
+            m = _re.match(r'^data:[^;]+;base64,(.+)$', dataurl, _re.S)
+            images.append(m.group(1) if m else dataurl)  # 已是裸 base64
+        elif suffix in _VID_EXTS or mime.startswith('video/'):
+            raw, ext = _dataurl_to_bytes(dataurl, suffix or '.mp4')
+            frames = _video_to_frame_b64s(raw, ext)
+            images.extend(frames)
+            texts.append(f'\n\n[附件·视频 {name}：已抽 {len(frames)} 帧，按时间顺序排列]')
+        elif suffix in _AUD_EXTS or mime.startswith('audio/'):
+            raw, ext = _dataurl_to_bytes(dataurl, suffix or '.mp3')
+            t = _transcribe_audio(raw, ext)
+            texts.append(f'\n\n[附件·音频 {name} 的转写内容：\n{t[:4000]}]')
+        else:
+            raw, _ = _dataurl_to_bytes(dataurl)
+            t = _extract_document_text(raw, name)
+            texts.append(f'\n\n[附件·文章 {name} 的内容：\n{t[:8000]}]')
+    return images, ''.join(texts)
+
+
+def _execute_via_ollama(model, params, images=None, extra_text=''):
+    """通过Ollama执行垂直模型（如华佗医疗模型）
+
+    ★ 2026-09-15: 支持多模态 —— images 为 base64 列表（不带 data: 前缀，Ollama 原生 images 字段），
+      extra_text 为附件转写文本（音频转写/文章内容），拼在用户输入后面。
+    """
     import requests
     import logging as _logging
     _logger = _logging.getLogger(__name__)
 
     question = params.get('question', '') or params.get('prompt', '')
-    if not question:
+    if not question and not (images or extra_text):
         return {"error": "请输入问题描述", "output": ""}
+    if not question:
+        question = '请分析我发来的内容。'
 
     ollama_model = model.get('ollama_model', model.get('id', ''))
-    system_prompt = "你是一个专业的医疗AI助手，请基于医学知识回答用户的健康问题。回答要准确、专业、易懂。如果问题超出你的能力范围，请建议用户咨询专业医生。"
+    # ★ 2026-09-14: 按模型分流系统提示词（医疗提示词会带偏 minicpm-v 这类视觉/通用模型）
+    if 'huatuo' in ollama_model.lower() or (model.get('type') == 'medical'):
+        system_prompt = "你是一个专业的医疗AI助手，请基于医学知识回答用户的健康问题。回答要准确、专业、易懂。如果问题超出你的能力范围，请建议用户咨询专业医生。"
+    else:
+        system_prompt = f"你是{model.get('name', ollama_model)}，一个专项AI模型，请直接、准确地回答用户输入的问题。"
+
+    user_content = question + (extra_text or '')
+    user_msg = {'role': 'user', 'content': user_content}
+    if images:
+        user_msg['images'] = images  # Ollama 原生多模态字段（base64，不带前缀）
 
     try:
         r = requests.post(
             'http://localhost:11434/api/chat',
+            proxies={'http': None, 'https': None},  # ★ 禁代理：系统代理会把 localhost 请求发走导致 502
             json={
                 'model': ollama_model,
                 'messages': [
                     {'role': 'system', 'content': system_prompt},
-                    {'role': 'user', 'content': question}
+                    user_msg
                 ],
                 'stream': False,
-                'options': {'temperature': 0.7, 'num_predict': 1024}
+                'options': {'temperature': 0.7, 'num_predict': 2048}
             },
-            timeout=120
+            timeout=300  # ★ 2026-09-15: 视频抽帧多图/长文理解耗时更长，120→300
         )
         if r.status_code == 200:
             data = r.json()
@@ -981,9 +1242,71 @@ def reload_adapter(adapter_id):
 # 修改 list_vertical_models 以包含动态注册的模型
 # ═══════════════════════════════════════════════════════════════
 
+# ★ 2026-09-14 用户反馈：垂直大脑只显示实际能用的模型——有哪个显示哪个，没有的不显示
+# 可用性缓存（30 秒）：Ollama 清单查询避免每次打开页面都打一次接口
+_avail_cache = {'ts': 0.0, 'ollama_names': None}
+
+
+def _ollama_model_names() -> set:
+    """查 Ollama 已装模型名集合（短缓存 30 秒；查询失败=空集，宁可不显示也不骗人）"""
+    import time
+    import urllib.request
+    now = time.time()
+    if _avail_cache['ollama_names'] is not None and now - _avail_cache['ts'] < 30:
+        return _avail_cache['ollama_names']
+    names = set()
+    try:
+        req = urllib.request.Request('http://127.0.0.1:11434/api/tags')
+        # ★ 禁代理：系统 http_proxy 会把 127.0.0.1 请求发去代理导致 502
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(req, timeout=2) as resp:
+            for m in json.loads(resp.read().decode('utf-8')).get('models', []):
+                names.add((m.get('name') or '').split(':')[0].lower())
+    except Exception as e:
+        logger.warning(f"[Vertical] Ollama 可用性检测失败（Ollama 未跑或未装）: {e}")
+    _avail_cache['ts'] = now
+    _avail_cache['ollama_names'] = names
+    return names
+
+
+def _model_available(m: dict) -> bool:
+    """内置模型的实际可用性判断。假模型 / 未安装的一律返回 False（不进列表）"""
+    eng = m.get('engine')
+    if eng == 'ollama':
+        return (m.get('ollama_model') or '').split(':')[0].lower() in _ollama_model_names()
+    if eng == 'tool_executor':
+        method = m.get('executor_method')
+        if method == 'run_image_gen':
+            return False  # SD 执行器是"未安装"占位（tool_executor.run_image_gen 写死返回失败），从未实装
+        if method == 'run_bark':
+            return False  # Bark 同为占位实现
+        if method == 'run_musicgen':
+            return False  # ★ 2026-11-14 MusicGen 已卸载（被 ACE-Step 替代），执行器已删除
+        if method in ('run_ace_step', 'run_zimage', 'run_wan22'):
+            # ★ 2026-11-14: 模型文件在 H:\AI_Models 即可用（脚本在缺一不可）
+            # ★ Wan2.2 暂不可用：GGUF 双专家 + enable_model_cpu_offload 在 Windows 触发 C 层 segfault，
+            #   待专项解决后把下面这行删掉即可上线
+            if method == 'run_wan22':
+                return False
+            import glob as _glob
+            checks = {
+                'run_ace_step': [r'H:\AI_Models\acestep_gen.py', r'H:\AI_Models\ACE-Step-v1-3.5B\ace_step_transformer\*.safetensors'],
+                'run_zimage': [r'H:\AI_Models\zimage_gen.py', r'H:\AI_Models\Z-Image-Turbo\transformer\*.safetensors'],
+                'run_wan22': [r'H:\AI_Models\wan22_gen.py', r'H:\AI_Models\Wan2.2-T2V-A14B-GGUF\HighNoise\*.gguf'],
+            }
+            for pat in checks.get(method, []):
+                if not (os.path.exists(pat) if '*' not in pat else _glob.glob(pat)):
+                    return False
+            return True
+        return True  # run_discovered_model 等来自实际扫描结果，视为可用
+    return True
+
+
 def _get_all_models():
     """获取全部模型列表（内置 + 动态 + 自动发现的本地模型）"""
-    all_models = list(_BUILTIN_MODELS)
+    # ★ A批A2: 伪模型（pseudo=True）不进垂直列表，垂直列表只剩真模型
+    # ★ 2026-09-14: 只显示实际可用的——SD/Bark 占位假模型、Ollama 里没装的、HF 缓存缺的都不再出现
+    all_models = [m for m in _BUILTIN_MODELS if not m.get('pseudo') and _model_available(m)]
 
     # 动态注册的模型
     for model_id, meta in _dynamic_models.items():
@@ -1014,6 +1337,26 @@ def _get_all_models():
                     _skip = True
                     break
             if _skip:
+                continue
+            # ★ 2026-09-14 用户反馈#4：Ollama 来源的发现模型走 Ollama 引擎执行
+            #   （原逻辑一律塞给 transformers，但 Ollama 模型没有本地 path → "缺少模型路径" 必报错）
+            if dm.get('source') == 'ollama' or dm.get('loader') == 'ollama':
+                model_entry = {
+                    'id': f"discovered_{dm['id'].replace('/', '_').replace(':', '_')}",
+                    'name': f"{dm.get('icon','📦')} {dm['name']}",
+                    'icon': dm.get('icon', '📦'),
+                    'type': dm.get('category', 'general'),
+                    'canvas_type': 'generic',
+                    'description': f"自动发现: {dm['id']} · Ollama 运行中，点开即用",
+                    'engine': 'ollama',
+                    'ollama_model': dm['id'],  # 原始模型名（minicpm-v:8b），不带 discovered_ 前缀
+                    'source': 'ollama',
+                    'is_discovered': True,
+                    'params': {
+                        'prompt': {'type': 'textarea', 'label': '输入', 'default': '', 'required': True},
+                    },
+                }
+                all_models.append(model_entry)
                 continue
             model_entry = {
                 'id': f"discovered_{dm['id'].replace('/', '_').replace(':', '_')}",

@@ -1,0 +1,18 @@
+COMPILE OK  acc_categories.py
+COMPILE OK  panel_assist.py
+COMPILE OK  engine.py
+=== test_acc_unify.py exit=0 ===
+PASS 随礼→人情
+PASS 无关键词退回AI分类
+PASS 全无→其他支出
+PASS 智能拆分返回汇总
+PASS 写入面板表(+1)
+PASS 水果分类正确+元数据齐
+=== test_acc_unify2.py exit=0 ===
+PASS 两笔不同金额=两条记录
+PASS 项目名干净无动词尾巴
+PASS 海鲜→买菜 书包→其他
+PASS 小窗抽取入库成功
+PASS 早餐被兜底修正为餐饮+kind/来源齐
+=== test_acc_custom.py exit=0 ===
+=== test_smart_bare.py exit=0 ===

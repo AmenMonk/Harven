@@ -48,6 +48,15 @@ async function _switchConvByMode(mode) {
     }
 }
 
+// ★ 2026-08-26: 网络错误翻译——后端挂了时给用户明确指引（而不是裸的 Failed to fetch）
+function _netErrMsg(e) {
+    const m = (e && e.message) || String(e || '');
+    if (m.includes('Failed to fetch') || m.includes('NetworkError') || m.includes('ERR_CONNECTION') || m.includes('net::')) {
+        return '哈文服务未运行 —— 请重启哈文（双击桌面鸭子图标）后重试';
+    }
+    return m;
+}
+
 async function setQueryMode(mode) {
     if (!QUERY_MODES[mode]) return;
 
@@ -69,6 +78,17 @@ async function setQueryMode(mode) {
     
     // ★ 切换模式时，切换到该模式的上一次对话
     await _switchConvByMode(mode);
+
+    // ★ 2026-08-26: 切到外脑模式时检查是否已选外脑模型（未选则提示，不阻止切换）
+    if (mode === 'direct') {
+        try {
+            const _r = await fetch('/api/models/current-foreign');
+            const _d = await _r.json();
+            if (!_d.model) {
+                toast('⚠️ 还没有选择外脑模型——请到 设置→模型管理 选择，或点 🏠本地 用本地模式');
+            }
+        } catch(e) { /* 静默失败 */ }
+    }
     
     // 更新按钮状态
     document.querySelectorAll('.qm-btn').forEach(btn => {
@@ -675,7 +695,7 @@ async function confirmInstallModel(modelId, btn) {
         }
     } catch(e) {
         if (progressDiv) {
-            progressDiv.innerHTML = '<div style="color:#ef4444;">❌ 网络错误: ' + escapeHtml(e.message) + '</div>';
+            progressDiv.innerHTML = '<div style="color:#ef4444;">❌ ' + escapeHtml(_netErrMsg(e)) + '</div>';
         }
         btn.disabled = false;
         btn.textContent = '🚀 重试安装';
@@ -802,7 +822,7 @@ async function confirmCreateSpec(name, icon, desc, btn) {
     } catch(e) {
         btn.disabled = false;
         btn.textContent = '🚀 创建';
-        toast('❌ 网络错误：' + e.message);
+        toast('❌ ' + _netErrMsg(e));
     }
 }
 window.confirmCreateSpec = confirmCreateSpec;
@@ -842,7 +862,7 @@ async function confirmCreateSpecCustom(btn) {
     } catch(e) {
         btn.disabled = false;
         btn.textContent = '🚀 创建';
-        toast('❌ 网络错误：' + e.message);
+        toast('❌ ' + _netErrMsg(e));
     }
 }
 window.confirmCreateSpecCustom = confirmCreateSpecCustom;
@@ -993,10 +1013,26 @@ async function approveEvolution(btn, data) {
         if (result.success) {
             // 应用提案
             if (result.proposal_id) {
-                var applyResp = await fetch('/api/evolution/code-proposal/' + result.proposal_id + '/apply', {
-                    method: 'POST'
-                });
-                var applyResult = await applyResp.json();
+                // ★ 2026-11-15: apply 是受保护动作（AI 自动写代码扳机），401 时收集管理员密码重试
+                var doApply = function(body) {
+                    return fetch('/api/evolution/code-proposal/' + result.proposal_id + '/apply', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body || {})
+                    }).then(function(r) { return r.json().then(function(j) { return { resp: r, data: j }; }); });
+                };
+                var applied = await doApply({});
+                if (applied.resp.status === 401 && applied.data.code === 'password_required') {
+                    var pwd = prompt('🔒 应用代码修改需要管理员密码（受保护的进化操作）：', '');
+                    if (!pwd) {
+                        btn.disabled = false;
+                        btn.textContent = '✅ 批准';
+                        toast('已取消：未输入管理员密码');
+                        return;
+                    }
+                    applied = await doApply({ password: pwd });
+                }
+                var applyResult = applied.data;
 
                 if (applyResult.success) {
                     if (card) {
@@ -1004,6 +1040,10 @@ async function approveEvolution(btn, data) {
                             '<div style="font-size:12px;color:var(--text-tertiary);margin-top:8px;">已自动备份原文件。如出问题说"回滚"恢复。</div>';
                     }
                     toast('✅ 修改已应用');
+                } else if (applied.resp.status === 403 && applyResult.code === 'password_wrong') {
+                    btn.disabled = false;
+                    btn.textContent = '✅ 批准';
+                    toast('❌ 管理员密码错误');
                 } else {
                     btn.disabled = false;
                     btn.textContent = '✅ 批准';
@@ -1024,7 +1064,7 @@ async function approveEvolution(btn, data) {
     } catch(e) {
         btn.disabled = false;
         btn.textContent = '✅ 批准';
-        toast('❌ 网络错误：' + e.message);
+        toast('❌ ' + _netErrMsg(e));
     }
 }
 window.approveEvolution = approveEvolution;
@@ -1446,15 +1486,15 @@ function appendAiMsg(text) {
     const el = document.getElementById('messages');
     const div = document.createElement('div');
     div.className = 'msg assistant';
-    // 检测是否有音乐文件
-    var audioMatch = text.match(/文件:\s*(data\/media\/[^\s]+\.wav)/i);
+    // 检测是否有音乐文件（★ 2026-11-15: 扩展支持 mp3/m4a/ogg，B 方案转码产物也能走旧通道播）
+    var audioMatch = text.match(/文件:\s*(data\/media\/[^\s`]+\.(?:wav|mp3|m4a|ogg))/i);
     var bodyHtml = renderMd(text);
     if (audioMatch) {
         var audioPath = '/' + audioMatch[1];
         bodyHtml += '<div style="margin-top:8px;padding:8px;background:#1e1e3a;border-radius:8px;border:1px solid #333;">' +
             '<div style="font-size:11px;color:#4ade80;margin-bottom:4px;">🎵 音频播放器</div>' +
             '<audio controls style="width:100%;max-width:400px;" preload="auto">' +
-            '<source src="' + audioPath + '" type="audio/wav">' +
+            '<source src="' + audioPath + '" type="audio/mpeg">' +
             '您的浏览器不支持音频播放。</audio>' +
             '</div>';
     }
@@ -1917,6 +1957,9 @@ async function _sendMessageNow(text, skipVertical) {
                 .replace(/\n{3,}/g, '\n\n')
                 .trim();
             
+            // ★ 2026-09-16 对话框导航（B路线）：老界面无路由，只剥离模型回复末尾的 [NAVIGATE:…] 标记防露出
+            fullText = fullText.replace(/\[NAVIGATE:[^\]]+\]\s*$/, '').trim();
+
             // 如果清洗后仍有内容，更新 DOM 中的流式消息
             if (fullText) {
                 const streamContent = document.getElementById('streamContent');
@@ -1931,7 +1974,11 @@ async function _sendMessageNow(text, skipVertical) {
         } else {
             // 流结束但没有收到任何文本 — 可能是后端超时或空响应
             removeStreamMsg();
-            appendError('⚠️ 模型未返回内容。可能原因：\n1. 模型加载失败 → 重启本地引擎\n2. 提示词超长 → 切换到 🤖外脑 模式\n3. 模型版本兼容问题 → 更换模型\n4. 协作模式开启但无匹配Skill → 尝试关闭协作模式后重试');
+            // ★ 2026-08-25: 协作模式条改为条件提示（未开启时不显示，避免误导）
+            const _collabOn = (typeof collabMode !== 'undefined' && collabMode && collabMode !== 'off');
+            let _err = '⚠️ 模型未返回内容。可能原因：\n1. 模型加载失败 → 重启本地引擎\n2. 提示词超长 → 切换到 🤖外脑 模式\n3. 模型版本兼容问题 → 更换模型';
+            if (_collabOn) _err += '\n4. 协作模式开启但无匹配 Skill → 尝试关闭协作模式后重试';
+            appendError(_err);
         }
 
         // 渲染技能自动发现建议卡片

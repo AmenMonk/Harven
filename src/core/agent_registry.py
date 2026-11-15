@@ -29,6 +29,15 @@ logger = logging.getLogger(__name__)
 
 REGISTRY_PATH = Path(__file__).parent.parent.parent / "data" / "sqlite" / "agent_registry.json"
 
+# ─── 三层管理层级（★ 2026-09-13 经多轮讨论定案）───
+# 🔒 核心层：不可删不可停（哈文操作电脑/系统维护/写代码的根基）
+CORE_AGENTS = {"computer_use", "system_ops", "coder"}
+# 🗑️ 僵尸层：代码里已删除但旧数据残留（2026-07-03 音乐改走垂直面板），加载时直接清出
+# ★ 2026-09-13 已定版#8：8 个非核心助手退役（以后工具能力走面板模块，不占 Agent 团队）
+ZOMBIE_AGENTS = {"music_generator", "ace_step", "music_suggest",
+                 "code_reviewer", "data_analyst", "translator", "researcher",
+                 "critic", "planner", "ops_agent", "file_explorer"}
+
 # ─── 意图 → Agent 路由表（正则匹配）───
 # ⚠️ 禁止使用 \b（Python re 中 \b 在中文字符间不匹配，中文是 \w）
 # 英文触发器末尾用 (?![\da-zA-Z_]) — 允许中文跟随，但防止英文子串误匹配
@@ -39,67 +48,21 @@ INTENT_ROUTES = [
     # 音乐生成现在走 engine.py Step 2.4 → vertical_api.py 垂直预填
     # 🛠️ 系统管家：装/卸软件、磁盘清理、网络修复等（2026-06-26 新增）
     (r"(装.*软件|安装.*软件|帮我装|卸载.*软件|删除.*软件|C盘.*满|清理垃圾|磁盘清理|空间.*不够|网连不上|网络断了|网络修复|网速慢|没有网|连不上网|我电脑.*配置|什么配置|显卡.*是|内存.*多大|整理桌面|整理下载|整理文件|桌面.*乱|截图|截屏|占CPU|占内存|什么程序.*卡|换壁纸|换背景|桌面背景|帮我读.*图|读截图|OCR|识别.*文字|系统管家)", "system_ops"),
-    (r"(审查|review(?![\da-zA-Z_])|检查代码|代码检查|code\s*review|lint(?![\da-zA-Z_])|bug(?![\da-zA-Z_])|debug(?![\da-zA-Z_])|排查|cr(?![\da-zA-Z_]))", "code_reviewer"),
     (r"(写代码|帮我写|生成代码|实现.*功能|写个|写一个|编码|coding(?![\da-zA-Z_])|python(?![\da-zA-Z_])|函数|class(?![\da-zA-Z_]))", "coder"),
-    (r"(翻译|translate(?![\da-zA-Z_])|译|英文|中文|日语|法语)", "translator"),
     # 分析类
-    (r"(分析数据|分析文件|csv(?![\da-zA-Z_])|excel(?![\da-zA-Z_])|表格分析|统计|数据分析|报表)", "data_analyst"),
-    (r"(研究|调研|research(?![\da-zA-Z_])|论文|报告|对比|竞品分析)", "researcher"),
     # 批判类（优先级 > planner，防止"漏洞"被"方案"抢走）
-    (r"(批判|找问题|挑刺|反对意见|漏洞分析|漏洞|批评)", "critic"),
     # 规划类
-    (r"(计划|规划|方案|拆解|路线图|实现步骤)", "planner"),
     # 运维/系统类
-    (r"(日志|log(?![\da-zA-Z_])|报错|error\s*trace|排查|debug\s*log|监控)", "ops_agent"),
-    (r"(安装|install(?![\da-zA-Z_])|pip(?![\da-zA-Z_])|环境|配置环境|setup(?![\da-zA-Z_])|依赖)", "ops_agent"),
     # 文件浏览器（★ 2026-07-13: 缩小匹配，避免正常问题被误判）
-    (r"(列出.*文件|list.*file|有什么文件|有哪些文件|看看.*目录|查看.*目录)", "file_explorer"),
     # 电脑操作（靠后，宽泛匹配做兜底）
     (r"(打开.*电脑|控制电脑|操作电脑|截图|截屏|打开.*盘|打开.*目录|打开.*文件夹|列出.*盘|查看.*盘|整理桌面|整理文件|输入文字|窗口|最大化|最小化)", "computer_use"),
-    # 教学类（★ 2026-07-13: 缩小匹配范围，避免正常问题被误判为教学）
-    (r"(入门|教程|指南|教我| teach)", "teacher"),
+    # 教学类（★ 2026-07-13 缩小匹配；★ 2026-09-13 重做后补孩子学习触发词，避免“讲”字单字误判）
+    (r"(入门|教程|指南|教我| teach|讲题|这道题|这道数学|怎么解|解方程|辅导作业|给我讲讲)", "teacher"),
 ]
 
 # ─── 预置 Agent ───
 DEFAULT_AGENTS = {
-    "code_reviewer": {
-        "name": "代码审查员",
-        "role": "code_reviewer",
-        "model_pref": "local",  # 本地模型，代码不出电脑
-        "skills": ["code_review_auto"],
-        "system_prompt": """你是哈文AI的专项子Agent——代码审查员。
-你只做一件事：审查代码。
-
-规则：
-1. 只输出审查结果，不闲聊、不解释背景、不提供非代码建议
-2. 输出格式：问题类型 | 严重程度 | 行号 | 问题描述 | 修复建议
-3. 严重程度：🔴严重 / 🟡警告 / 🔵建议
-4. 如果你看到的不像代码，回复："[SKIP] 非代码输入，请交给其他Agent"
-
-你的能力边界：审查代码，不写代码，不运行代码，不改代码。""",
-        "triggers": ["审查代码", "review", "代码检查", "check code", "查bug", "bug"],
-        "input_schema": {"type": "code", "language": "str"},
-        "output_schema": {"type": "review_report"},
-    },
-    "data_analyst": {
-        "name": "数据分析师",
-        "role": "data_analyst",
-        "model_pref": "external",  # 分析用外脑，推理强
-        "skills": ["data_analysis_auto"],
-        "system_prompt": """你是哈文AI的专项子Agent——数据分析师。
-你只做一件事：分析数据。
-
-规则：
-1. 输出：先结论，后详情
-2. 格式：用表格呈现关键数据，用文字解释趋势
-3. 不要写代码来实现（那是coder的事），你负责解读数据含义
-4. 不确定的数据标注[待验证]
-
-你的能力边界：分析数据，不处理数据（清理/转换/入库由其他Agent负责）。""",
-        "triggers": ["分析数据", "数据分析", "报表", "统计"],
-        "input_schema": {"type": "data", "format": "str"},
-        "output_schema": {"type": "analysis_report"},
-    },
+    
     "coder": {
         "name": "程序员",
         "role": "coder",
@@ -116,120 +79,32 @@ DEFAULT_AGENTS = {
 你的能力边界：写代码、加注释、生成测试。不审查代码（那是code_reviewer的事），不运行代码。""",
         "triggers": ["写代码", "帮我写", "实现", "写个", "函数", "class"],
         "input_schema": {"type": "requirement", "language": "str"},
+    
         "output_schema": {"type": "code"},
     },
-    "translator": {
-        "name": "翻译官",
-        "role": "translator",
-        "model_pref": "external",
-        "skills": [],
-        "system_prompt": """你是哈文AI的专项子Agent——翻译官。
-你只做一件事：翻译文本。
-
-规则：
-1. 输出：只输出译文，不解释不备注
-2. 自动检测源语言
-3. 保持原文语气、格式、分段
-4. 非翻译请求回复："[SKIP] 非翻译任务"
-
-你的能力边界：翻译。不润色、不总结、不评价原文。""",
-    },
     "teacher": {
-        "name": "教师",
+        "name": "学习辅导",
         "role": "teacher",
         "model_pref": "local",
         "skills": [],
-        "system_prompt": """你是哈文AI的专项子Agent——教师。
-你只做一件事：教人学会东西。
+        # ★ 2026-09-13 重做：从泛用“教师”升级为“孩子学习辅导”专项（已定案，家庭孩子场景真需求，历史调用全队第二）
+        "system_prompt": """你是哈文AI的专项子Agent——学习辅导老师，服务对象是中小学生。
+你只做一件事：帮孩子学会知识、解开题目。
 
 规则：
-1. 用类比和例子解释复杂概念
-2. 分步骤讲解
-3. 不会就说不会，不编造知识
-4. 正常回答问题，不要说教，不要问"明白了吗"
+1. **不直接报答案**：先引导孩子说思路，分小步提示，让孩子自己走完最后一步
+2. 用大白话和生活例子解释（比如分数像切蛋糕，别用专业术语堆砌）
+3. 数学题一步步列式，每步说明“为什么这么做”
+4. 语文（古诗/成语/阅读）、英语（单词/语法）、科学都可以教
+5. 语气亲切鼓励：“差一步就出来了”“这个想法很棒”，从不批评嘲笑
+6. 孩子明显只是想玩/聊无关话题时，温和拉回学习，不训斥
+7. 超出中小学范围就坦白说“这个等老师讲到再学更好”，不编造
+8. 涉及危险、不良内容一律拒绝并提醒找家长
 
-你的能力边界：教学解释。不写代码、不分析数据、不操作文件。""",
+你的能力边界：中小学课业辅导与讲解。不写代码、不操作电脑、不代替孩子完成作业（只引导）。""",
+        "triggers": ["讲题", "这道题", "怎么解", "辅导作业", "教我", "讲解", "古诗", "成语", "单词", "造句", "解方程"],
     },
-    "file_explorer": {
-        "name": "文件浏览器",
-        "role": "file_explorer",
-        "model_pref": "local",
-        "skills": [],
-        "system_prompt": """你是哈文AI的专项子Agent——文件浏览器。
-你只做一件事：列出和读取本地文件。
-
-规则：
-1. 用户让你"打开某盘""看看有什么"→ 生成Python代码用os.listdir()列出
-2. 生成 ```python 代码块，系统会自动执行
-3. 输出文件列表后告诉用户可以进一步操作
-
-你的能力边界：列文件、读文件。不修改、不删除、不分析。""",
-    },
-    "researcher": {
-        "name": "研究员",
-        "role": "researcher",
-        "model_pref": "external",
-        "skills": [],
-        "system_prompt": """你是哈文AI的专项子Agent——研究员。
-你只做一件事：对主题进行深度调研分析。
-
-规则：
-1. 输出：背景→现状→分析→建议 四段式
-2. 不确定的信息标注[待验证]
-3. 非研究类请求回复："[SKIP] 非研究任务"
-
-你的能力边界：研究调研。不执行、不写代码、不处理数据。""",
-        "triggers": ["研究", "调研", "论文", "报告", "竞品分析", "对比"],
-    },
-    "critic": {
-        "name": "评论家",
-        "role": "critic",
-        "model_pref": "external",
-        "skills": [],
-        "system_prompt": """你是哈文AI的专项子Agent——评论家。
-你只做一件事：找出方案/代码/观点的漏洞和问题。
-
-规则：
-1. 质疑一切假设，找出逻辑漏洞
-2. 考虑反面论点和边缘情况
-3. 给出有价值的反面意见，不人身攻击
-4. 非批判类请求回复："[SKIP] 非批判任务"
-
-你的能力边界：批判性思考。不说好话，只找问题。""",
-        "triggers": ["批判", "找问题", "挑刺", "反对意见", "漏洞", "批评"],
-    },
-    "planner": {
-        "name": "规划师",
-        "role": "planner",
-        "model_pref": "external",
-        "skills": [],
-        "system_prompt": """你是哈文AI的专项子Agent——规划师。
-你只做一件事：把模糊目标拆成可执行计划。
-
-规则：
-1. 输出：目标→约束→步骤→里程碑→风险评估
-2. 步骤必须可执行、可衡量
-3. 非规划类请求回复："[SKIP] 非规划任务"
-
-你的能力边界：制定计划。不执行计划。""",
-        "triggers": ["计划", "规划", "方案", "拆解", "实现步骤", "路线图"],
-    },
-    "ops_agent": {
-        "name": "运维助手",
-        "role": "ops",
-        "model_pref": "local",
-        "skills": [],
-        "system_prompt": """你是哈文AI的专项子Agent——运维助手。
-你只做一件事：处理系统运维任务。
-
-规则：
-1. 列出文件、读取日志、检查进程 → 生成 ```python 代码块（系统自动执行）
-2. 不要只给文字说明让主人手动操作
-3. 非运维类请求回复："[SKIP] 非运维任务"
-
-你的能力边界：文件操作、日志查看、进程检查。不部署、不修改系统配置。""",
-        "triggers": ["日志", "报错", "排查", "进程", "服务状态"],
-    },
+    
     "computer_use": {
         "name": "电脑操作",
         "role": "system",
@@ -267,6 +142,11 @@ class AgentRegistry:
                 self._agents = data.get("agents", {})
             except Exception:
                 self._agents = {}
+        # ★ 2026-09-13: 清出僵尸 Agent（代码已删除但旧数据残留，见 ZOMBIE_AGENTS 注释）
+        for zombie in ZOMBIE_AGENTS:
+            if zombie in self._agents:
+                logger.info(f"[Registry] 清出僵尸 Agent: {zombie}（音乐已走垂直面板，此为旧数据残留）")
+                del self._agents[zombie]
         # 确保预置 Agent 始终存在
         for agent_id, agent_def in DEFAULT_AGENTS.items():
             if agent_id not in self._agents:
@@ -274,6 +154,27 @@ class AgentRegistry:
                 self._agents[agent_id]["status"] = "idle"
                 self._agents[agent_id]["registered_at"] = time.time()
                 self._agents[agent_id]["call_count"] = 0
+        # ★ 2026-09-13: 内置 Agent 定义同步——json 里的旧定义（名字/提示词/触发词）刷新为
+        #   DEFAULT_AGENTS 最新版，只保留运行时状态（status/call_count/user_toggled/_pref_backup/model_pref 停用态）
+        for aid, a in self._agents.items():
+            _def = DEFAULT_AGENTS.get(aid)
+            if not _def:
+                continue
+            for k in ("name", "role", "system_prompt", "triggers", "skills", "model_pref_default"):
+                if k in _def:
+                    a[k] = _def[k] if not isinstance(_def[k], list) else list(_def[k])
+            if "model_pref" in _def and a.get("model_pref") != "disabled":
+                a["model_pref"] = _def["model_pref"]
+            for k in ("script_name", "default_disabled"):
+                if k in _def:
+                    a[k] = _def[k]
+        # ★ 2026-09-13: default_disabled 的一次性落盘（用户手动开过就不再动）
+        for aid, a in self._agents.items():
+            _def = DEFAULT_AGENTS.get(aid) or {}
+            if _def.get("default_disabled") and a.get("model_pref") != "disabled" and not a.get("user_toggled"):
+                a["_pref_backup"] = a.get("model_pref", "local")
+                a["model_pref"] = "disabled"
+                logger.info(f"[Registry] {aid} 默认停用（与电脑操作触发词重复，可随时开启）")
         self._save()
         logger.info(f"[Registry] 已加载 {len(self._agents)} 个 Agent")
     
@@ -310,9 +211,21 @@ class AgentRegistry:
         logger.info(f"[Registry] 注册新 Agent: {agent_id} ({name})")
         return True
     
+    # ★ 2026-08-25 P4: 讨论类排除——用户在"问问题/诊断"而非"下命令"时，不触发执行类 Agent
+    # 例："帮我检测一下为什么本地模型用不了"是讨论，不该触发模型安装/操作类面板
+    _DISCUSSION_MARKERS = (
+        '为什么', '怎么了', '怎么回事', '什么情况', '检测一下', '检查一下为什么',
+        '诊断', '排查一下', '不好用', '用不了', '报错', '出错', '失败了', '什么问题',
+        '是什么', '是外脑还是', '还是本地', '还是', '帮我分析', '什么原因',
+    )
+
     def discover(self, user_message: str) -> Optional[str]:
         """意图发现：根据用户消息，找到最匹配的 Agent"""
         msg_lower = user_message.lower()
+        # P4: 讨论类消息（疑问/诊断句式）不触发执行类 Agent，交给默认对话流程回答
+        if any(m in user_message for m in self._DISCUSSION_MARKERS) and len(user_message) > 8:
+            logger.info(f"[Registry] P4 讨论类消息跳过 Agent 路由: '{user_message[:40]}'")
+            return None
         for pattern, agent_id in INTENT_ROUTES:
             if re.search(pattern, msg_lower, re.IGNORECASE):
                 if agent_id in self._agents:
@@ -395,7 +308,7 @@ class AgentRegistry:
             return {"success": False, "error": str(e)}
     
     def list_agents(self) -> List[dict]:
-        """列出所有已注册 Agent"""
+        """列出所有已注册 Agent（★ 2026-09-13: 补 core/enabled/custom/builtin 字段，修复前端全当内置的 bug）"""
         return [
             {
                 "id": aid,
@@ -405,9 +318,33 @@ class AgentRegistry:
                 "model_pref": a.get("model_pref", "local"),
                 "call_count": a.get("call_count", 0),
                 "triggers": a.get("triggers", []),
+                "core": aid in CORE_AGENTS,
+                "builtin": aid in DEFAULT_AGENTS,
+                "enabled": a.get("model_pref") != "disabled",
+                "custom": bool(a.get("custom", False)),
             }
             for aid, a in self._agents.items()
         ]
+
+    def set_enabled(self, agent_id: str, enabled: bool) -> dict:
+        """★ 2026-09-13: 停用/启用开关 — 核心层拒绝，非核心可随时切换（停用只改路由与执行，数据不丢）"""
+        a = self._agents.get(agent_id)
+        if not a:
+            return {"success": False, "error": "Agent 不存在"}
+        if agent_id in CORE_AGENTS:
+            return {"success": False, "error": "核心助手不可停用（电脑操作/系统管家/程序员是哈文根基）"}
+        if enabled:
+            if a.get("model_pref") == "disabled":
+                a["model_pref"] = a.get("_pref_backup", "local")
+            a["user_toggled"] = True
+        else:
+            if a.get("model_pref") != "disabled":
+                a["_pref_backup"] = a.get("model_pref", "local")
+                a["model_pref"] = "disabled"
+            a["user_toggled"] = True
+        self._save()
+        logger.info(f"[Registry] Agent {agent_id} {'启用' if enabled else '停用'}")
+        return {"success": True, "enabled": enabled}
     
     def get_agent(self, agent_id: str) -> Optional[dict]:
         return self._agents.get(agent_id)

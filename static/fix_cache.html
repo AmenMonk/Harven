@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>哈文浏览器修复工具</title>
+<style>
+  body { font-family: system-ui, -apple-system, "Microsoft YaHei", sans-serif; background:#f5f6f8; margin:0; padding:40px 16px; }
+  .card { max-width:560px; margin:0 auto; background:#fff; border-radius:16px; padding:32px 28px; box-shadow:0 2px 12px rgba(0,0,0,.06); }
+  h1 { font-size:20px; margin:0 0 12px; color:#1f2937; }
+  p { font-size:14px; color:#4b5563; line-height:1.7; margin:8px 0; }
+  #go { display:block; width:100%; margin:24px 0 12px; padding:16px; font-size:17px; font-weight:700; color:#fff; background:#185FA5; border:none; border-radius:12px; cursor:pointer; }
+  #go:disabled { background:#9ca3af; cursor:wait; }
+  .log { font-size:13px; color:#6b7280; background:#f3f4f6; border-radius:8px; padding:12px; min-height:64px; white-space:pre-wrap; }
+  .tip { font-size:12px; color:#9ca3af; margin-top:14px; line-height:1.6; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>哈文浏览器修复工具</h1>
+  <p>你的浏览器里存着一份 10 月 5 日的旧缓存（一个常驻的"旧保警"程序），它一直把老页面塞给你——所以你看不到「删除照片」按钮。</p>
+  <p>点下面的按钮：辞退旧保镖 → 清空旧缓存 → 自动进入全新版哈文。<b>照片和数据都在硬盘上，一根毫毛都不会少。</b>修完如果要求重新登录，用你自己的密码登一下就行。</p>
+  <button id="go">一键修复，进入新版哈文</button>
+  <div class="log" id="log">点上方按钮开始…</div>
+  <p class="tip">备用方案：如果点了没反应，把地址栏里的 localhost 手动改成 127.0.0.1 再回车，直接进新版（同一个哈文，只是换了个门口）。<br>本工具由哈文控制塔 2026-10-31 生成（#1354）。</p>
+</div>
+<script>
+var log = function (m) { document.getElementById('log').textContent += '\n' + m; };
+document.getElementById('go').onclick = async function () {
+  var btn = this; btn.disabled = true; btn.textContent = '修复中…';
+  document.getElementById('log').textContent = '开始修复…';
+  try {
+    if (window.caches && caches.keys) {
+      var keys = await caches.keys();
+      log('发现缓存区 ' + keys.length + ' 个' + (keys.length ? ('：' + keys.join(', ')) : ''));
+      for (var i = 0; i < keys.length; i++) { await caches.delete(keys[i]); }
+      log('旧缓存已全部清空');
+    } else { log('此浏览器无 Cache API，跳过'); }
+    if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+      var regs = await navigator.serviceWorker.getRegistrations();
+      log('发现旧保镖（Service Worker）' + regs.length + ' 个');
+      for (var j = 0; j < regs.length; j++) { await regs[j].unregister(); }
+      log('旧保镖已全部辞退');
+    } else { log('此浏览器无 Service Worker，跳过'); }
+    try { localStorage.clear(); sessionStorage.clear(); } catch (e) {}
+    try {
+      document.cookie.split(';').forEach(function (c) {
+        document.cookie = c.replace(/^ +/, '').replace(/=.*/, '=;expires=' + new Date().toUTCString() + ';path=/');
+      });
+    } catch (e) {}
+    log('全部完成。1 秒后自动进入新版哈文…');
+    setTimeout(function () { location.href = '/spa/'; }, 1000);
+  } catch (e) {
+    log('出错：' + e.message + ' —— 请手动把地址栏 localhost 改成 127.0.0.1 回车');
+    btn.disabled = false; btn.textContent = '再试一次';
+  }
+};
+</script>
+</body>
+</html>

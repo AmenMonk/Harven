@@ -1,90 +1,154 @@
-# HarvenAI .gitignore
+# HarvenAI .gitignore — 2026-11-16 仓库大扫除定版
+# 原则：仓库只进「代码 + 文档 + 出厂模板」；运行时/模型/用户数据/安装包一律不进
 
-# === 敏感文件 ===
+# === 敏感文件（最高优先）===
 config.yaml
+config.yaml.bak*
 config.example.yaml.bak
 *.env
 .env
+data/multi_models.json
+data/multi_models.example.json
 
-# === 数据库 ===
-data/sqlite/*.db
-data/sqlite/*.db-journal
+# === 大体积运行时 / 依赖 ===
+.venv/
+venv/
+python/
+spa/node_modules/
+node_modules/
+packer_assets/
+_wheels_full/
 
-# === 用户数据 ===
-data/media/*
-data/downloads/*
-data/reports/*
-data/tmp/*
+# === 模型权重（20G+，用 Release/HarvenHub 分发）===
+data/models/
+*.gguf
+*.onnx
+*.safetensors
+*.bin
+
+# === 用户数据 / 运行时数据 ===
+data/media/
+data/downloads/
+data/sqlite/
+data/backups/
+data/logs/
+data/snapshots/
+data/tool_results/
+data/exports/
+data/isolated_dbs/
+data/vision/
+data/tmp/
+data/reports/
 data/knowledge/*.faiss
 data/knowledge/*.pkl
+data/system_knowledge.json
+data/discovered_models.json
+data/device_binding.json
+data/security_log.json
+data/harven.log*
 
-# === Python ===
-.venv/
+# === 打包 / 测试 / 一次性目录 ===
+_package_staging/
+_install_test_*/
+_r4*_test*/
+_r5*_test*/
+_apk_*/
+_apk_0929/
+_innosetup/
+_hotfix_laptop/
+_diag_phone/
+_dev_scripts/
+archive/
+build/
+dist/
+output/
+check_reports/
+installer_output/
+downloads/
+
+# === Python 产物 ===
 __pycache__/
 *.pyc
 *.pyo
 *.egg-info/
-dist/
-build/
+.pytest_cache/
+.mypy_cache/
 
-# === IDE ===
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# === OS ===
-.DS_Store
-Thumbs.db
-desktop.ini
+# === 打包产物（用 GitHub Release / HarvenHub 发布）===
+*.zip
+*.tar.gz
+*.7z
+*.exe
+*.msi
+*.apk
 
 # === 日志 ===
 *.log
 logs/
-
-# === 临时文件 ===
-*.tmp
-*.bak
-*.orig
-
-# === 打包 ===
-_package_staging/
-installer_output/
-*.exe
-*.msi
-
-# === 模型缓存 ===
-data/models/
-*.gguf
-*.bin
-*.safetensors
-
-# === 测试文件 ===
-check_*.py
-test_*.py
-list_skills.py
-
-# === 安装包/压缩包（不进 git，用 Release 发布）===
-*.zip
-*.tar.gz
-*.7z
-
-# === 第三方/存档代码 ===
-archive/
-
-# === 下载的 portable Python ===
-downloads/
-
-# === 调试/临时 HTML ===
-debug_page*.html
+flask_log.txt
 flask_*.log
 harven*.log
 start_log*.txt
-flask_*.log
+
+# === 坏档 / 备份尸体（2026-11-16 扫除清单）===
+*.bak
+*.orig
+*broken_*
+*_backup.py
+main_pyside6_backup.py
+web_app.py.broken_*
+config.yaml.bak_python_tag
+.backup_*/
+
+# === 运行残留 / 测试输出（扫除清单）===
+test_output.txt
+test_response.txt
+_test.txt
+_sse_test.txt
+_i18n_untranslated.txt
+_import_result.txt
+test_direct.json
+test_news.json
 check_*.txt
 run_result.txt
-import_result.txt
+debug_page*.html
+
+# === 8 月时代旧打包脚本（已被 pack_release.py 体系替代）===
+make_zip.py
+gen_docs.py
+gen_docs_single.py
+gen_guide.py
+gen_html.py
+打包安装包.ps1
+打包安装包_v2.ps1
+sync_package.py
+upload_package.py
+verify_staging.py
+clean_before_pack.py
+
+# === spa 构建中间残留 ===
+spa/build_*.log
+spa/tmp_*.log
+spa/_*.txt
+spa/assets_list.txt
+spa/vite.config.js.timestamp-*
+spa/_build_exit.txt
+spa/_py_exit.txt
+spa/_tmp_nav_test.mjs
+
+# === 工作区 AI 记忆 / IDE / OS ===
+.workbuddy/
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
 
 # === Windows 保留文件名（无法删除，只能排除）===
 NUL
 NULL
+
+# === 规则修正：根目录测试脚本不进，tests/ 目录要进 ===
+/test_*.py

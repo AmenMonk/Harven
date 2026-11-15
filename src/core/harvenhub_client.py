@@ -172,8 +172,12 @@ def hub_upload(file_path, item_type, title, description='', author='', category=
         with open(file_path, 'rb') as f:
             files = {'file': (os.path.basename(file_path), f)}
             data = {
-                'type': item_type,
+                # ★ 2026-11-13 实锤修复：Hub /api/hub/upload 认的字段是 name 不是 title
+                #   （字段名错位导致哈文分享到 Hub 一直 400「缺少名称或类型」）。
+                #   name 为准，title 双发保险（Hub 多余字段会忽略，不影响旧版 Hub）。
+                'name': title,
                 'title': title,
+                'type': item_type,
                 'description': description,
                 'author': author,
                 'category': category,

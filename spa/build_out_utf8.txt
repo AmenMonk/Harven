@@ -1,0 +1,10 @@
+﻿to be resolved at runtime
+transforming...
+[32m鉁?[39m 105 modules transformed.
+rendering chunks...
+computing gzip size...
+[2m../static/spa/[22m[32mindex.html                 [39m[1m[2m  1.36 kB[22m[1m[22m[2m 鈹?gzip:   0.72 kB[22m
+[2m../static/spa/[22m[32massets/duck-B0xItYAO.png   [39m[1m[2m300.65 kB[22m[1m[22m
+[2m../static/spa/[22m[35massets/index-BjiJ8YKV.css  [39m[1m[2m124.15 kB[22m[1m[22m[2m 鈹?gzip:  19.06 kB[22m
+[2m../static/spa/[22m[36massets/index-Ba2riyy6.js   [39m[1m[2m343.74 kB[22m[1m[22m[2m 鈹?gzip: 135.59 kB[22m
+[32m鉁?built in 1.55s[39m

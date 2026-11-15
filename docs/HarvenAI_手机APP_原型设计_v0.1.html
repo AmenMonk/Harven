@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>哈文 APP · 原型设计 v0.1（六屏）</title>
+<style>
+  :root{
+    --bg:#FBFCFE; --card:#fff; --ink:#3A4453; --sub:#9AA3B0; --line:#E5EAF2;
+    --pri:#5B87D8; --priw:#C6D6F5; --cloud:#8B5CF6; --cloudb:#F3EEFD;
+    --local:#22A06B; --localb:#EAF7F1; --vert:#E8A23D; --vertb:#FDF5E8;
+    --amber:#B08A4F;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{background:#EEF1F6; font-family:"PingFang SC","Microsoft YaHei",sans-serif; color:var(--ink); padding:34px 20px 60px;}
+  h1{font-size:24px; text-align:center; letter-spacing:1px;}
+  .sub{text-align:center; color:var(--sub); font-size:13px; margin:8px 0 30px;}
+  .board{display:flex; flex-wrap:wrap; gap:34px; justify-content:center;}
+  .unit{width:264px;}
+  .phone{
+    width:264px; height:560px; background:var(--bg); border-radius:34px;
+    border:8px solid #1E2530; position:relative; overflow:hidden;
+    box-shadow:0 18px 44px rgba(30,37,48,.28); display:flex; flex-direction:column;
+  }
+  .notch{position:absolute; top:8px; left:50%; transform:translateX(-50%); width:86px; height:18px; background:#1E2530; border-radius:10px; z-index:9;}
+  .cap{text-align:center; margin-top:12px; font-size:14px; font-weight:800;}
+  .cap small{display:block; font-weight:400; color:var(--sub); font-size:11.5px; margin-top:3px;}
+  /* 通用条 */
+  .statusbar{height:34px; flex:none; display:flex; align-items:flex-end; justify-content:space-between; padding:0 16px 3px; font-size:11px; color:var(--ink); font-weight:700;}
+  .tabbar{height:52px; flex:none; border-top:1px solid var(--line); background:var(--card); display:flex;}
+  .tab{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; font-size:10px; color:var(--sub);}
+  .tab.on{color:var(--pri); font-weight:800;}
+  .tab .ti{font-size:17px; line-height:1;}
+  /* 对话屏 */
+  .chat-head{flex:none; background:var(--card); border-bottom:1px solid var(--line); padding:8px 12px; display:flex; align-items:center; gap:8px;}
+  .burger{width:18px;}
+  .burger i{display:block; height:2px; background:var(--ink); border-radius:2px; margin:3px 0;}
+  .modes{display:flex; border:1.5px solid var(--line); border-radius:999px; overflow:hidden; font-size:10.5px; font-weight:800; color:var(--sub);}
+  .modes span{padding:4px 8px;}
+  .modes span+span{border-left:1.5px solid var(--line);}
+  .modes .on.g{background:var(--local); color:#fff;}
+  .msgs{flex:1; padding:10px 12px; display:flex; flex-direction:column; gap:9px; overflow:hidden;}
+  .row{display:flex;}
+  .row.u{justify-content:flex-end;}
+  .bub{max-width:78%; border-radius:13px; padding:8px 11px; font-size:11.5px; line-height:1.55;}
+  .bu{background:var(--pri); color:#fff; border-bottom-right-radius:4px;}
+  .ba{background:var(--card); border:1px solid var(--line); border-bottom-left-radius:4px;}
+  .cap3{font-size:9px; color:var(--local); font-weight:800; margin-bottom:3px;}
+  .cap3.c{color:var(--cloud);}
+  .capsule{display:inline-block; font-size:9px; font-weight:800; border-radius:999px; padding:1.5px 7px;}
+  .capsule.g{background:var(--localb); color:var(--local);}
+  .capsule.p{background:var(--cloudb); color:var(--cloud);}
+  .capsule.a{background:var(--vertb); color:var(--amber);}
+  .inputbar{flex:none; margin:0 10px 8px; background:var(--card); border:1px solid var(--line); border-radius:15px; box-shadow:0 1px 4px rgba(58,68,83,.06); display:flex; align-items:center; gap:6px; padding:7px 9px;}
+  .plus{font-size:16px; color:var(--sub);}
+  .ph{flex:1; font-size:11px; color:var(--sub);}
+  .send{color:var(--pri); font-size:14px;}
+  /* 语音屏 */
+  .voice{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px;}
+  .orb{width:130px; height:130px; border-radius:50%; background:radial-gradient(circle at 35% 30%, #7FA8EE, var(--pri) 70%); box-shadow:0 0 0 14px var(--priw), 0 0 0 30px #E4ECFA; display:flex; align-items:center; justify-content:center; font-size:44px;}
+  .vtxt{font-size:12px; color:var(--sub);}
+  .vt2{font-size:12.5px; text-align:center; line-height:1.6; padding:0 26px; color:var(--ink);}
+  .press{background:var(--card); border:1px solid var(--line); border-radius:999px; padding:9px 34px; font-size:12.5px; font-weight:800; color:var(--pri); box-shadow:0 1px 4px rgba(58,68,83,.08);}
+  /* 相机屏 */
+  .cam{flex:1; background:linear-gradient(160deg,#2A3547,#41506B); position:relative; display:flex; flex-direction:column; justify-content:flex-end;}
+  .frame{position:absolute; inset:52px 42px; border:2px dashed rgba(255,255,255,.75); border-radius:16px;}
+  .corner{position:absolute; width:22px; height:22px; border:3.5px solid #fff;}
+  .c1{top:0; left:0; border-right:none; border-bottom:none; border-radius:10px 0 0 0;}
+  .c2{top:0; right:0; border-left:none; border-bottom:none; border-radius:0 10px 0 0;}
+  .c3{bottom:0; left:0; border-right:none; border-top:none; border-radius:0 0 0 10px;}
+  .c4{bottom:0; right:0; border-left:none; border-top:none; border-radius:0 0 10px 0;}
+  .camtop{position:absolute; top:12px; left:14px; right:14px; display:flex; justify-content:space-between; align-items:center;}
+  .chip{background:rgba(0,0,0,.4); color:#fff; font-size:10px; border-radius:999px; padding:4px 10px;}
+  .camres{margin:12px; background:rgba(255,255,255,.96); border-radius:13px; padding:10px 12px; font-size:11px; line-height:1.55;}
+  .camres .cap3{color:var(--cloud);}
+  .shutter{flex:none; height:76px; background:#141A24; display:flex; align-items:center; justify-content:center; gap:34px;}
+  .gal{width:30px; height:30px; border-radius:7px; background:#3A4459;}
+  .sh{width:52px; height:52px; border-radius:50%; background:#fff; border:4px solid #56637d;}
+  .flip{width:30px; height:30px; border-radius:50%; background:#3A4459;}
+  /* 绑定屏 */
+  .bind{flex:1; padding:16px 18px; display:flex; flex-direction:column; align-items:center; text-align:center;}
+  .bind h3{font-size:15px; margin:4px 0 4px;}
+  .bind p{font-size:10.5px; color:var(--sub); line-height:1.6;}
+  .qr{width:132px; height:132px; margin:12px 0 10px; background:
+      repeating-linear-gradient(0deg,#3A4453 0 7px,transparent 7px 14px),
+      repeating-linear-gradient(90deg,#3A4453 0 7px,transparent 7px 14px);
+      border:9px solid #fff; border-radius:10px; outline:1px solid var(--line);
+      background-size:14px 14px; position:relative;}
+  .qr::after{content:"🐤"; position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:30px; background:#fff; margin:auto; width:36px; height:36px; border-radius:7px;}
+  .ways{width:100%; display:flex; flex-direction:column; gap:7px; margin-top:6px;}
+  .way{display:flex; align-items:center; gap:8px; background:var(--card); border:1px solid var(--line); border-radius:11px; padding:9px 11px; font-size:11px; text-align:left;}
+  .way b{display:block; font-size:11.5px;}
+  .way span{color:var(--sub); font-size:10px;}
+  .way .dot{margin-left:auto; width:7px; height:7px; border-radius:50%;}
+  /* 面板屏 */
+  .panel{flex:1; padding:12px; overflow:hidden;}
+  .ptitle{font-size:14px; font-weight:800; margin:2px 2px 10px;}
+  .pcard2{background:var(--card); border:1px solid var(--line); border-radius:13px; padding:11px 13px; margin-bottom:9px;}
+  .prow{display:flex; justify-content:space-between; font-size:11.5px; padding:3.5px 0;}
+  .prow .in{color:var(--local); font-weight:800;}
+  .prow .out{color:#E05B5B; font-weight:800;}
+  .total{display:flex; gap:9px; margin-bottom:10px;}
+  .tcard{flex:1; background:var(--card); border:1px solid var(--line); border-radius:13px; padding:9px 11px;}
+  .tcard small{font-size:9.5px; color:var(--sub);}
+  .tcard b{display:block; font-size:14px; margin-top:2px;}
+  .fab{position:absolute; right:14px; bottom:66px; width:44px; height:44px; border-radius:50%; background:var(--pri); color:#fff; font-size:22px; display:flex; align-items:center; justify-content:center; box-shadow:0 6px 16px rgba(91,135,216,.45);}
+  /* 我的屏 */
+  .me{flex:1; padding:12px 13px;}
+  .mhead{display:flex; align-items:center; gap:11px; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px; margin-bottom:11px;}
+  .mhead .duck{width:42px; height:42px; border-radius:12px; background:linear-gradient(145deg,#FFE9A8,#FFD35C); display:flex; align-items:center; justify-content:center; font-size:22px;}
+  .mrow{display:flex; justify-content:space-between; align-items:center; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:11px 13px; font-size:12px; margin-bottom:8px;}
+  .mrow .l{color:var(--sub); font-size:11px;}
+  .sw{width:34px; height:19px; border-radius:999px; background:var(--local); position:relative;}
+  .sw::after{content:""; position:absolute; top:2px; right:2px; width:15px; height:15px; border-radius:50%; background:#fff;}
+  .sw.off{background:#CBD4E1;}
+  .sw.off::after{right:auto; left:2px;}
+  .pill{font-size:10px; font-weight:800; border-radius:999px; padding:2.5px 10px;}
+  .pill.g{background:var(--localb); color:var(--local);}
+  .pill.b{background:var(--cloudb); color:var(--cloud);}
+  .note{max-width:900px; margin:34px auto 0; background:#fff; border:1px solid var(--line); border-radius:14px; padding:18px 22px; font-size:13px; line-height:1.9;}
+  .note b.t{font-size:14px;}
+  .note ul{padding-left:20px;}
+</style>
+</head>
+<body>
+<h1>🐤 哈文 APP · 原型设计 v0.1</h1>
+<p class="sub">六屏核心流程 · 配色/组件与电脑版哈文同源 · 配套《手机APP功能开发文档 v0.1》</p>
+
+<div class="board">
+
+  <!-- 屏1 对话 -->
+  <div class="unit">
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="statusbar"><span>9:41</span><span>📶 ⚡</span></div>
+      <div class="chat-head">
+        <div class="burger"><i></i><i></i><i></i></div>
+        <div class="modes"><span class="on g">🏠本地</span><span>🤖外脑</span><span>🦞协作</span></div>
+        <span style="margin-left:auto;color:var(--sub)">＋</span>
+      </div>
+      <div class="msgs">
+        <div class="row u"><div class="bub bu">帮我把今天买机票的发票记到账本里</div></div>
+        <div class="row"><div class="bub ba">
+          <div class="cap3 c">🦞 协作 · 外脑出主意 → 本地执行</div>
+          好的，已识别为交通出行支出：<b>机票 ¥1250</b>，计入「差旅」分类，记录人：开发者 ✓
+        </div></div>
+        <div class="row u"><div class="bub bu">📹 发一段视频[缩略图]<br>视频里孩子弹的是哪首曲子？</div></div>
+        <div class="row"><div class="bub ba">
+          <div class="cap3">🏠 本地看图 · minicpm-v:8b</div>
+          抽了 6 帧分析：谱面是《小星星》C 大调，右手旋律从 Do 开始…
+        </div></div>
+      </div>
+      <div class="inputbar"><span class="plus">＋</span><span class="ph">问点什么…（可粘贴图片）</span><span class="send">➤</span></div>
+      <div class="tabbar">
+        <div class="tab on"><span class="ti">💬</span>对话</div>
+        <div class="tab"><span class="ti">🎨</span>垂直</div>
+        <div class="tab"><span class="ti">📊</span>面板</div>
+        <div class="tab"><span class="ti">👤</span>我的</div>
+      </div>
+    </div>
+    <div class="cap">① 对话首页<small>三模式胶囊 · 来源标注随气泡 · 图片视频随消息</small></div>
+  </div>
+
+  <!-- 屏2 语音 -->
+  <div class="unit">
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="statusbar"><span>9:41</span><span>📶 ⚡</span></div>
+      <div class="voice">
+        <span class="capsule g">🏠 本地 · 语音正在识别</span>
+        <div class="orb">🎤</div>
+        <div class="vt2">"哈文哈文，<br>提醒我下午四点接孩子放学"</div>
+        <div class="vtxt">已建任务 · 到点手机+电脑都会提醒 ✓</div>
+        <div class="press">按住 说话</div>
+      </div>
+      <div class="tabbar">
+        <div class="tab on"><span class="ti">💬</span>对话</div>
+        <div class="tab"><span class="ti">🎨</span>垂直</div>
+        <div class="tab"><span class="ti">📊</span>面板</div>
+        <div class="tab"><span class="ti">👤</span>我的</div>
+      </div>
+    </div>
+    <div class="cap">② 语音对话<small>按住说话 / 唤醒词"哈文哈文" · 识别转写在本地</small></div>
+  </div>
+
+  <!-- 屏3 拍照识图 -->
+  <div class="unit">
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="cam">
+        <div class="frame">
+          <i class="corner c1"></i><i class="corner c2"></i><i class="corner c3"></i><i class="corner c4"></i>
+        </div>
+        <div class="camtop">
+          <span class="chip">✕ 关闭</span>
+          <span class="chip">👁️ 看图模式 · minicpm-v</span>
+        </div>
+        <div class="camres">
+          <div class="cap3 c">🤖 识别结果 · 实时</div>
+          这是一张<b>超市小票</b>：牛奶 ¥12.9、鸡蛋 ¥19.8、纸巾 ¥15.5，合计 <b>¥48.2</b>。要我记到家庭账本吗？
+        </div>
+      </div>
+      <div class="shutter">
+        <div class="gal"></div><div class="sh"></div><div class="flip"></div>
+      </div>
+      <div class="tabbar">
+        <div class="tab on"><span class="ti">💬</span>对话</div>
+        <div class="tab"><span class="ti">🎨</span>垂直</div>
+        <div class="tab"><span class="ti">📊</span>面板</div>
+        <div class="tab"><span class="ti">👤</span>我的</div>
+      </div>
+    </div>
+    <div class="cap">③ 拍照识图<small>拍小票/说明书/作业 → 识别+追问 → 一键入库</small></div>
+  </div>
+
+  <!-- 屏4 绑定 -->
+  <div class="unit">
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="statusbar"><span>9:41</span><span>📶 ⚡</span></div>
+      <div class="bind">
+        <h3>连接家里的哈文</h3>
+        <p>电脑上打开「设置 → 手机连接」显示二维码，<br>用这个扫一扫完成绑定</p>
+        <div class="qr"></div>
+        <div class="ways">
+          <div class="way">🏠<div><b>局域网直连</b><span>同一 WiFi，最快最隐私</span></div><span class="dot" style="background:var(--local)"></span></div>
+          <div class="way">☁️<div><b>HarvenHub 云中继</b><span>出门在外也能用，端到端加密</span></div><span class="dot" style="background:var(--cloudb); outline:1px solid var(--cloud)"></span></div>
+          <div class="way">🤖<div><b>纯云端应急</b><span>电脑关机时仅外脑直答</span></div><span class="dot" style="background:#CBD4E1"></span></div>
+        </div>
+      </div>
+      <div class="tabbar">
+        <div class="tab on"><span class="ti">💬</span>对话</div>
+        <div class="tab"><span class="ti">🎨</span>垂直</div>
+        <div class="tab"><span class="ti">📊</span>面板</div>
+        <div class="tab"><span class="ti">👤</span>我的</div>
+      </div>
+    </div>
+    <div class="cap">④ 扫码绑定<small>三通道自动选优 · 电脑端可随时吊销设备</small></div>
+  </div>
+
+  <!-- 屏5 面板 -->
+  <div class="unit">
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="statusbar"><span>9:41</span><span>📶 ⚡</span></div>
+      <div class="panel">
+        <div class="ptitle">📊 家庭账本 · 9月</div>
+        <div class="total">
+          <div class="tcard"><small>本月支出</small><b style="color:#E05B5B">¥8,420</b></div>
+          <div class="tcard"><small>本月结余</small><b style="color:var(--local)">¥5,180</b></div>
+        </div>
+        <div class="pcard2">
+          <div class="prow"><span>9/14 · 超市采购</span><span class="out">-¥48.2</span></div>
+          <div class="prow"><span>9/13 · 机票（差旅）</span><span class="out">-¥1,250</span></div>
+          <div class="prow"><span>9/12 · 工资入账</span><span class="in">+¥15,800</span></div>
+          <div class="prow" style="color:var(--sub)"><span>记录人：爸爸 / 妈妈 / 哈文代记</span><span>查看全部 →</span></div>
+        </div>
+        <div class="pcard2">
+          <b style="font-size:12px">⏰ 今日任务</b>
+          <div class="prow"><span>16:00 接孩子放学</span><span class="pill g">语音创建</span></div>
+          <div class="prow"><span>19:30 盆栽浇水</span><span class="pill b">重复·每天</span></div>
+        </div>
+      </div>
+      <div class="fab">＋</div>
+      <div class="tabbar">
+        <div class="tab"><span class="ti">💬</span>对话</div>
+        <div class="tab"><span class="ti">🎨</span>垂直</div>
+        <div class="tab on"><span class="ti">📊</span>面板</div>
+        <div class="tab"><span class="ti">👤</span>我的</div>
+      </div>
+    </div>
+    <div class="cap">⑤ 家庭面板<small>记账/任务/监控手机随手记 · 家人共用（记录人标注）</small></div>
+  </div>
+
+  <!-- 屏6 我的 -->
+  <div class="unit">
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="statusbar"><span>9:41</span><span>📶 ⚡</span></div>
+      <div class="me">
+        <div class="mhead">
+          <div class="duck">🐤</div>
+          <div><b style="font-size:13.5px">开发者的哈文</b><br><small style="color:var(--sub); font-size:10.5px">已绑定：书房电脑 · v0.3.1</small></div>
+        </div>
+        <div class="mrow"><span>连接方式</span><span class="pill g">🏠 局域网直连</span></div>
+        <div class="mrow"><span>隐私档位</span><span class="pill b">☁️ 平衡</span></div>
+        <div class="mrow"><span>推送提醒（任务/监控）</span><span class="sw"></span></div>
+        <div class="mrow"><span>语音唤醒「哈文哈文」</span><span class="sw"></span></div>
+        <div class="mrow"><span>自动朗读回答</span><span class="sw off"></span></div>
+        <div class="mrow"><span>设备管理 / 吊销</span><span style="color:var(--sub)">2 台 ›</span></div>
+      </div>
+      <div class="tabbar">
+        <div class="tab"><span class="ti">💬</span>对话</div>
+        <div class="tab"><span class="ti">🎨</span>垂直</div>
+        <div class="tab"><span class="ti">📊</span>面板</div>
+        <div class="tab on"><span class="ti">👤</span>我的</div>
+      </div>
+    </div>
+    <div class="cap">⑥ 我的 / 连接设置<small>隐私三档沿用电脑版理念 · 设备可吊销</small></div>
+  </div>
+
+</div>
+
+<div class="note">
+  <b class="t">📌 设计说明（配合开发文档看）</b>
+  <ul>
+    <li><b>六屏即主流程</b>：绑定 → 对话 → 语音/拍照 → 面板，覆盖 V1.0 MVP 全部核心功能；底部四 Tab 固定导航</li>
+    <li><b>视觉同源</b>：配色、模式三色（本地绿/外脑紫/协作琥珀）、圆角卡片全部取自哈文电脑版设计稿 v2，用户在两个端感受一致</li>
+    <li><b>来源标注进手机</b>：每条回答都带"是谁答的"胶囊（电脑版 9-14 刚做的能力直接移植）</li>
+    <li><b>隐私可视化</b>：「我的」页连接方式/隐私档位常驻，随时看清数据走哪条道</li>
+    <li>本页为静态设计原型，非功能程序；确认后按开发文档 M1 出连接协议与接口清单</li>
+  </ul>
+</div>
+</body>
+</html>

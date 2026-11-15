@@ -1,12 +1,14 @@
-# Harven AI — 跨平台一键部署
-# Windows/macOS/Linux: docker compose up -d
-version: "3.8"
+# Harven AI — Docker 一键部署
+# Windows / macOS / Linux 通用: docker compose up -d --build
 services:
   harven:
     build: .
+    container_name: harven-ai
     ports:
-      - "5000:5000"
+      - "7000:7000"
     volumes:
+      # 数据持久化（账本/面板/知识库/相册全在这，容器重建不丢）
       - ./data:/app/data
-      - ./config.yaml:/app/config.yaml
+      # 自定义配置：先复制 config.example.yaml 为 config.yaml 再取消下行注释
+      # - ./config.yaml:/app/config.yaml
     restart: unless-stopped

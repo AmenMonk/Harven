@@ -24,14 +24,9 @@ VAULT_DB = DATA_DIR / 'vault_logs.db'
 # ============ 工具函数 ============
 
 def _get_admin_password():
-    """从 config.yaml 读取管理员密码（用于锁定/解锁验证）"""
-    from src.utils.config import Config
-    config = Config()
-    # 先尝试 security.admin_password，再尝试 admin_password（兼容性）
-    admin_pwd = config.get('security', {}).get('admin_password', '')
-    if not admin_pwd:
-        admin_pwd = config.get('admin_password', '')
-    return admin_pwd
+    """读取管理员密码（★ 2026-09-17 收口：统一走 security_guard，与全权模式同源）"""
+    from src.core.security_guard import get_admin_password
+    return get_admin_password()
 
 def _hash_password(pwd: str) -> str:
     """简单哈希（用于比对，不存储明文）"""

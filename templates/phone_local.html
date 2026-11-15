@@ -1,0 +1,2751 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#FBFCFE" />
+<title>哈文 · Harven AI</title>
+<link rel="icon" href="/static/icons/duck_32.png" />
+<link rel="apple-touch-icon" href="/static/icons/duck_180.png" />
+<style>
+  :root { --line:#E6E9F0; --sub:#7A8195; --main:#1E2433; --ok:#2E9E5B; --bad:#D9534F; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif; background:#FBFCFE; color:var(--main); height:100%; }
+  .wrap { max-width:520px; margin:0 auto; padding:12px 16px calc(10px + env(safe-area-inset-bottom)); height:100dvh; display:flex; flex-direction:column; }
+  header { display:flex; align-items:center; gap:10px; padding:2px 0 12px; flex-shrink:0; }
+  header img { width:34px; height:34px; border-radius:9px; }
+  header b { font-size:17px; }
+  header span { display:block; font-size:12px; color:var(--sub); font-weight:400; }
+  #btn-settings { display:none; width:34px; height:34px; padding:0; margin-left:auto; background:#F1F3F8; border-radius:9px; font-size:15px; flex-shrink:0; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:14px; padding:16px; margin-bottom:14px; }
+  .card h3 { font-size:14px; margin-bottom:10px; }
+  .sub { font-size:12px; color:var(--sub); line-height:1.6; }
+  input { width:100%; border:1px solid var(--line); border-radius:10px; padding:11px 12px; font-size:15px; margin-bottom:10px; background:#fff; }
+  input:focus { outline:2px solid #C9D8FF; border-color:#7C9BFF; }
+  button { width:100%; border:0; border-radius:10px; padding:12px; font-size:15px; font-weight:600; background:#3D6BFF; color:#fff; cursor:pointer; }
+  button:disabled { opacity:.5; }
+  button.ghost { background:#F1F3F8; color:var(--main); }
+  .code-big { font-size:38px; letter-spacing:10px; text-align:center; font-weight:700; font-family:Consolas,monospace; padding:8px 0; }
+  .pill { display:inline-block; font-size:12px; padding:2px 10px; border-radius:99px; background:#F1F3F8; color:var(--sub); }
+  .pill.ok { background:#E5F6EC; color:var(--ok); }
+  .pill.bad { background:#FBEAEA; color:var(--bad); }
+  .tip { font-size:13px; border-radius:10px; padding:10px 12px; margin-bottom:12px; }
+  .tip.ok { background:#E5F6EC; color:var(--ok); }
+  .tip.bad { background:#FBEAEA; color:var(--bad); }
+  .devs { font-size:13px; }
+  .devs .row2 { display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-top:1px solid var(--line); }
+  .devs .row2:first-child { border-top:0; }
+  .del { background:none; color:var(--bad); border:1px solid var(--line); border-radius:8px; padding:4px 12px; font-size:12px; width:auto; }
+  #chatlog { flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column; gap:10px; padding:4px 2px 12px; }
+  .bub { max-width:86%; padding:10px 13px; border-radius:14px; font-size:14px; line-height:1.6; white-space:pre-wrap; word-break:break-word; }
+  .bub.me { align-self:flex-end; background:#3D6BFF; color:#fff; border-bottom-right-radius:4px; }
+  .bub.hv { align-self:flex-start; background:#F1F3F8; border-bottom-left-radius:4px; }
+  #chat-card { flex:1; min-height:0; display:flex; flex-direction:column; margin-bottom:0; }
+  .chatrow { display:flex; gap:8px; align-items:flex-end; position:sticky; bottom:0; background:#fff; padding-top:6px; }
+  .chatrow button { width:auto; padding:0; }
+  #btn-attach { width:40px; height:40px; font-size:19px; background:#F1F3F8; border-radius:50%; flex-shrink:0; margin:0; }
+  #input-shell { flex:1; min-width:0; display:flex; align-items:flex-end; gap:4px; background:#fff; border:1px solid var(--line); border-radius:18px; padding:3px 5px 3px 12px; }
+  #input-shell:focus-within { border-color:#7C9BFF; box-shadow:0 0 0 2px #C9D8FF; }
+  #msg { flex:1; min-width:0; border:0; background:transparent; resize:none; outline:none; font-size:15px; line-height:1.45; padding:8px 0; margin:0; max-height:96px; font-family:inherit; color:var(--main); }
+  #btn-mic { width:36px; height:36px; font-size:16px; background:#F1F3F8; border-radius:50%; flex-shrink:0; margin:0; }
+  #btn-mic.rec { background:#D9534F; animation:pulse 1s infinite; }
+  #btn-send { width:40px; height:40px; font-size:17px; border-radius:50%; flex-shrink:0; margin:0; padding:0; }
+  @keyframes pulse { 50% { opacity:.65; } }
+  .loading { color:var(--sub); font-size:13px; }
+  #view-main { display:none; flex:1; min-height:0; flex-direction:column; }
+  #settings-drawer { display:none; padding-top:10px; flex-shrink:0; }
+  /* ★ #823: 面板横滑入口 */
+  .chips { display:flex; gap:8px; overflow-x:auto; padding:0 0 10px; flex-shrink:0; scrollbar-width:none; }
+  .chips::-webkit-scrollbar { display:none; }
+  .chip { white-space:nowrap; background:#F1F3F8; color:var(--main); border:0; border-radius:999px; padding:7px 14px; font-size:13px; font-weight:500; flex-shrink:0; }
+  .chip:active { background:#E2E7F2; }
+  footer { text-align:center; font-size:11px; color:var(--sub); padding-top:10px; }
+  footer a { color:var(--sub); }
+  /* ★ #931-C1 面板页卡片 */
+  .pnl-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .pnl-card { background:#fff; border:1px solid var(--line); border-radius:14px; padding:14px 12px; text-align:left; cursor:pointer; }
+  .pnl-card .pi { font-size:24px; }
+  .pnl-card b { display:block; font-size:14px; margin-top:5px; color:var(--main); }
+  .pnl-card span { font-size:11.5px; color:var(--sub); }
+  .pnl-row { background:#fff; border:1px solid var(--line); border-radius:12px; padding:10px 12px; margin-bottom:8px; font-size:13px; line-height:1.6; word-break:break-all; white-space:pre-wrap; }
+  .pnl-row .rt { color:var(--sub); font-size:11px; }
+  #btn-assist { width:auto; padding:0 10px; font-size:18px; background:#F1F3F8; border-radius:10px; margin-right:8px; }
+  /* ══ ★ #1089 方案B精简（2026-10-11）：七层→四层 ══ */
+  /* 顶栏徽章行：绿点状态 + 网络 + 模式，一行收纳 */
+  .hd-badge { display:inline-flex; align-items:center; gap:4px; font-size:11.5px; font-weight:500; background:#F1F3F8; color:var(--sub); border-radius:999px; padding:3px 9px; white-space:nowrap; flex-shrink:0; }
+  .hd-badge .dot { width:7px; height:7px; border-radius:50%; background:#C4C9D6; }
+  .hd-badge.ok .dot { background:var(--ok); }
+  .hd-badge.bad .dot { background:var(--bad); }
+  #hd-mode { cursor:pointer; }
+  #hd-mode.on { background:#EAF0FF; color:#3D6BFF; }
+  /* 「+」九宫格抽屉 */
+  #grid-sheet { position:fixed; inset:0; z-index:80; background:rgba(0,0,0,.35); display:flex; align-items:flex-end; }
+  #grid-sheet .sheet { width:100%; max-width:520px; margin:0 auto; background:#fff; border-radius:18px 18px 0 0; padding:16px 16px calc(16px + env(safe-area-inset-bottom)); }
+  /* ★ #1191-A（2026-10-25）管家弹层自有定位：此前只有 #grid-sheet 有 .sheet 样式，
+     管家弹层成了普通 div 撑在页尾——页面拉不到底、输入框被截一半（开发者截图实锤）。
+     与九宫格弹层同款：fixed 遮罩+底部抽屉+圆角+安全区，内部自己滚 */
+  #butler-sheet { position:fixed; inset:0; z-index:80; background:rgba(0,0,0,.35); display:flex; align-items:flex-end; }
+  #butler-sheet .sheet { width:100%; max-width:520px; margin:0 auto; background:#fff; border-radius:18px 18px 0 0; box-sizing:border-box; padding:16px 16px calc(16px + env(safe-area-inset-bottom)); overflow:hidden; display:flex; flex-direction:column; max-height:82vh; }
+  #butler-sheet #bt-body { flex:1 1 auto; -webkit-overflow-scrolling:touch; }
+  /* ★ #1191（2026-10-25）随身记弹层撤除（整体内嵌管家弹层「随身记」页签），只保留录音态呼吸灯（ib-mic 随页签走） */
+  #ib-mic.ib-rec { background:#FDECEC; border-color:#E74C3C; animation:ibPulse 1s infinite; }
+  @keyframes ibPulse { 50% { opacity:.55 } }
+  .grid9 { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+  .g-item { background:#F7F8FB; border:1px solid var(--line); border-radius:14px; padding:12px 4px 10px; text-align:center; cursor:pointer; position:relative; }
+  .g-item .gi { font-size:24px; display:block; }
+  .g-item b { display:block; font-size:11.5px; margin-top:5px; color:var(--main); font-weight:500; }
+  .g-item:active { background:#E9EDF6; }
+  .g-item .g-pin { position:absolute; top:4px; right:6px; font-size:9px; color:#B7BECF; }
+  /* 空对话引导卡 */
+  #empty-guide { margin:auto 0; padding:10px 4px; }
+  #empty-guide .eg-hi { font-size:15px; font-weight:600; margin-bottom:6px; }
+  #empty-guide .eg-sub { font-size:12.5px; color:var(--sub); line-height:1.7; margin-bottom:14px; }
+  .eg-q { display:block; width:100%; text-align:left; background:#fff; border:1px solid var(--line); border-radius:12px; padding:10px 13px; font-size:13.5px; font-weight:400; color:var(--main); margin-bottom:8px; }
+  .eg-q:active { background:#F1F3F8; }
+  /* 「哈文在想…」思考气泡（#1090 两链路统一） */
+  .bub.thinking { display:flex; gap:5px; align-items:center; padding:12px 15px; }
+  .bub.thinking i { width:6px; height:6px; border-radius:50%; background:#9AA3B8; animation:th 1.2s infinite; }
+  .bub.thinking i:nth-child(2) { animation-delay:.2s; }
+  .bub.thinking i:nth-child(3) { animation-delay:.4s; }
+  @keyframes th { 0%,60%,100% { transform:translateY(0); opacity:.5; } 30% { transform:translateY(-4px); opacity:1; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <img src="/static/icons/duck_192.png" alt="哈文" />
+    <div><b>哈文</b></div>
+    <!-- ★ #1089 顶栏徽章行：状态绿点+网络、模式（点弹三选一），常驻状态条/模式条退役 -->
+    <span id="hd-status" class="hd-badge"><span class="dot"></span><span id="hd-status-txt">WiFi·家</span></span>
+    <span id="hd-mode" class="hd-badge on">✨ 跟随电脑</span>
+    <button id="btn-assist" title="哈文助手" style="display:none">🤝</button>
+    <button id="btn-settings" title="设置">⚙️</button>
+  </header>
+
+  <!-- ★ #953 小白三行说明（点「知道了」收起，记住不再弹） -->
+  <div id="quick-guide" style="display:none;font-size:12.5px;line-height:1.7;background:#EAF3EC;color:#2F6B3E;border-radius:10px;padding:9px 12px;margin-bottom:12px;">
+    <b>第一次用？两步就够：</b><br>
+    ① 手机连上<b>家里 WiFi</b>，浏览器输入电脑哈文的地址（电脑哈文 设置→手机与云端 里能看到）<br>
+    ② 密码就是<b>登录电脑哈文的那个密码</b>（改过就用新的；没改过就是默认的 <b>harven2026</b>——第一次进电脑哈文时会让你换成自己的）。以后回家打开直接用，什么都不用输<br>
+    🚪 出门也能用：装「哈文 APP」，在家出门自动切换，界面一模一样
+    <span id="qg-ok" style="float:right;cursor:pointer;font-weight:600;color:#1E4A2A">知道了 ✓</span>
+  </div>
+
+  <!-- ★ #811: PWA 安装提示（一次性，localStorage 记住） -->
+  <div id="pwa-tip" style="display:none;font-size:12.5px;line-height:1.65;background:#EDE9FE;color:#6D28D9;border-radius:10px;padding:9px 12px;margin-bottom:12px;cursor:pointer;">
+    📲 想变成 APP？点浏览器菜单 →「<b>添加到主屏幕</b>」，桌面就有哈文图标（点此条不再提示）
+  </div>
+
+  <!-- ② 在家直连：不需要配对——远程密码门在前面拦，进来就能用 -->
+  <div id="view-main">
+    <!-- ★ #1089 常驻状态条退役：默认隐藏，只有连不上/重试时才弹出来报信 -->
+    <div class="tip ok" id="status-tip" style="flex-shrink:0;display:none">连接中…</div>
+    <div id="panel-chips" class="chips" style="display:none"></div>
+
+    <div class="card" id="chat-card">
+      <div id="chatlog"></div>
+      <!-- ★ #1089 空对话引导卡：有历史/发首条即隐 -->
+      <div id="empty-guide" style="display:none">
+        <div class="eg-hi">👋 我在呢，说句话、拍张照都行</div>
+        <div class="eg-sub">点下面任意一句直接问；也可以按住 🎤 说话、点 ＋ 拍照记账。<br>家里的事随口问：「这个月花了多少」「冰箱里有什么」。</div>
+        <button class="eg-q" data-q="这个月家里花了多少钱？">💰 这个月家里花了多少钱？</button>
+        <button class="eg-q" data-q="冰箱里现在有什么，快过期的有哪些？">🍽 冰箱里现在有什么？</button>
+        <button class="eg-q" data-q="螺丝刀放哪了？">📦 螺丝刀放哪了？（物品存放）</button>
+        <button class="eg-q" data-q="这周末有什么安排？">📅 这周末有什么安排？</button>
+      </div>
+      <div class="chatrow">
+        <button id="btn-attach" title="拍照 / 面板 / 更多">＋</button>
+        <div id="input-shell">
+          <textarea id="msg" rows="1" placeholder="给哈文捎句话…"></textarea>
+          <button id="btn-mic" title="按住说话">🎤</button>
+        </div>
+        <button id="btn-send" title="发送">➤</button>
+        <input id="photo-input" type="file" accept="image/*" capture="environment" multiple style="display:none" />
+        <input id="album-input" type="file" accept="image/*" multiple style="display:none" />
+        <input id="file-input" type="file" multiple style="display:none" />
+      </div>
+      <!-- ★ #1089 常驻提示行退役：功能收进「＋」九宫格，引导进空对话首条 -->
+    </div>
+
+    <!-- 设置抽屉：点右上角 ⚙️ 展开（★ #955 本地版：无设备管理） -->
+    <div id="settings-drawer">
+      <div class="card devs">
+        <h3>🏠 在家直连</h3>
+        <p class="sub">对话和照片都在家里电脑处理，数据不出家门。<br>想改密码 / 管理设备：电脑哈文 → 设置 → 手机与云端。</p>
+        <button class="ghost" id="btn-logout" style="margin-top:8px">重新登录（改过密码后用）</button>
+      </div>
+      <!-- ★ 照片链 C1（2026-10-11）：画质改为拍照确认卡现场选（原图带大小/压缩/压缩先发+回家补传），
+           设置抽屉的三档开关和 100 字长文案已删——一张照片一个决定，不用提前想 -->
+      <footer>🏠 本地轻页 · 在家直连 · 数据不出家门</footer>
+    </div>
+
+    <!-- ★ #1089 底栏页签退役：面板/服务收进「＋」九宫格，对话区最大化 -->
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id)
+// ★ #955: 本地轻页全部同源直连——无中转/直连切换逻辑
+// ★ 体检修复：动态内容拼进 innerHTML 前必须过这道（防面板名/报错信息带 HTML 注入）
+const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))
+
+// ★ #955 本地轻页：不需要设备令牌/配对——鉴权走远程密码 cookie（/login 登一次 30 天有效）
+function token() { return 'local' }
+function saveTok() {}
+function logout() { location.href = '/login?next=/phone' }
+
+// ★ #811: PWA 提示——绑定成功那一刻弹（转化率最高），点击后记住不再弹
+function showPwaTip() {
+  if (localStorage.getItem('hv_pwa_tip_seen')) return
+  var tip = document.getElementById('pwa-tip')
+  if (tip) {
+    tip.style.display = 'block'
+    tip.addEventListener('click', function () {
+      tip.style.display = 'none'
+      localStorage.setItem('hv_pwa_tip_seen', '1')
+    })
+  }
+}
+
+// ★ #953: 小白三行说明——首次打开就显示，点「知道了」收起并记住
+;(function () {
+  var g = document.getElementById('quick-guide')
+  if (!g) return
+  if (!localStorage.getItem('hv_qg_seen')) g.style.display = 'block'
+  document.getElementById('qg-ok').addEventListener('click', function () {
+    g.style.display = 'none'
+    localStorage.setItem('hv_qg_seen', '1')
+  })
+})()
+
+// ★ #955 本地轻页不需要配对码：地址栏残留 ?code= 直接清掉
+;(function () {
+  const m = (location.search || '').match(/[?&]code=(\d{4,8})/)
+  if (m) history.replaceState(null, '', location.pathname)
+})()
+
+async function jpost(url, body, needAuth, signal) {
+  // ★ #955: 本地轻页全部走同源 /api/phone/send（与云端 relay/send 同款 {action,params} 同白名单）
+  // ★ #1096: 第四参 signal —— 照片链停止键用（AbortController），现有调用不受影响
+  if (url === '/api/relay/send') url = '/api/phone/send'
+  const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}), signal: signal || undefined })
+  const out = { status: r.status, data: await r.json().catch(() => ({})) }
+  if (out.status === 401) { location.href = '/login?next=/phone'; throw new Error('登录已失效') }
+  return out
+}
+async function jget(url) {
+  // 保留兜底：个别调试场景直读 GET 端点
+  const r = await fetch(url)
+  return { status: r.status, data: await r.json().catch(() => ({})) }
+}
+
+/* ★ #955 模式开关：✨跟随电脑 / 🏠本地 / ☁️外脑（记住选择，随 chat/photo 请求带上）
+   ★ #1089 改版：常驻模式条退役 → 顶栏「模式徽章」，点击弹三选一小抽屉 */
+const MODE_META = {
+  '': { label: '✨ 跟随电脑' },
+  'local': { label: '🏠 本地' },
+  'cloud': { label: '☁️ 外脑' }
+}
+function hvMode() { return localStorage.getItem('hv_phone_mode') || '' }
+function paintMode() {
+  const m = $('hd-mode')
+  if (m) m.textContent = (MODE_META[hvMode()] || MODE_META['']).label
+}
+$('hd-mode').addEventListener('click', () => {
+  const old = $('mode-sheet'); if (old) { old.remove(); return }
+  const d = document.createElement('div')
+  d.id = 'mode-sheet'
+  d.style.cssText = 'position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.35);display:flex;align-items:flex-end'
+  const cur = hvMode()
+  d.innerHTML = '<div class="sheet" style="width:100%;max-width:520px;margin:0 auto;background:#fff;border-radius:18px 18px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom))">' +
+    '<b style="font-size:14px">用哪个脑子回答？</b>' +
+    '<div style="display:flex;gap:8px;margin-top:12px">' +
+    ['','local','cloud'].map(k => {
+      const on = k === cur
+      return `<button class="chip mv" data-m="${k}" style="flex:1;${on ? 'background:#3D6BFF;color:#fff' : ''}">${MODE_META[k].label}</button>`
+    }).join('') +
+    '</div><p class="sub" style="margin-top:10px">跟随电脑=电脑哈文用哪个就跟着用；本地=只在家里电脑上想；外脑=走云端大模型。</p></div>'
+  d.addEventListener('click', ev => { if (ev.target === d) d.remove() })
+  document.body.appendChild(d)
+  d.querySelectorAll('.mv').forEach(b => {
+    b.addEventListener('click', () => {
+      localStorage.setItem('hv_phone_mode', b.dataset.m || '')
+      paintMode(); d.remove()
+    })
+  })
+})
+paintMode()
+
+// ★ #818: 错误透传——Hub 把哈文的 error 放在 data.data.error，取不到时再看顶层
+function errMsg(data, status) {
+  return (data && data.error) || (data && data.data && data.data.error) || ('发送失败（状态 ' + status + '）')
+}
+
+/* ── 主界面（★ #955：本地轻页无绑定态，直接进主界面） ── */
+async function boot() {
+  $('view-main').style.display = 'flex'
+  $('btn-settings').style.display = 'block'   // ★ 修复：CSS 里 #btn-settings 是 display:none，设 '' 等于没设（齿轮永远隐形）
+  $('btn-assist').style.display = ''        // ★ #931-C2 顶部助手入口
+  hvHistRestore()   // ★ r30-b 先把上次的对话摆回来，再连状态
+  paintEmptyGuide()   // ★ #1089 空对话引导卡
+  await refreshStatus()
+  loadPanels()   // ★ #823: 面板横滑入口
+  try { startCoachPoll() } catch (e) {}   // ★ 2026-10-22 教练触达轮询
+  try { startSyncPoll() } catch (e) {}    // ★ #1220-A 数据版本轮询
+  showPwaTip()
+}
+
+// ★ #1089 空对话引导卡：没历史时显示；发首条/有历史即隐
+function paintEmptyGuide() {
+  const g = $('empty-guide')
+  if (!g) return
+  const hasHist = (() => { try { return (JSON.parse(localStorage.getItem('hv_chat_hist') || '[]')).length > 0 } catch (e) { return false } })()
+  g.style.display = (!hasHist && !$('chatlog').children.length) ? 'block' : 'none'
+  g.querySelectorAll('.eg-q').forEach(b => {
+    b.addEventListener('click', () => {
+      g.style.display = 'none'
+      const m = $('msg')
+      m.value = b.dataset.q
+      send()
+    })
+  })
+}
+
+// ★ #820: 右上角 ⚙️ 开合设置抽屉
+$('btn-settings').addEventListener('click', function () {
+  const d = $('settings-drawer')
+  d.style.display = (d.style.display === 'block') ? 'none' : 'block'
+})
+
+/* ── ★ #931-C1/C2（2026-09-30）页签跳转 → ★ #1089 改版：tabbar 退役，
+   面板/服务由「＋」九宫格直接调 panelsTab()/servicesTab()，返回键回对话 ── */
+function switchTab(t) {
+  const po = $('panels-drawer'), so = $('services-drawer')
+  if (t === 'panels') { if (!po) panelsTab() } else if (po) po.remove()
+  if (t === 'services') { if (!so) servicesTab() } else if (so) so.remove()
+}
+
+/* ★ #1089「＋」九宫格抽屉：固定 5 项 + 用户自定义格（候选池自选，localStorage 记住） */
+const GRID_CUSTOM_KEY = 'hv_grid_slots'
+const GRID_POOL = [
+  { k: 'photo',     icon: '📷', name: '拍照问哈文', fixed: true },
+  { k: 'album',     icon: '🖼️', name: '读取手机图册', fixed: true },
+  { k: 'file',      icon: '📁', name: '手机文件', fixed: true },
+  { k: 'panels',    icon: '📋', name: '面板', fixed: true },
+  { k: 'services',  icon: '🧰', name: '服务', fixed: true },
+  { k: 'butler',    icon: '🛎️', name: '管家', fixed: true },      // ★ #1177 2026-10-24 目标位改管家（目标收进管家页签）
+  // 自定义候选池（选进九宫格的才显示）
+  { k: 'fridge',        icon: '🍽', name: '记冰箱', pool: true, q: '把这张照片记入冰箱库存，看不清的问我' },
+  { k: 'account',       icon: '💰', name: '记账', pool: true, q: '帮我记一笔账' },
+  { k: 'album_save',    icon: '🖼', name: '存相册', pool: true },
+  { k: 'panel:home_items', icon: '📦', name: '存物品', pool: true },
+  { k: 'panel:health_file', icon: '🩺', name: '体检档案', pool: true },
+  { k: 'ask',           icon: '❓', name: '随便问问', pool: true }
+]
+function hvGridSlots() {
+  try { return JSON.parse(localStorage.getItem(GRID_CUSTOM_KEY) || '["fridge","account","album_save","panel:home_items"]') } catch (e) { return ['fridge', 'account', 'album_save', 'panel:home_items'] }
+}
+function openGridSheet() {
+  const old = $('grid-sheet'); if (old) { old.remove(); return }
+  const d = document.createElement('div')
+  d.id = 'grid-sheet'
+  const slots = hvGridSlots()
+  const items = GRID_POOL.filter(it => it.fixed || slots.includes(it.k))
+  const cells = items.map(it => `<div class="g-item" data-k="${escHtml(it.k)}"><span class="gi">${it.icon}</span><b>${escHtml(it.name)}</b></div>`).join('') +
+    '<div class="g-item" id="g-edit"><span class="gi">✏️</span><b>编辑格子</b></div>'
+  d.innerHTML = `<div class="sheet">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <b style="font-size:14px">要做什么？</b>
+      <span id="g-close" style="cursor:pointer;color:var(--sub);font-size:13px">收起 ✕</span>
+    </div>
+    <div class="grid9">${cells}</div>
+    <p class="sub" style="margin-top:10px">想换格子？点「编辑格子」从常用功能里挑。</p>
+  </div>`
+  d.addEventListener('click', ev => { if (ev.target === d) d.remove() })
+  document.body.appendChild(d)
+  $('g-close').onclick = () => d.remove()
+  d.querySelectorAll('.g-item').forEach(el => {
+    el.onclick = () => {
+      const k = el.dataset.k
+      if (el.id === 'g-edit') { openGridEditor(); return }
+      d.remove()
+      gridAction(k)
+    }
+  })
+}
+function gridAction(k) {
+  if (k === 'photo') { $('photo-input').click(); return }
+  if (k === 'album') { $('album-input').click(); return }
+  if (k === 'file') { pickPhoneFile(); return }
+  if (k === 'panels') { switchTab('panels'); return }
+  if (k === 'services') { switchTab('services'); return }
+  if (k === 'butler') { openButlerSheet(); return }
+  // ★ #1177 家人独立入口已撤（家人健康面板本体还在「面板」页，重复入口收掉）
+  // 文字类快捷动作：预填问题直接发（记冰箱/记账也能在发送后补拍）
+  const it = GRID_POOL.find(x => x.k === k)
+  if (!it) return
+  if (k === 'album_save') { $('album-input').click(); return }   // 存相册=选图直存
+  if (k.startsWith('panel:')) {
+    const pid = k.slice(6)
+    const known = (window._hvPanels || []).find(p => p.id === pid)
+    openPanel(known || { id: pid, name: pid, icon: '📋' })
+    return
+  }
+  if (it.q) { const m = $('msg'); m.value = it.q; send(); return }
+  bubble('hv', '点「📷 拍照」或「🖼️ 图册」选张照片，我帮你办。')
+}
+/* ★ #1135（2026-10-14）随身记收件箱：+号九宫格直达；家庭网下直调本地 API，外网提示回家用 */
+/* ★ #1177（2026-10-24）管家抽屉 2.0：四分区页签（今日议程/任务/目标/随手记）——
+   九宫格「管家」键直达；任务/目标/随身记入口全部收拢到这里，存储全不动 */
+/* ★ #1191（2026-10-25）管家抽屉 3.0：六页签（问管家/待确认/今日议程/任务/目标/随身记）——
+   与桌面管家中心六区对齐（能问·能看·能办·能记）；问管家=SSE 直连 /api/chat，
+   随手记整体内嵌（独立弹层与九宫格独立键撤除），默认落在「问管家」页签 */
+let _butlerTab = 'chat'
+async function openButlerSheet(tab) {
+  if (tab) _butlerTab = tab
+  const old = $('butler-sheet'); if (old) { old.remove(); return }
+  const d = document.createElement('div'); d.id = 'butler-sheet'
+  d.innerHTML = `<div class="sheet">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <b style="font-size:14px">🛎️ 管家</b><span id="bt-close" style="cursor:pointer;color:var(--sub);font-size:13px">收起 ✕</span></div>
+    <div style="display:flex;gap:4px;margin-bottom:10px">
+      ${[['chat','问管家'],['pending','待确认'],['agenda','议程'],['tasks','任务'],['goals','目标'],['notes','随身记']].map(([k, n]) =>
+        `<button class="bt-tab" data-t="${k}" style="flex:1;width:auto;padding:6px 0;font-size:12px;border-radius:9px;cursor:pointer;border:1px solid #E6EAF2;background:#fff;font-weight:400">${n}</button>`).join('')}
+    </div>
+    <div id="bt-body" style="overflow-y:auto;min-height:120px"><div class="loading">加载中…</div></div></div>`
+  d.addEventListener('click', ev => { if (ev.target === d) d.remove() })
+  document.body.appendChild(d)
+  $('bt-close').onclick = () => d.remove()
+  d.querySelectorAll('.bt-tab').forEach(b => {
+    b.onclick = () => { _butlerTab = b.dataset.t; butlerRender() }
+  })
+  await butlerRender()
+}
+function btTabStyle() {
+  document.querySelectorAll('#butler-sheet .bt-tab').forEach(b => {
+    const on = b.dataset.t === _butlerTab
+    b.style.background = on ? '#3D6BFF' : '#fff'
+    b.style.color = on ? '#fff' : '#4A5568'
+    b.style.borderColor = on ? '#3D6BFF' : '#E6EAF2'
+  })
+}
+async function butlerRender() {
+  btTabStyle()
+  const box = $('bt-body'); if (!box) return
+  box.innerHTML = '<div class="loading">加载中…</div>'
+  if (_butlerTab === 'chat') return butlerChat(box)
+  if (_butlerTab === 'pending') return butlerPending(box)
+  if (_butlerTab === 'agenda') return butlerAgenda(box)
+  if (_butlerTab === 'tasks') return butlerTasks(box)
+  if (_butlerTab === 'goals') return butlerGoals(box)
+  return butlerNotes(box)
+}
+/* ── 页签① 今日议程：/api/butler/state 直读（0 token，本地毫秒级）── */
+async function butlerAgenda(box) {
+  try {
+    const r = await fetch('/api/butler/state')
+    const j = await r.json()
+    if (!j.success || !j.total) {
+      box.innerHTML = '<p class="sub" style="text-align:center;padding:16px 0">今天家里没有要操心的事，都交给我盯着。</p>'
+      return
+    }
+    box.innerHTML = (j.quiet ? '<p class="sub" style="font-size:11.5px;margin:0 0 8px">😴 勿扰时段中（22:00-7:30 我不出声，只默默记在这）</p>' : '') +
+      j.groups.map(g => `
+      <div style="margin-bottom:10px">
+        <div style="font-size:11.5px;color:#8A94A6;margin-bottom:4px">${escHtml(g.name)} · ${g.items.length} 件</div>
+        ${g.items.map(it => `
+        <div style="border:1px solid ${it.level === 'urge' ? '#F3C9C4' : '#E6EAF2'};border-radius:12px;padding:9px 11px;margin-bottom:6px;${it.level === 'urge' ? 'background:#FDF6F5' : ''}">
+          <div style="font-size:13px;line-height:1.5">${it.level === 'urge' ? '🔴 ' : '⚪ '}${escHtml(it.title)}</div>
+          <div style="display:flex;gap:6px;margin-top:6px">
+            <button class="bt-act" data-id="${it.id}" data-op="done" style="width:auto;padding:2px 10px;font-size:11px;border:1px solid #E6EAF2;background:#fff;border-radius:9px;cursor:pointer;font-weight:400">✓ 办了</button>
+            <button class="bt-act" data-id="${it.id}" data-op="dismiss" style="width:auto;padding:2px 10px;font-size:11px;border:1px solid #E6EAF2;background:#fff;border-radius:9px;cursor:pointer;font-weight:400">忽略</button>
+            <button class="bt-act" data-id="${it.id}" data-op="snooze" style="width:auto;padding:2px 10px;font-size:11px;border:1px solid #E6EAF2;background:#fff;border-radius:9px;cursor:pointer;font-weight:400">明天再说</button>
+          </div>
+        </div>`).join('')}
+      </div>`).join('')
+    box.querySelectorAll('.bt-act').forEach(b => {
+      b.onclick = async () => {
+        b.textContent = '…'
+        await fetch('/api/butler/action', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: parseInt(b.dataset.id), op: b.dataset.op }) })
+        butlerRender()
+      }
+    })
+  } catch (e) { box.innerHTML = '<p class="sub">加载失败：' + escHtml(e.message) + '</p>' }
+}
+/* ── 页签② 任务：tasks.list 直读（同服务抽屉数据源，入口收拢进管家）── */
+async function butlerTasks(box) {
+  try {
+    const { status, data } = await jpost('/api/relay/send', { action: 'tasks.list', params: {} }, true)
+    const ts = (status === 200 && data.success && data.data.tasks) ? data.data.tasks : []
+    const open = ts.filter(t => t.status !== 'completed' && t.status !== 'done')
+    if (!open.length) { box.innerHTML = '<p class="sub" style="text-align:center;padding:16px 0">没有进行中的任务。跟管家说一句就能记（「提醒我周五交物业费」）。</p>'; return }
+    box.innerHTML = '<p class="sub" style="font-size:11.5px;margin:0 0 8px">到期的任务管家会主动盯催，不用你记着。</p>' + open.map(t => `
+      <div style="padding:10px 2px;border-bottom:1px dashed #E8EBF0">
+        <div style="font-size:13.5px">${escHtml(t.title || '')}</div>
+        <div style="font-size:11px;color:#8A94A6;margin-top:2px">${t.due ? '⏰ ' + escHtml(t.due) + ' · ' : ''}${escHtml(t.created_at || '')}</div>
+      </div>`).join('')
+  } catch (e) { box.innerHTML = '<p class="sub">加载失败：' + escHtml(e.message) + '</p>' }
+}
+/* ── 页签③ 目标：goals.list 直读 + 节点完成（原独立目标页逻辑并入）── */
+async function butlerGoals(box) {
+  try {
+    const { status, data } = await jpost('/api/phone/send', { action: 'goals.list', params: {} })
+    const goals = (status === 200 && data.success && data.data.goals) ? data.data.goals : []
+    if (!goals.length) { box.innerHTML = '<p class="sub" style="text-align:center;padding:16px 0">还没有进行中的目标。跟管家说一句就能建（「想两周内戒掉夜宵」）。</p>'; return }
+    box.innerHTML = goals.map(g => `
+      <div style="border:1px solid #E6EAF2;border-radius:12px;padding:10px 12px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <b style="font-size:13.5px">${g.light} ${escHtml(g.title)}</b>
+          <span style="font-size:11px;color:#8A94A6">${g.done}/${g.total}</span>
+        </div>
+        <div style="height:5px;border-radius:3px;background:#EEF1F6;margin:7px 0;overflow:hidden">
+          <div style="width:${g.progress}%;height:100%;background:#22A06B"></div></div>
+        ${g.next_node ? `<div style="font-size:11.5px;color:#8A94A6;margin-bottom:6px">下一节点：${escHtml(g.next_node.name)}（${escHtml(g.next_node.due)}）</div>` : ''}
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${(g.nodes || []).map((n, i) => n.status !== 'done'
+            ? `<button class="bt-goal" data-g="${g.id}" data-i="${i}" style="font-size:11px;border:1px solid #E6EAF2;background:#fff;border-radius:10px;padding:2px 9px;cursor:pointer;font-weight:400">✅ ${escHtml(n.name)}</button>`
+            : '').join('')}
+        </div>
+      </div>`).join('')
+    box.querySelectorAll('.bt-goal').forEach(btn => {
+      btn.onclick = async () => {
+        btn.textContent = '…'
+        await jpost('/api/phone/send', { action: 'goals.action', params: {
+          goal_id: btn.dataset.g, node_idx: parseInt(btn.dataset.i), goal_action: 'node_done' } })
+        butlerRender()
+      }
+    })
+  } catch (e) { box.innerHTML = '<p class="sub">加载失败：' + escHtml(e.message) + '</p>' }
+}
+/* ── 页签⓪ 问管家（#1191）：直连 /api/chat 与首页同一管线，SSE 流式；轻对话不挂会话历史 ── */
+let _bqcSending = false
+if (!window._bqcList) window._bqcList = []   // 问管家对话记录（关弹层不清空，页签切换保留）
+const BQC_QUICK = ['今天花了多少', '今天有什么要办的', '孩子最近的学习记录']
+/* ★ #1191-D（2026-10-25）问管家渲染升级：
+   ① markdown 加粗 **x** → <b>（转义后替换，安全）；② 空空气泡不发（流式截断时不留白壳）；
+   ③ 【打开:/xxx】剥标记+开门按钮（复用主聊天的 parseJumps/goJump，同一套跳转协议） */
+function bqcFmt(text) {
+  return escHtml(text || '').replace(/\*\*([^*\n]{1,160})\*\*/g, '<b>$1</b>')
+}
+function bqcDraw() {
+  const log = $('bqc-log'); if (!log) return
+  const rows = window._bqcList.map(m => {
+    const txt = String(m.content || '')
+    if (m.role === 'assistant' && !txt.trim() && !m.typing) return ''   // 空气泡防护
+    const jumps = m.role === 'assistant' && !m.typing ? parseJumps(txt) : []
+    const clean = jumps.length ? txt.replace(new RegExp(JUMP_RE.source, 'g'), '').replace(/\n{3,}/g, '\n').trim() : txt
+    const bubble = `<div style="max-width:82%;background:${m.role === 'user' ? '#3D6BFF' : '#F4F6FA'};color:${m.role === 'user' ? '#fff' : '#2A3342'};border-radius:12px;padding:8px 11px;font-size:13.5px;line-height:1.55;white-space:pre-wrap">${bqcFmt(clean)}${m.typing ? '<span style="opacity:.6">▋</span>' : ''}</div>`
+    const jumpRow = jumps.length ? `<div style="display:flex;gap:6px;margin:-3px 0 8px;flex-wrap:wrap">${jumps.map(j =>
+      `<button class="bqc-jump" data-p="${escHtml(j.path)}" style="width:auto;padding:4px 10px;font-size:12px;border:0;background:#3B82F6;color:#fff;border-radius:16px;cursor:pointer;font-weight:500">🚪 打开${escHtml(j.label)} →</button>`).join('')}</div>` : ''
+    return `<div style="display:flex;margin-bottom:7px;${m.role === 'user' ? 'justify-content:flex-end' : ''}">${bubble}</div>${jumpRow}`
+  }).join('')
+  log.innerHTML = rows + (window._bqcList.length ? '' : '<p class="sub" style="text-align:center;padding:8px 0">有事直接问：花了多少、今天办什么、孩子学习……</p>')
+  log.querySelectorAll('.bqc-jump').forEach(b => { b.onclick = () => goJump(b.dataset.p) })
+  log.scrollTop = log.scrollHeight
+}
+async function butlerChat(box) {
+  box.innerHTML = `<div id="bqc-log" style="max-height:42vh;overflow-y:auto"></div>
+    <div style="display:flex;gap:6px;margin:8px 0;flex-wrap:wrap">
+      ${BQC_QUICK.map(q => `<button class="bqc-chip" style="width:auto;padding:4px 10px;font-size:12px;font-weight:400;color:#4A5568;border:1px solid #E0E4EC;background:#fff;border-radius:20px;cursor:pointer;flex-shrink:0">${escHtml(q)}</button>`).join('')}
+    </div>
+    <div style="display:flex;gap:6px">
+      <input id="bqc-in" placeholder="${_bqcSending ? '管家正在想…' : '问管家一句话…'}" style="flex:1;min-width:0;border:1px solid #E0E4EC;border-radius:10px;padding:9px 11px;font-size:14px;margin-bottom:0" />
+      <button id="bqc-send" style="width:auto;border:0;background:#3D6BFF;color:#fff;border-radius:10px;padding:9px 14px;font-size:14px;font-weight:600;flex-shrink:0">发送</button>
+    </div>`
+  bqcDraw()
+  box.querySelectorAll('.bqc-chip').forEach(b => { b.onclick = () => bqcSend(b.textContent) })
+  const doSend = () => bqcSend($('bqc-in').value)
+  $('bqc-send').onclick = doSend
+  $('bqc-in').addEventListener('keyup', ev => { if (ev.key === 'Enter') doSend() })
+  if (!_bqcSending) $('bqc-in').focus()
+}
+async function bqcSend(preset) {
+  const text = String(preset ?? '').trim()
+  if (!text || _bqcSending) return
+  if (!$('bqc-log')) { openButlerSheet('chat').then(() => bqcSend(text)); return }
+  _bqcSending = true
+  const inp = $('bqc-in'); if (inp) inp.value = ''
+  window._bqcList.push({ role: 'user', content: text })
+  const reply = { role: 'assistant', content: '', typing: true }
+  window._bqcList.push(reply)
+  bqcDraw()
+  try {
+    const resp = await fetch('/api/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text, query_mode: 'direct', web_search: false, collab_mode: 'off', butler: true }),
+    })
+    const reader = resp.body.getReader()
+    const decoder = new TextDecoder()
+    let buf = ''
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done || !$('bqc-log')) break
+      buf += decoder.decode(value, { stream: true })
+      const parts = buf.split('\n\n')
+      buf = parts.pop()
+      for (const part of parts) {
+        const line = part.trim()
+        if (!line.startsWith('data:')) continue
+        let evt
+        try { evt = JSON.parse(line.slice(5)) } catch (e) { continue }
+        if (evt.type === 'text') { reply.content += evt.content || ''; bqcDraw() }
+        else if (evt.type === 'error') reply.content += (reply.content ? '\n' : '') + '⚠️ ' + (evt.content || '出错了，再问一次试试')
+      }
+    }
+  } catch (e) { reply.content += (reply.content ? '\n' : '') + '⚠️ 连不上了：在家里 WiFi 下用才连得动家里的哈文' }
+  reply.typing = false
+  if (!reply.content) reply.content = '（没有收到回答，再问一次试试）'
+  _bqcSending = false
+  bqcDraw()
+}
+/* ── 页签① 待确认收纳盒（#1191）：/api/assist/pending 与桌面管家中心同一套 ── */
+async function butlerPending(box) {
+  try {
+    const [pj, panels] = await Promise.all([
+      fetch('/api/assist/pending').then(r => r.json()),
+      fetch('/api/panels').then(r => r.json()).catch(() => ({})),
+    ])
+    const items = pj.items || []
+    if (!items.length) { box.innerHTML = '<p class="sub" style="text-align:center;padding:16px 0">没有等你把关的记录。跟管家说一句「记一笔 XX」，识别好先放这里等你点头。</p>'; return }
+    const pn = {}
+    for (const p of (panels.panels || [])) pn[p.id] = p.name
+    box.innerHTML = items.map(it => `
+      <div style="border:1px solid #E6EAF2;border-radius:12px;padding:9px 11px;margin-bottom:8px">
+        <div style="font-size:12px;color:#8A94A6">🗣 ${escHtml(it.source_text || '')} · ${escHtml((it.created_at || '').slice(0, 16))}${pn[it.panel_id] ? ' → ' + escHtml(pn[it.panel_id]) : ''}</div>
+        ${(it.records || []).map(r => `<div style="font-size:13px;margin-top:3px">${Object.entries(r || {}).filter(([, v]) => String(v ?? '').trim()).map(([k, v]) => escHtml(k + ':' + v)).join(' · ')}</div>`).join('')}
+        <div style="display:flex;gap:6px;margin-top:6px">
+          <button class="bt-pend" data-id="${it.id}" data-op="confirm" style="width:auto;padding:2px 10px;font-size:11px;border:1px solid #E6EAF2;background:#EAF0FF;color:#3D6BFF;border-radius:9px;cursor:pointer;font-weight:400">✓ 入库</button>
+          <button class="bt-pend" data-id="${it.id}" data-op="ignore" style="width:auto;padding:2px 10px;font-size:11px;border:1px solid #E6EAF2;background:#fff;border-radius:9px;cursor:pointer;font-weight:400">忽略</button>
+        </div>
+      </div>`).join('')
+    box.querySelectorAll('.bt-pend').forEach(b => {
+      b.onclick = async () => {
+        b.textContent = '…'
+        if (b.dataset.op === 'confirm') await fetch('/api/assist/pending/' + b.dataset.id + '/confirm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+        else await fetch('/api/assist/pending/' + b.dataset.id, { method: 'DELETE' })
+        butlerRender()
+      }
+    })
+  } catch (e) { box.innerHTML = '<p class="sub">加载失败：' + escHtml(e.message) + '</p>' }
+}
+/* ── 页签⑤ 随身记（#1191 内嵌版）：原独立弹层（openInboxSheet）与九宫格独立键撤除，
+   输入行/🎙按住说话/列表/⏰提醒聚合整体搬进本页签，ib-* 状态与函数全部复用 ── */
+function butlerNotes(box) {
+  if (!plIsHome()) { box.innerHTML = '<p class="sub" style="text-align:center;padding:16px 0">📝 随身记目前在家里 WiFi 下可用（数据存在家里电脑，不出门）。</p>'; return }
+  box.innerHTML = `
+    <div id="ib-rem" style="display:none;background:#FFF7E6;border:1px solid #F0C36D;border-radius:10px;padding:8px 10px;margin-bottom:10px;font-size:12px"></div>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <input id="ib-input" placeholder="随手记一条…" style="flex:1;min-width:0;border:1px solid #E0E4EC;border-radius:10px;padding:9px 11px;font-size:14px;margin-bottom:0" />
+      <button id="ib-mic" title="按住说话" style="width:auto;padding:0 12px;font-size:16px;border:1px solid #E0E4EC;background:#fff;border-radius:10px;flex-shrink:0;font-weight:400">🎙</button>
+      <button id="ib-add" style="width:auto;border:0;background:#3D6BFF;color:#fff;border-radius:10px;padding:9px 16px;font-size:14px;font-weight:600;flex-shrink:0">记</button>
+    </div>
+    <div id="ib-list" style="max-height:44vh;overflow-y:auto"><div class="loading">加载中…</div></div>
+    <p class="sub" style="font-size:11.5px;margin:8px 0 0">想到什么随手记，管家帮你分流：值得跟的转任务、有时间的挂提醒、碎信息存档。</p>`
+  $('ib-add').onclick = ibAdd
+  $('ib-input').addEventListener('keyup', ev => { if (ev.key === 'Enter') ibAdd() })
+  ibMicBind()
+  ibLoad()
+  ibRemLoad()
+}
+
+
+/* ★ 2026-10-22 手机触达（教练层三批）：60s 轮询提醒队列+每日早报——
+   在家直连本地 API；通知以系统气泡出现在对话流（去重 localStorage） */
+const HVC_SEEN_KEY = 'hvc_seen_ids'
+function hvcSeen() { try { return JSON.parse(localStorage.getItem(HVC_SEEN_KEY) || '[]') } catch (e) { return [] } }
+function hvcMarkSeen(id) {
+  const arr = hvcSeen(); if (!arr.includes(id)) { arr.push(id); try { localStorage.setItem(HVC_SEEN_KEY, JSON.stringify(arr.slice(-80))) } catch (e) {} }
+}
+let _hvcStarted = false
+function startCoachPoll() {
+  if (_hvcStarted || !plIsHome()) return
+  _hvcStarted = true
+  setInterval(async () => {
+    try {
+      const r = await fetch('/api/reminders/due')
+      if (!r.ok) return
+      const j = await r.json()
+      const seen = hvcSeen()
+      for (const n of (j.reminders || j || [])) {
+        const id = String(n.id || n.title)
+        if (seen.includes(id)) continue
+        hvcMarkSeen(id)
+        bubble('hv', '🔔 ' + (n.title || '提醒'))
+        $('chatlog').scrollTop = $('chatlog').scrollHeight
+      }
+    } catch (e) {}
+  }, 60000)
+  /* 每日早报：每天首次打开手机页报一次 */
+  try {
+    const today = new Date().toISOString().slice(0, 10)
+    const KEY = 'hvc_brief_date'
+    if (localStorage.getItem(KEY) !== today) {
+      localStorage.setItem(KEY, today)
+      fetch('/api/coach/brief').then(r => r.json()).then(j => {
+        const items = j.items || []
+        bubble('hv', items.length
+          ? '📰 今日早报：\n' + items.map(i => '· ' + i.text).join('\n')
+          : '📰 今日早报：✅ 无生日/临期/目标节点，一切正常')
+        $('chatlog').scrollTop = $('chatlog').scrollHeight
+      }).catch(() => {})
+    }
+  } catch (e) {}
+}
+
+/* ★ #1220-A（2026-10-25）数据版本轮询：电脑端写库（面板/提醒/随身记）→ 手机 15 秒内感知
+   版本变化 → 刷新面板横滑条（记录数）+ 随身记（若开着）；页面回前台立即拉一轮 */
+let _hvsStarted = false, _hvsVersion = -1
+function startSyncPoll() {
+  if (_hvsStarted || !plIsHome()) return
+  _hvsStarted = true
+  setInterval(async () => {
+    try {
+      const r = await fetch('/api/sync/version')
+      if (!r.ok) return
+      const j = await r.json()
+      const v = j.version
+      if (_hvsVersion !== -1 && v !== _hvsVersion) {
+        loadPanels()
+        /* 管家弹层开着且停在随身记页签 → 顺带刷新列表 */
+        if ($('butler-sheet') && $('butler-sheet').querySelector('#ib-list')) {
+          try { ibLoad() } catch (e) {}
+        }
+      }
+      _hvsVersion = v
+    } catch (e) {}
+  }, 15000)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      try { loadPanels() } catch (e) {}
+    }
+  })
+}
+
+/* ★ #1191（2026-10-25）随身记核心逻辑全局化：ibLoad/ibAdd 原先闭包在 openInboxSheet 里，
+   现在随身记 UI 内嵌管家弹层「随身记」页签（butlerNotes 注入 ib-* 元素），独立弹层撤除 */
+async function ibLoad() {
+    try {
+      const r = await fetch('/api/inbox/list')
+      const j = await r.json()
+      const list = $('ib-list')
+      const notes = j.notes || []
+      if (!notes.length) { list.innerHTML = '<div class="loading">空的。对话框说「记一下XX」也能存进来。</div>'; return }
+      list.innerHTML = ''
+      notes.forEach(n => {
+        const row = document.createElement('div')
+        row.style.cssText = 'padding:9px 2px;border-bottom:1px dashed #E8EBF0;display:flex;gap:8px;align-items:flex-start'
+        const main = document.createElement('div')
+        main.style.cssText = 'flex:1;min-width:0'
+        main.innerHTML = '<div style="font-size:14px;white-space:pre-wrap">' + escHtml(n.content) + '</div>' +
+          '<div style="font-size:11px;color:#889;margin-top:2px">' +
+          (n.source === 'voice' ? '🎙 ' : '⌨️ ') + escHtml(n.created_at || '') +
+          (n.remind_at ? ' <span style="color:#B8860B">⏰ ' + escHtml(n.remind_at) + '</span>' : '') +
+          (n.target ? ' <span style="color:#3D6BFF">像「' + escHtml(n.target) + '」的事</span>' : '') + '</div>'
+        const bDone = document.createElement('button')
+        bDone.textContent = '办完'
+        bDone.style.cssText = 'border:0;background:#EAF0FF;color:#3D6BFF;border-radius:8px;padding:5px 10px;font-size:12px;flex-shrink:0'
+        bDone.onclick = async () => { await fetch('/api/inbox/resolve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: n.id, to: n.target || '' }) }); ibLoad() }
+        const bRem = document.createElement('button')
+        bRem.textContent = n.remind_at ? '⏰改' : '⏰'
+        bRem.style.cssText = 'border:0;background:#FFF6E0;color:#B8860B;border-radius:8px;padding:5px 10px;font-size:12px;flex-shrink:0'
+        bRem.onclick = async () => {
+          /* ★ v30（2026-10-17）C. 碎片手动挂/取消提醒：自然语言时间（「明天17:30」），留空取消 */
+          const txt = prompt(n.remind_at
+            ? '当前提醒 ' + n.remind_at + '。\n输入新时间（如「明天17:30」「明天下午5点半」），留空点确定=取消提醒：'
+            : '什么时间提醒你？（如「明天17:30」「明天下午5点半」「10-18 17:30」）\n留空点确定=取消提醒：', '')
+          if (txt === null) return
+          try {
+            const r = await (await fetch('/api/inbox/remind', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: n.id, text: txt.trim() }) })).json()
+            if (!r.success) throw new Error(r.message || '没挂上')
+            bubble('hv', '⏰ ' + (r.message || '好了'))
+            ibLoad()
+          } catch (e) { bubble('hv', '⚠️ 提醒没挂上：' + escHtml(e.message)) }
+        }
+        const bTask = document.createElement('button')
+        bTask.textContent = '✅任务'
+        bTask.style.cssText = 'border:0;background:#EAF7EE;color:#1E8E3E;border-radius:8px;padding:5px 10px;font-size:12px;flex-shrink:0'
+        bTask.onclick = async () => {
+          /* ★ v31 #1159 甲案：碎片一键转正为任务（值得跟的进任务台账，碎片自动办结） */
+          await fetch('/api/inbox/to_task', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: n.id }) })
+          bubble('hv', '✅ 已转成任务，电脑端「任务」里能看到')
+          ibLoad()
+        }
+        const bDel = document.createElement('button')
+        bDel.textContent = '删'
+        bDel.style.cssText = 'border:0;background:#F5F6F8;color:#C0392B;border-radius:8px;padding:5px 10px;font-size:12px;flex-shrink:0'
+        bDel.onclick = async () => { await fetch('/api/inbox/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: n.id }) }); ibLoad() }
+        row.append(main, bRem, bTask, bDone, bDel)
+        list.appendChild(row)
+      })
+    } catch (e) { $('ib-list').innerHTML = '<div class="loading">加载失败：' + escHtml(e.message) + '</div>' }
+  }
+  async function ibAdd() {
+    const v = $('ib-input').value.trim()
+    if (!v) return
+    try {
+      const r = await (await fetch('/api/inbox/add', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: v, source: ibFromVoice ? 'voice' : 'manual' }) })).json()
+      /* ★ v30（2026-10-17）A. 语义提醒回执：随身记里写「5分钟后提醒我XX」，直接告诉用户会响 */
+      if (r.remind) bubble('hv', '⏰ 已设提醒 ' + r.remind + '，到点叫你')
+      $('ib-input').value = ''
+      ibFromVoice = false
+      ibLoad()
+      ibRemLoad()
+    } catch (e) { bubble('hv', '没存上：' + escHtml(e.message)) }
+  }
+/* ★ v27（2026-10-15）#1151-F 弹层顶部⏰提醒聚合区：随身记挂的+全家庭未到期提醒，只读展示
+   ★ #1219（2026-10-25）每条标来源域+标题说明「这是全模块提醒不是随身记」——
+     实测实锤误读：健身提醒出现在随手记 tab 下，以为还在随身记记录（实际记录正确） */
+const _MOD_ZH = { fitness: '健身', fridge: '冰箱', items: '物品', kid: '孩子', calendar: '日程', inbox: '', '': '通用' }
+async function ibRemLoad() {
+  try {
+    const box = $('ib-rem'); if (!box) return
+    const r = await fetch('/api/inbox/reminders')
+    const j = await r.json()
+    const items = []
+    for (const h of (j.home || [])) {
+      const mz = _MOD_ZH[h.module] !== undefined ? _MOD_ZH[h.module] : (h.module || '通用')
+      items.push('⏰' + (mz ? '[' + mz + '] ' : ' ') + (h.remind_at || '').slice(5) + ' ' + (h.title || ''))
+    }
+    for (const n of (j.inbox || [])) items.push('📝琐事 ' + (n.remind_at || '').slice(5) + ' ' + (n.content || '').slice(0, 18))
+    if (!items.length) { box.style.display = 'none'; return }
+    box.style.display = 'block'
+    box.innerHTML = '<b style="color:#8a6100">⏰ 提醒（全模块，不是随身记；说「X时间提醒我Y」就归到对应模块）</b><br>' +
+      items.slice(0, 4).map(escHtml).join('<br>') + (items.length > 4 ? '<br><span style="color:#99a">…还有 ' + (items.length - 4) + ' 条</span>' : '')
+  } catch (e) { /* 聚合区失败不挡主功能 */ }
+}
+/* ★ v27（2026-10-15）#1151-C 弹层内🎙按住说话：录音→voice_text→回填可改字→点「记」才入库。
+   独立 ibRec* 状态，不与主聊天麦克风（micHeld/pcmSt）打架。 */
+let ibRecStream = null, ibHeld = false, ibCancelled = false, ibStartY = 0
+let ibPcm = null   // ★ v29（2026-10-16）：WebAudio PCM 状态（替代 MediaRecorder）
+let ibFromVoice = false   // ★ v27 语音转写回填后置 true，点「记」入库记 source=voice
+function ibEvY(e) { return (e.touches && e.touches[0]) ? e.touches[0].clientY : e.clientY }
+function ibUI(state, txt) {
+  const b = $('ib-mic'), i = $('ib-input')
+  if (!b) return
+  b.classList.toggle('ib-rec', state === 'rec')
+  if (i && txt) i.placeholder = txt
+}
+async function ibTranscribe(blob) {
+  const t = blob.type || ''
+  const fmt = t.includes('mp4') ? 'mp4' : (t.includes('ogg') ? 'ogg' : (t.includes('wav') ? 'wav' : 'webm'))
+  ibUI('busy', '正在转成文字…')
+  const b64 = await new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result.split(',')[1]); r.readAsDataURL(blob) })
+  let lastErr = null
+  for (let i = 0; i < 3; i++) {
+    try {
+      const { status, data } = await jpost('/api/relay/send', { action: 'voice_text', params: { audio: b64, format: fmt } }, true)
+      if (status === 200 && data.success) {
+        const inp = $('ib-input')
+        if (inp) { inp.value = (data.data && data.data.text) || ''; inp.focus() }
+        ibFromVoice = true
+        ibUI('idle', '✅ 识别好了，可改字后点「记」')
+        return
+      }
+      lastErr = new Error(errMsg(data, status))
+    } catch (e) { lastErr = e }
+  }
+  bubble('hv', '⚠️ 转文字没成功：' + ((lastErr && lastErr.message) || lastErr) + '；也可以直接打字')
+  ibUI('idle', '随手记一条…')
+}
+async function ibRecStart(e) {
+  if (!ibHeld) { ibHeld = true; ibCancelled = false; ibStartY = ibEvY(e) } else { ibCancelled = (ibEvY(e) - ibStartY) < -70; return }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    ibHeld = false; bubble('hv', '⚠️ 这个页面开不了麦克风（浏览器只给加密页面用），打字一样快'); return
+  }
+  try {
+    ibRecStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    ibPcm = pcmNew(); pcmStart(ibPcm, ibRecStream)   // ★ v29 WebAudio PCM
+    ibUI('rec', '正在听你说话…松开转文字 · 上滑取消')
+  } catch (e) {
+    ibHeld = false
+    bubble('hv', '⚠️ 麦克风打不开：去手机设置给哈文麦克风权限，或直接打字')
+  }
+}
+function ibRecMove(e) { if (!ibHeld) return; ibCancelled = (ibEvY(e) - ibStartY) < -70 }
+function ibRecStop() {
+  if (!ibHeld) return
+  ibHeld = false
+  if (!ibPcm) { ibUI('idle', '随手记一条…'); return }
+  ibUI('busy', '正在转成文字…')
+  const r = pcmFinish(ibPcm, ibCancelled); ibPcm = null
+  if (r.why === 'cancelled') { ibUI('idle', '已取消'); return }
+  if (r.why === 'short') { ibUI('idle', '随手记一条…'); bubble('hv', '⚠️ 录音太短，按住别松，说完再松开'); return }
+  if (r.why === 'silent') {
+    ibUI('idle', '随手记一条…')
+    bubble('hv', '⚠️ 这条没录到声音：\n① 麦克风可能被占用/手机静音\n② 设置里哈文的麦克风权限给了没\n③ 离近点，再按住说一次')
+    return
+  }
+  ibTranscribe(r.blob)
+}
+function ibMicBind() {
+  const b = $('ib-mic'); if (!b) return
+  const start = e => { if (e.cancelable) e.preventDefault(); ibRecStart(e) }
+  const move = e => { if (e.cancelable) e.preventDefault(); ibRecMove(e) }
+  b.addEventListener('touchstart', start, { passive: false })
+  b.addEventListener('touchmove', move, { passive: false })
+  b.addEventListener('touchend', e => { e.preventDefault(); ibRecStop() })
+  b.addEventListener('touchcancel', () => ibRecStop())
+  b.addEventListener('mousedown', start)
+  b.addEventListener('mousemove', e => { if (ibHeld) ibRecMove(e) })
+  b.addEventListener('mouseup', () => ibRecStop())
+  b.addEventListener('contextmenu', e => e.preventDefault())
+}
+function openGridEditor() {
+  const old = $('grid-editor'); if (old) old.remove()
+  const slots = hvGridSlots()
+  const d = document.createElement('div')
+  d.id = 'grid-editor'
+  d.style.cssText = 'position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.45);display:flex;align-items:flex-end'
+  const pool = GRID_POOL.filter(it => it.pool)
+  const rows = pool.map(it => {
+    const on = slots.includes(it.k)
+    return `<button class="chip ge-k" data-k="${escHtml(it.k)}" style="flex-shrink:0;${on ? 'background:#3D6BFF;color:#fff' : ''}">${it.icon} ${escHtml(it.name)}${on ? ' ✓' : ''}</button>`
+  }).join('')
+  d.innerHTML = `<div style="width:100%;max-width:520px;margin:0 auto;background:#fff;border-radius:18px 18px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom))">
+    <b style="font-size:14px">挑 4 个放进九宫格（点选/取消）</b>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">${rows}</div>
+    <p style="font-size:12px;color:#889;margin:12px 0 0">全部面板（往下滚，想把哪个面板放进九宫格就点哪个）</p>
+    <div id="ge-extra" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;max-height:38vh;overflow:auto"><span style="font-size:12px;color:#99a">面板列表加载中…</span></div>
+    <button id="ge-done" style="margin-top:14px">好了</button>
+  </div>`
+  d.addEventListener('click', ev => { if (ev.target === d) d.remove() })
+  document.body.appendChild(d)
+  /* ★ #1096 候选扩容（2026-10-11）：原来只有写死 6 个候选，开发者 33 个面板根本看不到——
+     打开编辑器时异步拉全量面板追加成第二组（panel:<id> 动态键，与已有槽位机制天然兼容） */
+  const fixedKs = new Set(GRID_POOL.map(it => it.k))
+  ensurePhotoPanels().then(ps => {
+    const box = $('ge-extra'); if (!box) return
+    const extra = (ps || []).filter(p => !fixedKs.has('panel:' + p.id))
+    box.innerHTML = extra.length ? extra.map(p => {
+      const k = 'panel:' + p.id, on = slots.includes(k)
+      return `<button class="chip ge-k" data-k="${escHtml(k)}" style="flex-shrink:0;${on ? 'background:#3D6BFF;color:#fff' : ''}">${escHtml(p.icon || '📋')} ${escHtml(p.name || p.id)}${on ? ' ✓' : ''}</button>`
+    }).join('') : '<span style="font-size:12px;color:#99a">（没有更多面板）</span>'
+    box.querySelectorAll('.ge-k').forEach(b => { b.onclick = gePick })
+  }).catch(() => { const box = $('ge-extra'); if (box) box.innerHTML = '<span style="font-size:12px;color:#99a">面板列表拉不到，先用上面的快捷动作</span>' })
+  function gePick() {
+    const k = this.dataset.k
+    let s = hvGridSlots()
+    if (s.includes(k)) s = s.filter(x => x !== k)
+    else { if (s.length >= 4) { const old = this.textContent; this.textContent = '最多 4 个，先取消一个'; setTimeout(() => { this.textContent = old }, 1200); return } s.push(k) }
+    localStorage.setItem(GRID_CUSTOM_KEY, JSON.stringify(s))
+    openGridEditor(); openGridSheet()   // 重画两个抽屉（编辑器盖在九宫格上）
+  }
+  d.querySelectorAll('.ge-k').forEach(b => { b.onclick = gePick })
+  $('ge-done').onclick = () => { d.remove() }
+}
+/* ★ #1089 手机文件：交给哈文电脑端处理——本地轻页先引导（文件上传走对话补拍/图册足够日常） */
+function pickPhoneFile() {
+  bubble('hv', '📁 手机文件直传在路上（下一版）。临时办法：图片类点「🖼️ 读取手机图册」就能传；文档类可以在电脑哈文里直接打开。')
+}
+
+/* ★ #942-D 服务页签：图片库/记忆相册/知识库/任务/邮箱 统一入口（复用 goJump） */
+function servicesTab() {
+  const d = document.createElement('div')
+  d.id = 'services-drawer'
+  d.style.cssText = 'position:fixed;inset:0;background:#FBFCFE;z-index:60;display:flex;flex-direction:column'
+  d.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid #E8EBF0;flex-shrink:0">
+      <button id="sv-back" style="width:auto;border:0;background:#F1F3F8;color:var(--main);border-radius:8px;padding:6px 12px;font-size:14px">← 对话</button>
+      <b style="font-size:15px">🧰 哈文服务</b>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:12px"><div class="pnl-grid" id="sv-grid"></div></div>`
+  document.body.appendChild(d)
+  $('sv-back').onclick = () => { d.remove(); switchTab('chat') }
+  const items = [
+    { path:'/photos', icon:'🖼️', name:'图片库', desc:'家里拍的照片都在这' },
+    { path:'/memory', icon:'🌅', name:'记忆相册', desc:'手机传的生活照自动归档' },
+    { sv:'tasks', icon:'🛎️', name:'管家', desc:'任务/目标/日程都归管家盯' },
+    { sv:'kb', icon:'📚', name:'知识库', desc:'点开直接看，不用问' },
+    { q:'帮我看看有没有新邮件', icon:'📮', name:'邮箱', desc:'开口问，哈文帮你查' }
+  ]
+  const grid = $('sv-grid')
+  items.forEach(it => {
+    const c = document.createElement('button')
+    c.className = 'pnl-card'
+    const pi = document.createElement('div'); pi.className = 'pi'; pi.textContent = it.icon
+    const b = document.createElement('b'); b.textContent = it.name
+    const s = document.createElement('span'); s.textContent = it.desc
+    c.append(pi, b, s)
+    c.onclick = () => {
+      /* ★ v31 #1159 服务抽屉 2.0：任务/知识库直读列表（点开即看，不再烧 token 问模型）
+         ★ #1177 任务入口收进管家（服务里点「管家」直达管家抽屉任务页签） */
+      if (it.sv === 'tasks') { d.remove(); openButlerSheet('tasks'); return }
+      if (it.sv === 'kb') { svOpenKb(); return }
+      d.remove(); switchTab('chat')
+      if (it.q) {
+        // ★ #961 死入口改对话代查：预填问题+聚焦输入框，开发者看一眼再发
+        const m = $('msg')
+        if (m) { m.value = it.q; try { m.focus() } catch (e) {} }
+      } else goJump(it.path)
+    }
+    grid.appendChild(c)
+  })
+}
+// ★ #931-C2 助手入口：切回对话 + 给一句怎么问的引导（查询本身走对话通道，引擎自带档案预查）
+$('btn-assist').addEventListener('click', () => {
+  switchTab('chat')
+  const ps = window._hvPanels || []
+  const eg = ps.length ? `「${ps[0].name}里有什么」` : '「这个月花了多少钱」'
+  bubble('hv', '🤝 助手在。家里的记录直接开口问，比如 ' + eg +
+    '；也可以说话/拍照让我记账、存档。去「📋 面板」页能直接看和录。')
+  try { $('msg').focus() } catch (e) {}
+})
+
+function panelsTab() {
+  const d = document.createElement('div')
+  d.id = 'panels-drawer'
+  d.style.cssText = 'position:fixed;inset:0;background:#FBFCFE;z-index:60;display:flex;flex-direction:column'
+  d.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid #E8EBF0;flex-shrink:0">
+      <button id="pl-back" style="width:auto;border:0;background:#F1F3F8;color:var(--main);border-radius:8px;padding:6px 12px;font-size:14px">← 对话</button>
+      <b id="pl-title" style="font-size:15px">🗂 面板中心</b>
+      <button id="pl-assist" title="问哈文助手" style="width:auto;margin-left:auto;border:0;background:#EAF3EC;color:#2F6B3E;border-radius:8px;padding:6px 12px;font-size:14px;flex-shrink:0">🤝 问哈文</button>
+    </div>
+    <div id="pl-body" style="flex:1;overflow-y:auto;padding:12px">
+      <div class="loading">正在取面板列表…</div>
+    </div>`
+  document.body.appendChild(d)
+  $('pl-back').onclick = plBack
+  /* ★ #1140 问哈文升级：不再预填固定话——带当前面板真实数据问真问题，自动发送 */
+  $('pl-assist').onclick = async () => {
+    const t = (($('pl-title') || {}).textContent || '')
+    let nm = t.replace(/^\S+\s*/, '').trim()
+    if (nm.indexOf('→') >= 0) nm = nm.split('→').pop().trim()
+    const isCtx = nm && nm !== '面板中心' && !nm.endsWith('面板')
+    switchTab('chat')
+    const m = $('msg')
+    if (!isCtx) { if (m) { m.value = '这个月花了多少钱'; try { m.focus() } catch (e) {} } return }
+    let q = '「' + nm + '」里有什么？帮我总结一下。'
+    const p = (window._hvPanels || []).find(x => x.name === nm || x.id === nm)
+    if (p) {
+      try {
+        const { status, data } = await jpost('/api/relay/send', { action: 'panels.query', params: { panel_id: p.id } }, true)
+        const rows = (status === 200 && data.success && data.data && data.data.rows) || []
+        if (rows.length) {
+          const digest = rows.slice(0, 20).map(r => plRowText(r).replace(/\n/g, ' ')).join('；')
+          q = '【仅分析请勿录入】这是我面板「' + nm + '」的最近 ' + Math.min(rows.length, 20) + ' 条记录：\n' + digest + '\n\n请基于这些数据帮我分析总结，用大白话说。'
+        }
+      } catch (e) { /* 拉不到数据就用兜底问法 */ }
+    }
+    if (m) { m.value = q; send() }
+  }
+  plStack = []
+  plGo(renderPanelCenter)
+}
+/* ★ #959 面板中心三层：中心(三模版卡) → 模版内面板列表 → 面板详情；返回键逐层弹，弹空回对话 */
+let plStack = []
+function plNav(title) { const t = $('pl-title'); if (t) t.textContent = title }
+function plGo(fn) { plStack.push(fn); fn() }
+function plBack() {
+  plStack.pop()
+  const top = plStack[plStack.length - 1]
+  if (!top) { const d = $('panels-drawer'); if (d) d.remove(); switchTab('chat'); return }
+  top()
+}
+/* ★ #959 三模版分组：与电脑端 RightDock 同一套关键词（猜不出归家庭），纯前端零后端改动 */
+const PL_CATS = [
+  { id: 'family',  name: '家庭面板', icon: '🏠', desc: '记账 · 健康 · 冰箱 · 汽车 · 学习' },
+  { id: 'company', name: '公司面板', icon: '💼', desc: '任务 · 笔记 · 会议 · 项目 · 报表' },
+  { id: 'create',  name: '创作面板', icon: '🎨', desc: '音乐 · 图片 · 视频 · 画板' }
+]
+const PL_CAT_HINTS = {
+  family: ['记账', '居家', '家庭', '健康', '冰箱', '汽车', '学习', 'accounting', 'family'],
+  company: ['任务', '待办', '笔记', '备忘', '会议', '项目', '客户', '日报', '数据', '报表', 'todo', 'task', 'note', 'meeting', 'project', 'crm', 'report'],
+  create: ['音乐', '图片', '视频', '创作', '画板', 'music', 'art', 'video']
+}
+function plInferCat(p) {
+  const hay = ((p.id || '') + ' ' + (p.name || '')).toLowerCase()
+  for (const cid in PL_CAT_HINTS) if (PL_CAT_HINTS[cid].some(k => hay.includes(k))) return cid
+  return 'family'
+}
+async function plFetchPanels() {
+  const { status, data } = await jpost('/api/relay/send', { action: 'panels.list', params: {} }, true)
+  if (!(status === 200 && data.success && data.data && data.data.panels)) throw new Error(errMsg(data, status))
+  return data.data.panels
+}
+async function renderPanelCenter() {
+  plNav('🗂 面板中心')
+  const body = $('pl-body')
+  body.innerHTML = '<div class="loading">正在取面板列表…</div>'
+  try {
+    const panels = await plFetchPanels()
+    window._hvPanels = panels
+    if (!panels.length) { body.innerHTML = '<div class="loading">家里还没建面板，去电脑端哈文里创建。</div>'; return }
+    body.innerHTML = ''
+    /* ★ #1141（2026-10-14）与云端 v21 对齐：九大组读哈文 _groups.json（与电脑端同一份账）；没带 group 的旧哈文退回三模版猜测 */
+    const hasGroup = panels.some(p => p.group)
+    if (hasGroup) {
+      const ORDER = ['日程待办', '家庭账本', '食物存放', '健康守护', '还在成长', '老人关怀', '车辆出行', '家务管家', '生活记录', '公司事务', '创作空间']
+      const G_ICON = { '日程待办': '📅', '家庭账本': '💰', '食物存放': '🧊', '健康守护': '🩺', '还在成长': '📚', '老人关怀': '👴', '车辆出行': '🚗', '家务管家': '🏠', '生活记录': '📸', '公司事务': '💼', '创作空间': '🎨' }
+      const G_DESC = { '日程待办': '待办 · 日历 · 清单', '家庭账本': '记账 · 人情 · 保险 · 缴费', '食物存放': '冰箱 · 餐饮', '健康守护': '体检 · 药箱 · 健身', '还在成长': '成长档案', '老人关怀': '关怀 · 打卡 · 联络 · 信息卡', '车辆出行': '保养 · 加油', '家务管家': '物品 · 证件 · 维修 · 智能家居 · 绿植 · 宠物', '生活记录': '梦境 · 记忆相册', '公司事务': '任务 · 会议 · 项目 · 报表', '创作空间': '音乐 · 图片 · 视频 · 画板' }
+      const names = []
+      const common = panels.filter(p => !p.group)
+      if (common.length) names.push('常用')
+      ORDER.forEach(g => { if (panels.some(p => p.group === g)) names.push(g) })
+      panels.forEach(p => { if (p.group && !names.includes(p.group)) names.push(p.group) })
+      names.forEach(gname => {
+        const list = gname === '常用' ? common : panels.filter(p => p.group === gname)
+        const c = document.createElement('button')
+        c.className = 'pnl-card'
+        c.style.cssText = 'display:flex;flex-direction:row;align-items:center;gap:12px;padding:14px'
+        const pi = document.createElement('div'); pi.className = 'pi'; pi.textContent = G_ICON[gname] || '📋'
+        const b = document.createElement('b'); b.style.marginTop = '0'; b.textContent = gname
+        const s = document.createElement('span'); s.textContent = (G_DESC[gname] ? G_DESC[gname] + ' · ' : '') + list.length + ' 个面板'
+        const tx = document.createElement('div'); tx.append(b, s)
+        c.append(pi, tx)
+        c.onclick = () => plGo(() => renderPanelList(gname))
+        body.appendChild(c)
+      })
+      return
+    }
+    PL_CATS.forEach(cat => {
+      const n = panels.filter(p => plInferCat(p) === cat.id).length
+      const c = document.createElement('button')
+      c.className = 'pnl-card'
+      c.style.cssText = 'display:flex;flex-direction:row;align-items:center;gap:12px;padding:14px'
+      const pi = document.createElement('div'); pi.className = 'pi'; pi.textContent = cat.icon
+      const b = document.createElement('b'); b.style.marginTop = '0'; b.textContent = cat.name
+      const s = document.createElement('span'); s.textContent = n ? cat.desc + ' · ' + n + ' 个面板' : '还没有面板'
+      const tx = document.createElement('div'); tx.append(b, s)
+      c.append(pi, tx)
+      c.onclick = () => plGo(() => renderPanelList(cat))
+      body.appendChild(c)
+    })
+  } catch (e) { body.innerHTML = '<div class="loading">取列表失败：' + escHtml(e.message) + '</div>' }
+}
+async function renderPanelList(cat) {
+  /* ★ #1141 双轨：真组名（字符串）按 group 过滤；旧三模版 id 按关键词猜（旧哈文兜底） */
+  const legacyObj = typeof cat === 'object' ? cat : null
+  const cid = legacyObj ? legacyObj.id : cat
+  const LEGACY_NAME = { family: '🏠 家庭面板', company: '💼 公司面板', create: '🎨 创作面板' }
+  plNav(legacyObj ? (legacyObj.icon + ' ' + legacyObj.name) : (LEGACY_NAME[cid] || cat))
+  const body = $('pl-body')
+  let panels = window._hvPanels
+  if (!panels || !panels.length) {
+    body.innerHTML = '<div class="loading">正在取面板列表…</div>'
+    try { panels = await plFetchPanels(); window._hvPanels = panels } catch (e) { body.innerHTML = '<div class="loading">取列表失败：' + escHtml(e.message) + '</div>'; return }
+  }
+  const isLegacyCat = typeof cat === 'object' || cat === 'family' || cat === 'company' || cat === 'create'
+  const list = isLegacyCat
+    ? panels.filter(p => plInferCat(p) === (typeof cat === 'object' ? cat.id : cat))
+    : panels.filter(p => (p.group || '常用') === cat)
+  body.innerHTML = ''
+  if (!list.length) { body.innerHTML = '<div class="loading">「' + escHtml(typeof cat === 'string' ? cat : cat.name) + '」下还没有面板。</div>'; return }
+  const grid = document.createElement('div'); grid.className = 'pnl-grid'
+  list.forEach(p => {
+    const c = document.createElement('button')
+    c.className = 'pnl-card'
+    const pi = document.createElement('div'); pi.className = 'pi'; pi.textContent = p.icon || '📋'
+    const b = document.createElement('b'); b.textContent = p.name
+    const s = document.createElement('span'); s.textContent = (p.records || 0) + ' 条记录'
+    c.append(pi, b, s)
+    c.onclick = () => plGo(() => renderPanelDetail(p))
+    grid.appendChild(c)
+  })
+  body.appendChild(grid)
+}
+/* ★ #942-A 面板记录美化：英文字段转中文、金额加¥、日期收敛、主次两行 */
+const PL_SYS_RE = /^(id|panel_id|user|member|created_at|updated_at|rowid|_?uid)$/i
+const PL_FIELD_ZH = { amount:'金额', money:'金额', total:'合计', price:'价格', cost:'花费', fee:'费用',
+  flow:'收支', expected:'预计', income:'收入', expense:'支出', budget:'预算', balance:'结余',
+  source:'来源', target:'目标', deadline:'截止', duedate:'截止', priority:'优先级', progress:'进度',
+  category:'分类', type:'类型', name:'名称', title:'标题', item:'项目', content:'内容',
+  note:'备注', notes:'备注', remark:'备注', desc:'描述', description:'描述',
+  date:'日期', time:'时间', quantity:'数量', qty:'数量', count:'数量', num:'数量',
+  status:'状态', place:'地点', location:'地点', store:'商店', brand:'品牌',
+  weight:'重量', unit:'单位', person:'经手人', who:'谁', method:'方式', level:'程度',
+  author:'作者', tag:'标签', tags:'标签', link:'链接', url:'链接', phone:'电话', address:'地址', plate:'车牌' }
+/* ★ #961 主字段键补中文列名（面板库中文列名实锤）+ 记账常见主列 */
+const PL_MAIN_KEYS = ['name','title','item','content','desc','description','note','notes','remark','category','type','status',
+  '项目','内容','名称','标题','事项','品名','备注','描述','摘要','主题','科目','收支','类别','任务','地点','经手人']
+const PL_AMT_RE = /^(amount|money|total|price|cost|fee|expected|income|expense|budget|balance)$/i
+function plFmtVal(k, v) {
+  if (v === null || v === undefined) return ''
+  let s = String(v).trim()
+  if (!s) return ''
+  if (PL_AMT_RE.test(k)) {
+    const n = parseFloat(String(s).replace(/[¥￥$,，\s]/g, ''))
+    if (!isNaN(n)) return '¥' + (Math.round(n * 100) / 100)
+  }
+  let m = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})[ T](\d{1,2}):(\d{1,2})(?::\d{1,2})?$/)
+  if (m) return (+m[2]) + '月' + (+m[3]) + '日 ' + m[4].padStart(2, '0') + ':' + m[5].padStart(2, '0')
+  m = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/)
+  if (m) return (+m[2]) + '月' + (+m[3]) + '日'
+  return s
+}
+function plRowText(r) {
+  if (typeof r !== 'object' || r === null || Array.isArray(r)) return String(r)
+  const entries = []
+  for (const k in r) {
+    if (PL_SYS_RE.test(k)) continue
+    const v = plFmtVal(k, r[k])
+    if (v !== '') entries.push([k, v])
+  }
+  if (!entries.length) return JSON.stringify(r)
+  let mi = entries.findIndex(([k]) => PL_MAIN_KEYS.includes(k.toLowerCase()))
+  if (mi < 0) mi = 0
+  const main = entries[mi][1]
+  const rest = entries.filter((_, i) => i !== mi)
+    .map(([k, v]) => (PL_FIELD_ZH[k.toLowerCase()] || k) + ' ' + v)
+  return rest.length ? main + '\n' + rest.join(' · ') : main
+}
+/* ★ #1131（2026-10-14）B保底：专属定制面板（数据在专属表，通用壳读不到）→ 家庭网下直接嵌桌面完整页，
+   数据/录入/AI 分析全功能一步到位；外网（云端手机页）时 iframe 不可达，保持通用壳。 */
+const PL_CUSTOM_PANELS = { kid_archive: 1, health_file: 1, study_center: 1, fridge_stock_1: 1, accounting_daily_1: 1 }
+function plIsHome() {
+  const h = location.hostname
+  return /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.|localhost|127\.)/.test(h)
+}
+async function renderPanelDetail(p) {
+  if (PL_CUSTOM_PANELS[p.id] && plIsHome()) {
+    plNav((p.icon || '📋') + ' ' + p.name)
+    const body = $('pl-body')
+    body.innerHTML = '<div class="loading">正在打开完整档案页…</div>'
+    body.innerHTML = ''
+    const tip = document.createElement('div')
+    tip.className = 'loading'
+    tip.textContent = '完整档案视图（数据/录入/AI 分析全在这里）'
+    tip.style.marginBottom = '8px'
+    const f = document.createElement('iframe')
+    f.src = '/panel/' + p.id
+    f.style.cssText = 'width:100%;border:0;border-radius:12px;background:#fff;height:calc(100vh - 130px)'
+    body.append(tip, f)
+    return
+  }
+  plNav((p.icon || '📋') + ' ' + p.name)
+  const body = $('pl-body')
+  body.innerHTML = '<div class="loading">正在取「' + escHtml(p.name) + '」的记录…</div>'
+  const wrap = document.createElement('div')
+  body.innerHTML = ''; body.appendChild(wrap)
+  try {
+    const { status, data } = await jpost('/api/relay/send', { action: 'panels.query', params: { panel_id: p.id } }, true)
+    const rows = (status === 200 && data.success && data.data && data.data.rows) || []
+    const addBtn = document.createElement('button')
+    // ★ 2026-10-24 方案 A：与电脑统一叫「＋ 添加」（原「录一条」与表单入口双轨概念已收口）
+    addBtn.textContent = '＋ 添加「' + p.name + '」记录'
+    addBtn.style.marginBottom = '12px'
+    addBtn.onclick = () => plGo(() => renderPanelAdd(p))
+    wrap.appendChild(addBtn)
+    if (!rows.length) {
+      const e = document.createElement('div'); e.className = 'loading'; e.textContent = '还没有记录，点上面按钮录第一条。'
+      wrap.appendChild(e)
+    }
+    rows.slice(0, 30).forEach(r => {
+      const d = document.createElement('div'); d.className = 'pnl-row'
+      const main = document.createElement('div'); main.textContent = plRowText(r)
+      const rt = document.createElement('div'); rt.className = 'rt'
+      rt.textContent = (r && r.created_at) || ''
+      d.append(main, rt)
+      wrap.appendChild(d)
+    })
+    if (rows.length > 30) {
+      const m = document.createElement('div'); m.className = 'loading'
+      m.textContent = '… 共 ' + rows.length + ' 条，电脑端可看全部'
+      wrap.appendChild(m)
+    }
+  } catch (e) {
+    const er = document.createElement('div'); er.className = 'loading'; er.textContent = '取数据失败：' + e.message
+    wrap.appendChild(er)
+  }
+}
+async function renderPanelAdd(p) {
+  plNav('＋ 录入 → ' + p.name)
+  const body = $('pl-body')
+  body.innerHTML = '<div class="loading">正在取字段…</div>'
+  try {
+    const { status, data } = await jpost('/api/relay/send', { action: 'panels.fields', params: { panel_id: p.id } }, true)
+    const fields = (status === 200 && data.success && data.data && data.data.fields) || []
+    if (!fields.length) { body.innerHTML = '<div class="loading">这个面板没有可填的字段（去电脑端看看）。</div>'; return }
+    body.innerHTML = ''
+    const back = document.createElement('button')
+    back.className = 'ghost'; back.textContent = '← 返回' + p.name
+    back.onclick = plBack
+    body.appendChild(back)
+    const inputs = {}
+    fields.forEach(f => {
+      const lab = document.createElement('div')
+      lab.style.cssText = 'font-size:12.5px;color:var(--sub);margin:10px 0 4px'
+      lab.textContent = f.name + (f.required ? '（必填）' : '')
+      // ★ 2026-10-24 方案 A：控件按字段类型升级——原来全是纯文本框（日期/下拉/数字全手打，数字也不弹数字键盘）
+      let inp
+      if (f.type === 'select' && Array.isArray(f.options) && f.options.length) {
+        inp = document.createElement('select')
+        const optEmpty = document.createElement('option'); optEmpty.value = ''; optEmpty.textContent = '（选一个）'
+        inp.appendChild(optEmpty)
+        f.options.forEach(o => { const op = document.createElement('option'); op.value = o; op.textContent = o; inp.appendChild(op) })
+      } else if (f.type === 'textarea') {
+        inp = document.createElement('textarea'); inp.rows = 2
+      } else {
+        inp = document.createElement('input')
+        if (f.type === 'number') { inp.type = 'number'; inp.inputMode = 'decimal'; inp.placeholder = '填数字' }
+        else if (f.type === 'date') { inp.type = 'date' }
+        else if (f.type === 'time') { inp.type = 'time' }
+        else { inp.placeholder = '填' + f.name }
+      }
+      inp.style.cssText = 'width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:14px;background:#fff;color:var(--ink)'
+      inputs[f.name] = inp
+      body.append(lab, inp)
+    })
+    const save = document.createElement('button')
+    save.textContent = '💾 存进面板'
+    save.style.marginTop = '14px'
+    save.onclick = async () => {
+      const payload = {}
+      let missing = null
+      fields.forEach(f => {
+        const v = (inputs[f.name].value || '').trim()
+        if (v) payload[f.name] = v
+        else if (f.required && !missing) missing = f.name
+      })
+      if (missing) { save.textContent = '「' + missing + '」还没填'; setTimeout(() => { save.textContent = '💾 存进面板' }, 1500); return }
+      if (!Object.keys(payload).length) { save.textContent = '至少填一项'; setTimeout(() => { save.textContent = '💾 存进面板' }, 1500); return }
+      save.disabled = true; save.textContent = '存入中…'
+      try {
+        const { status, data } = await jpost('/api/relay/send',
+          { action: 'panels.add', params: { panel_id: p.id, data: payload } }, true)
+        if (status === 200 && data.success) {
+          save.textContent = '✅ 已存进「' + p.name + '」'
+          setTimeout(() => plBack(), 700)
+        } else {
+          save.disabled = false
+          save.textContent = '⚠️ ' + errMsg(data, status)
+          setTimeout(() => { save.textContent = '💾 存进面板' }, 2500)
+        }
+      } catch (e) {
+        save.disabled = false; save.textContent = '⚠️ 网络错误：' + e.message
+        setTimeout(() => { save.textContent = '💾 存进面板' }, 2500)
+      }
+    }
+    body.appendChild(save)
+  } catch (e) { body.innerHTML = '<div class="loading">取字段失败：' + escHtml(e.message) + '</div>' }
+}
+
+/* ── #823: 面板入口（panels.list 列面板 → panels.query 看数据）── */
+async function loadPanels() {
+  try {
+    const { status, data } = await jpost('/api/relay/send', { action: 'panels.list', params: {} }, true)
+    if (status === 200 && data.success && data.data && data.data.panels) {
+      const box = $('panel-chips')
+      box.innerHTML = ''
+      data.data.panels.forEach(p => {
+        const b = document.createElement('button')
+        b.className = 'chip'
+        b.textContent = (p.icon || '📋') + ' ' + p.name + (p.records ? ' · ' + p.records : '')
+        b.onclick = () => openPanel(p)
+        box.appendChild(b)
+      })
+      if (box.children.length) box.style.display = 'flex'
+      window._hvPanels = data.data.panels || []   // ★ #927 跳转按钮按 ID 面板时找名字用
+    }
+  } catch (e) { /* 面板加载失败不影响对话 */ }
+}
+async function openPanel(p) {
+  bubble('me', (p.icon || '📋') + ' 查看「' + p.name + '」')
+  try {
+    const { status, data } = await jpost('/api/relay/send',
+      { action: 'panels.query', params: { panel_id: p.id } }, true)
+    if (status === 200 && data.success) {
+      const rows = (data.data && data.data.rows) || []
+      if (!rows.length) { bubble('hv', '「' + p.name + '」还没有记录。'); return }
+      let txt = '📊 ' + p.name + '（最近 ' + rows.length + ' 条）\n'
+      rows.slice(0, 15).forEach(r => {
+        txt += '· ' + plRowText(r).replace(/\n/g, ' · ') + '\n'   // ★ #942-A 与面板页同款美化
+      })
+      if (rows.length > 15) txt += '… 共 ' + rows.length + ' 条，电脑端可看全部'
+      bubble('hv', txt)
+    } else bubble('hv', '⚠️ ' + errMsg(data, status))
+  } catch (e) { bubble('hv', '⚠️ 网络错误：' + e.message) }
+}
+
+/* ── ★ #927 图片库视图（出门模式）：缩略九宫格 → 点开看大图 ──
+   ★ #928 T5：opts.source='mobile' 时切「记忆相册」模式（只看生活照来源） */
+function openPhotos(opts) {
+  opts = opts || {}
+  const isMem = opts.source === 'mobile'
+  bubble('me', isMem ? '🌅 打开记忆相册' : '🖼️ 打开图片库')
+  const old = $('photos-drawer'); if (old) old.remove()
+  const d = document.createElement('div')
+  d.id = 'photos-drawer'
+  d.style.cssText = 'position:fixed;inset:0;background:#FBFCFE;z-index:60;display:flex;flex-direction:column'
+  d.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid #E8EBF0;flex-shrink:0">
+      <button id="ph-close" style="border:0;background:#F1F3F8;color:var(--main);border-radius:8px;padding:6px 12px;font-size:14px">← 返回</button>
+      <b style="font-size:15px">${isMem ? '🌅 记忆相册（生活照）' : '🖼️ 家里的图片库'}</b>
+      <span id="ph-count" style="color:#7a8291;font-size:12px"></span>
+      <button id="ph-import" style="margin-left:auto;border:0;background:#3B82F6;color:#fff;border-radius:8px;padding:7px 12px;font-size:13px">📥 从相册导入</button>
+      <input id="ph-file" type="file" accept="image/*" multiple style="display:none" />
+    </div>
+    <div id="ph-grid" style="flex:1;overflow-y:auto;padding:12px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;align-content:start">
+      <div style="grid-column:1/-1;color:#9aa2b1;font-size:13px;text-align:center;padding:30px 0">正在从家里取图…</div>
+    </div>`
+  document.body.appendChild(d)
+  $('ph-close').onclick = () => d.remove()
+  loadPhotoGrid(d, isMem)
+  // ★ #928 T6 → #1340 方案A 改造：相册导入先弹「模式选择」，不再闷头直传——
+  //   ① 逐张确认 = 复用聊天页 📷 确认卡（用途键挂面板 / 写说明问哈文 / 🎤 / 组合多图），与主链路同款
+  //   ② 仅存相册 = 保留 #928 批量纯存库语义（不惊动哈文，AI 后台自动打标签）
+  $('ph-import').onclick = () => $('ph-file').click()
+  $('ph-file').onchange = async ev => {
+    const files = [...(ev.target.files || [])]
+    ev.target.value = ''
+    if (!files.length) return
+    const old = $('ph-choice'); if (old) old.remove()
+    const c = document.createElement('div')
+    c.id = 'ph-choice'
+    // 层级：相册抽屉 60 < 本选择条 89 < 确认卡 90（选「逐张确认」后卡片直接盖上来）
+    c.style.cssText = 'position:fixed;inset:0;z-index:89;background:rgba(0,0,0,.45);display:flex;align-items:flex-end'
+    c.innerHTML = `
+      <div style="width:100%;max-width:520px;margin:0 auto;background:#fff;border-radius:18px 18px 0 0;padding:16px 18px calc(16px + env(safe-area-inset-bottom))">
+        <b style="font-size:15px">选了 ${files.length} 张照片，怎么处理？</b>
+        <button id="phc-card" style="width:100%;margin-top:12px;border:0;background:#3D6BFF;color:#fff;border-radius:10px;padding:11px;font-size:14px">📋 逐张确认（可选模块 / 能问哈文）</button>
+        <div style="color:#7a8291;font-size:12px;margin-top:5px">一张一张弹卡：选「冰箱」「账单」等用途键归位，或写说明问哈文</div>
+        <button id="phc-only" style="width:100%;margin-top:10px;border:0;background:#F1F3F8;color:var(--main);border-radius:10px;padding:11px;font-size:14px">📥 仅存入相册（不惊动哈文）</button>
+        <div style="color:#7a8291;font-size:12px;margin-top:5px">安静批量存进家里相册，哈文后台自动打标签</div>
+        <button id="phc-cancel" style="width:100%;margin-top:12px;border:0;background:none;color:var(--sub);padding:8px;font-size:14px">✕ 取消</button>
+      </div>`
+    document.body.appendChild(c)
+    $('phc-cancel').onclick = () => c.remove()
+    c.addEventListener('click', ev2 => { if (ev2.target === c) c.remove() })
+    $('phc-card').onclick = () => {
+      c.remove()
+      openPhotoCard(files[0], files.slice(1))
+      // 确认卡流程走完（卡片消失且无下一张挂起）后刷新相册九宫格
+      const t = setInterval(() => {
+        if ($('photo-card')) return
+        clearInterval(t)
+        loadPhotoGrid(d, isMem)
+      }, 800)
+    }
+    $('phc-only').onclick = async () => {
+      c.remove()
+      const btn = $('ph-import')
+      btn.disabled = true
+      btn.textContent = '导入中 0/' + files.length
+      let ok = 0
+      for (let i = 0; i < files.length; i++) {
+        try {
+          const b64 = await shrinkImage(files[i], 1280, 0.72)
+          const { status, data } = await jpost('/api/relay/send',
+            { action: 'images.upload', params: { image_b64: b64 } }, true)
+          if (status === 200 && data.success) ok++
+        } catch (e) { /* 单张失败继续 */ }
+        btn.textContent = '导入中 ' + (i + 1) + '/' + files.length
+      }
+      btn.disabled = false
+      btn.textContent = '📥 从相册导入'
+      bubble('hv', ok === files.length
+        ? '📥 已把 ' + ok + ' 张照片存进家里的记忆相册（AI 会自动打标签）'
+        : '📥 导入了 ' + ok + '/' + files.length + ' 张，没成功的多半是太大或网络抖动，重试即可')
+      loadPhotoGrid(d, isMem)
+    }
+  }
+  d.addEventListener('click', ev => {
+    const im = ev.target.closest('img[data-pid]')
+    if (im) openPhotoBig(parseInt(im.dataset.pid, 10))
+  })
+}
+// 手机端图片压缩：最长边 maxSide 的 JPEG base64（不带前缀）
+function shrinkImage(file, maxSide, quality) {
+  return new Promise((resolve, reject) => {
+    const rd = new FileReader()
+    rd.onerror = reject
+    rd.onload = e => {
+      const img = new Image()
+      img.onerror = reject
+      img.onload = () => {
+        const sc = Math.min(1, maxSide / Math.max(img.width, img.height))
+        const cv = document.createElement('canvas')
+        cv.width = Math.round(img.width * sc)
+        cv.height = Math.round(img.height * sc)
+        cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height)
+        resolve(cv.toDataURL('image/jpeg', quality).split(',')[1] || '')
+      }
+      img.src = String(e.target.result || '')
+    }
+    rd.readAsDataURL(file)
+  })
+}
+function loadPhotoGrid(d, isMem) {
+  jpost('/api/relay/send', { action: 'images.list', params: isMem ? { source: 'mobile' } : {} }, true).then(({ status, data }) => {
+    const grid = $('ph-grid')
+    if (!grid) return
+    if (status !== 200 || !data.success) {
+      grid.innerHTML = '<div style="grid-column:1/-1;color:#e5484d;font-size:13px;text-align:center;padding:30px 0">⚠️ 取图失败：' + errMsg(data, status) + '</div>'
+      return
+    }
+    const imgs = (data.data && data.data.images) || []
+    $('ph-count').textContent = imgs.length ? ('共 ' + imgs.length + ' 张') : ''
+    if (!imgs.length) {
+      grid.innerHTML = '<div style="grid-column:1/-1;color:#9aa2b1;font-size:13px;text-align:center;padding:30px 0">' + (isMem ? '记忆相册还是空的——手机拍的照片会自动归档到这里' : '图库还是空的——在家拍几张/发几张图就有了') + '</div>'
+      return
+    }
+    grid.innerHTML = ''
+    imgs.forEach(it => {
+      const cell = document.createElement('div')
+      cell.style.cssText = 'position:relative;border-radius:10px;overflow:hidden;background:#E8EBF0;aspect-ratio:1'
+      const im = document.createElement('img')
+      im.src = it.thumb; im.dataset.pid = it.id
+      im.style.cssText = 'width:100%;height:100%;object-fit:cover;cursor:pointer'
+      cell.appendChild(im)
+      if (it.note) {
+        const cap = document.createElement('div')
+        cap.textContent = it.note
+        cap.style.cssText = 'position:absolute;left:0;right:0;bottom:0;background:linear-gradient(transparent,rgba(0,0,0,.55));color:#fff;font-size:10px;padding:12px 5px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'
+        cell.appendChild(cap)
+      }
+      grid.appendChild(cell)
+    })
+  }).catch(e => {
+    const grid = $('ph-grid')
+    if (grid) grid.innerHTML = '<div style="grid-column:1/-1;color:#e5484d;font-size:13px;text-align:center;padding:30px 0">⚠️ 网络错误：' + e.message + '</div>'
+  })
+}
+function openPhotoBig(pid) {
+  const old = $('photo-big'); if (old) old.remove()
+  const d = document.createElement('div')
+  d.id = 'photo-big'
+  d.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:70;display:flex;align-items:center;justify-content:center'
+  d.innerHTML = '<div style="color:#fff;font-size:13px">加载原图…</div>'
+  d.addEventListener('click', () => d.remove())
+  document.body.appendChild(d)
+  jpost('/api/relay/send', { action: 'images.file', params: { id: pid } }, true).then(({ status, data }) => {
+    if (status === 200 && data.success && data.data && data.data.image) {
+      d.innerHTML = '<img src="' + data.data.image + '" style="max-width:100%;max-height:100%;object-fit:contain" />'
+    } else {
+      d.innerHTML = '<div style="color:#fff;font-size:13px">⚠️ 原图取不出来</div>'
+      setTimeout(() => d.remove(), 1600)
+    }
+  }).catch(() => { d.innerHTML = '<div style="color:#fff;font-size:13px">⚠️ 网络错误</div>'; setTimeout(() => d.remove(), 1600) })
+}
+
+// ★ #824: 凭证校验失败不再一键抹掉——网络抖动自动重试 2 次；只有云端明确判定凭证无效（401/403）才退出
+// ★ #955 本地版：ping 同源 /api/phone/send，401 由 jpost 统一踢去 /login
+let stFails = 0
+async function refreshStatus() {
+  const st = $('status-tip')
+  const badge = $('hd-status')
+  try {
+    const { status, data } = await jpost('/api/relay/send', { action: 'ping', params: {} })
+    if (status === 200 && data.success) {
+      stFails = 0
+      // ★ #1089 连上了就安静：常驻状态条退役（信息进顶栏绿点），只有出问题才弹条报信
+      st.style.display = 'none'
+      if (badge) badge.classList.add('ok')
+      return
+    }
+    throw new Error(errMsg(data, status))
+  } catch (e) {
+    if (badge) badge.classList.remove('ok')
+    stFails++
+    st.style.display = 'block'
+    if (stFails <= 2) {
+      st.className = 'tip'
+      st.style.background = '#FFF7E6'; st.style.color = '#B8860B'
+      st.textContent = '⏳ 网络不稳，自动重试中（' + stFails + '/2）…'
+      setTimeout(refreshStatus, 1600)
+      return
+    }
+    st.className = 'tip bad'
+    st.style.background = ''; st.style.color = ''
+    st.textContent = '❌ 连不上家里的哈文：' + e.message + '（检查电脑是否开机；点右上角 ⚙️ 可重新登录）'
+  }
+}
+
+function bubble(cls, text) {
+  const d = document.createElement('div')
+  d.className = 'bub ' + cls; d.textContent = text
+  $('chatlog').appendChild(d)
+  $('chatlog').scrollTop = $('chatlog').scrollHeight
+  hvHistPush(cls === 'me' ? 'me' : 'hv', text)
+  return d
+}
+
+/* ── ★ r30-b（2026-10-10）对话历史不丢：每条气泡自动存手机本地（最多 80 条），
+   切走看抖音/微信、页面被系统回收、甚至刷新重开，回来都在。 ── */
+const HV_HIST_KEY = 'hv_chat_hist'
+let hvHist = []
+try { hvHist = JSON.parse(localStorage.getItem(HV_HIST_KEY) || '[]') } catch (e) { hvHist = [] }
+function hvHistPush(role, text) {
+  hvHist.push({ r: role, t: String(text) })
+  if (hvHist.length > 80) hvHist = hvHist.slice(-80)
+  try { localStorage.setItem(HV_HIST_KEY, JSON.stringify(hvHist)) } catch (e) {}
+}
+function hvHistRestore() {
+  if (!hvHist.length) return
+  const log = $('chatlog')
+  hvHist.forEach(m => {
+    const d = document.createElement('div')
+    d.className = 'bub ' + (m.r === 'me' ? 'me' : 'hv'); d.textContent = m.t
+    log.appendChild(d)
+  })
+  const sep = document.createElement('div')
+  sep.style.cssText = 'align-self:center;font-size:11px;color:var(--sub);padding:2px 0'
+  sep.textContent = '— 以上是上次的对话 —'
+  log.appendChild(sep)
+  log.scrollTop = log.scrollHeight
+}
+// 切走时落盘、回来时滚到最新（回答在后台到达也已存好）
+document.addEventListener('visibilitychange', () => {
+  try { localStorage.setItem(HV_HIST_KEY, JSON.stringify(hvHist.slice(-80))) } catch (e) {}
+  if (document.visibilityState === 'visible') {
+    const log = $('chatlog'); if (log) log.scrollTop = log.scrollHeight
+  }
+})
+
+/* ── ★ #927（2026-09-29）聊天内跳转：与电脑端 #926 同一标记协议 ──
+   哈文回答里带【打开:/photos】→ 剥离标记 + 渲染开门按钮；
+   /photos 出图片库视图、/panel/ID 出面板记录、其它提示电脑端看 */
+const JUMP_RE = /【打开:\s*(\/[^\】]+?)\s*\】/g
+const JUMP_LABELS = { '/photos': '图片库', '/memory': '记忆相册', '/knowledge': '知识库', '/tasks': '任务', '/mail': '邮箱' }
+// ★ #942-B：按 path 去重——GLM 复读同一标记两次也只出一个按钮
+function parseJumps(text) {
+  const out = []; const seen = new Set()
+  const re = new RegExp(JUMP_RE.source, 'g'); let m
+  while ((m = re.exec(text || '')) !== null) {
+    const path = m[1]
+    if (seen.has(path)) continue
+    let label = JUMP_LABELS[path]
+    if (!label && path.startsWith('/panel/')) label = '面板'
+    if (label) { seen.add(path); out.push({ path, label }) }
+  }
+  return out
+}
+/* ★ #1070（2026-10-11）聊天内图片直显：电脑端回答里带 markdown 图片
+   ![说明](/api/images/file/ID)，手机端不再显示成两行原文，直接渲染成
+   缩略图（走中转 images.file + thumb=1，出门流量也轻），点开看大图 */
+const MD_IMG_RE = /!\[([^\]]*)\]\(\/api\/images\/file\/(\d+)[^)]*\)/g
+function bubbleSmart(cls, text) {
+  if (cls !== 'hv') return bubble(cls, text)
+  const jumps = parseJumps(text)
+  let clean = (text || '').replace(new RegExp(JUMP_RE.source, 'g'), '').replace(/\n{3,}/g, '\n').trim()
+  // 抠出 markdown 图片（alt 留作图下说明），其余文字照旧纯文本安全渲染
+  // ★ #1077 B2 同 id 去重：同一张图（/api/images/file/N）只渲染一次，
+  //   防引擎历史性双 yield 拼出两份相同图片语法 → 显示两张一样的图
+  const imgs = []
+  const seenImgId = new Set()
+  clean = clean.replace(new RegExp(MD_IMG_RE.source, 'g'), (m0, alt, id) => {
+    if (seenImgId.has(id)) return ''
+    seenImgId.add(id)
+    imgs.push({ alt: (alt || '').trim(), id: id })
+    return ''
+  })
+  clean = clean.replace(/\n{3,}/g, '\n').trim()
+  const el = bubble(cls, clean || (imgs.length ? '' : '（好了）'))
+  imgs.forEach(it => {
+    const box = document.createElement('div')
+    box.style.cssText = 'margin-top:8px'
+    const ph = document.createElement('div')
+    ph.style.cssText = 'width:180px;height:120px;border-radius:10px;background:rgba(0,0,0,.18);display:flex;align-items:center;justify-content:center;font-size:12px;opacity:.8'
+    ph.textContent = '📷 图片加载中…'
+    box.appendChild(ph)
+    if (it.alt) {
+      const cap = document.createElement('div')
+      cap.style.cssText = 'font-size:11px;opacity:.75;margin-top:4px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'
+      cap.textContent = it.alt
+      box.appendChild(cap)
+    }
+    el.appendChild(box)
+    jpost('/api/relay/send', { action: 'images.file', params: { id: parseInt(it.id, 10), thumb: 1 } }, true).then(({ status, data }) => {
+      if (status === 200 && data.success && data.data && data.data.image) {
+        const im = document.createElement('img')
+        im.src = data.data.image
+        im.style.cssText = 'width:180px;height:120px;object-fit:cover;border-radius:10px;cursor:pointer;display:block'
+        im.onclick = () => openPhotoBig(it.id)
+        ph.replaceWith(im)
+      } else {
+        ph.textContent = '⚠️ 图片取不出来'
+      }
+    }).catch(() => { ph.textContent = '⚠️ 图片加载失败' })
+  })
+  if (jumps.length) {
+    const row = document.createElement('div')
+    row.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;margin-top:6px'
+    jumps.forEach(j => {
+      const b = document.createElement('button')
+      b.className = 'chip'
+      b.style.background = '#3B82F6'; b.style.color = '#fff'
+      b.textContent = '🚪 打开' + j.label + ' →'
+      b.onclick = () => goJump(j.path)
+      row.appendChild(b)
+    })
+    el.appendChild(row)
+  }
+  return el
+}
+function goJump(path) {
+  if (path === '/photos') { openPhotos(); return }
+  if (path === '/memory') { openPhotos({ source: 'mobile' }); return }
+  if (path.startsWith('/panel/')) {
+    const pid = path.replace('/panel/', '').replace(/\/$/, '')
+    const known = (window._hvPanels || []).find(p => p.id === pid)
+    openPanel(known || { id: pid, name: pid, icon: '📋' })
+    return
+  }
+  bubble('hv', '「' + path + '」这个页面出门模式暂时打不开，在家连上哈文就能看完整版。')
+}
+
+/* ── ★ r30-a（2026-10-10）发送排队：上一条没回完也能继续发，
+   自动按顺序排队处理，排队中的气泡标「⏳ 排队中 #2」── */
+let _hvQTail = Promise.resolve()
+let _hvQBusy = false, _hvQPending = 0
+function hvEnqueue(job) {
+  const willWait = _hvQBusy
+  _hvQPending++
+  _hvQBusy = true
+  _hvQTail = _hvQTail.then(job).catch(() => {}).then(() => {
+    _hvQPending--
+    if (_hvQPending <= 0) _hvQBusy = false
+  })
+  return { wait: willWait, pos: _hvQPending }
+}
+
+async function send() {
+  const t = $('msg').value.trim()
+  if (!t) return
+  const g = $('empty-guide')
+  if (g) g.style.display = 'none'   // ★ #1089 发首条即隐引导卡
+  $('msg').value = ''
+  $('msg').style.height = 'auto'   // ★ #942 textarea 高度复位
+  const q = hvEnqueue(() => doSendText(t))
+  bubble('me', q.wait ? t + '\n⏳ 排队中 #' + q.pos : t)
+}
+let _hvChatBusy = false   // ★ #1054: 有回答正在生成（此时发送键=停止键）
+/* ★ #1090（2026-10-11）思考中提示：发送后立刻挂「哈文在想…」三点动画气泡，
+   首个回答到达即替换——在家 WLAN / 出门流量两条链路统一，用户不再猜哈文收没收到。
+   气泡不落历史（hvHistPush 不进），回答照旧入库。 */
+function showThinking(txt) {
+  const d = document.createElement('div')
+  d.className = 'bub hv thinking'
+  d.innerHTML = '<i></i><i></i><i></i>'
+  if (txt) { d.classList.remove('thinking'); d.textContent = txt }
+  $('chatlog').appendChild(d)
+  $('chatlog').scrollTop = $('chatlog').scrollHeight
+  return d
+}
+async function doSendText(t) {
+  const btn = $('btn-send')
+  _hvChatBusy = true
+  btn.disabled = false; btn.textContent = '⏹'; btn.title = '点击停止生成'
+  const th = showThinking()
+  try {
+    /* ★ 2026-10-21 手机端流式（体感对齐豆包）：SSE 逐块收字，首字 2~3 秒即显；
+       失败自动回退旧的整段模式 */
+    try {
+      const resp = await fetch('/api/relay/chat_stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: t, mode: hvMode() }),
+      })
+      if (!resp.ok || !resp.body) throw new Error('HTTP ' + resp.status)
+      const reader = resp.body.getReader()
+      const dec = new TextDecoder()
+      let buf = '', bub = null, out = '', lastStatus = ''
+      const flushBuf = () => {
+        let idx
+        while ((idx = buf.indexOf('\n\n')) >= 0) {
+          const line = buf.slice(0, idx).trim(); buf = buf.slice(idx + 2)
+          if (!line.startsWith('data: ')) continue
+          const payload = line.slice(6)
+          if (payload === '[DONE]') return true
+          try {
+            const ev = JSON.parse(payload)
+            if (ev.type === 'text' && ev.content) {
+              out += ev.content
+              if (!bub) { th.remove(); bub = document.createElement('div'); bub.className = 'bub hv'; $('chatlog').appendChild(bub) }
+              bub.textContent = out
+              $('chatlog').scrollTop = $('chatlog').scrollHeight
+            } else if (ev.type === 'status' && ev.content && !bub) {
+              th.textContent = ev.content
+            }
+          } catch (_) {}
+        }
+        return false
+      }
+      let done = false
+      while (true) {
+        const rd = await reader.read()
+        if (rd.done) break
+        buf += dec.decode(rd.value, { stream: true })
+        done = flushBuf()
+        if (done) break
+      }
+      if (!done) flushBuf()
+      if (!bub && th.isConnected) { th.remove(); bubble('hv', out || '（哈文没说话）') }
+      hvHistPush('hv', out)
+    } catch (eStream) {
+      /* 流式不可用（旧版后端/网络断）→ 回退整段模式 */
+      th.textContent = ''
+      const { status, data } = await jpost('/api/relay/send', { action: 'chat', params: { message: t, mode: hvMode() } })
+      th.remove()
+      if (status === 200 && data.success) bubbleSmart('hv', data.data.answer || '（哈文没说话）')
+      else bubble('hv', '⚠️ ' + errMsg(data, status))
+    }
+  } catch (e) { const _th = document.querySelector('.bub.hv.thinking'); if (_th) _th.remove(); bubble('hv', '⚠️ 网络错误：' + e.message) }
+  finally { _hvChatBusy = false; btn.disabled = false; btn.textContent = '发送'; btn.title = '发送' }
+}
+$('btn-send').addEventListener('click', () => {
+  // ★ #1054: 生成中点按钮=停止（半截回答照常入库）；没在生成就正常发送。
+  // 想排队继续发还有键盘：输入框打字按 Enter 照旧排队
+  if (_hvChatBusy) {
+    jpost('/api/relay/send', { action: 'chat_stop', params: {} }).catch(() => {})
+    return
+  }
+  send()
+})
+// ★ #942 新输入栏：textarea 自动长高（最多 4 行），Enter 直发、Shift+Enter 换行
+const msgEl = $('msg')
+msgEl.addEventListener('input', () => {
+  msgEl.style.height = 'auto'
+  msgEl.style.height = Math.min(msgEl.scrollHeight, 96) + 'px'
+})
+msgEl.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
+})
+
+/* ── ★ #929-A2/A3（2026-09-29）：语音重做 ──
+   A2：APP 壳（Capacitor）里优先手机系统识别（识别在手机本地完成，不出门不走流量）；
+       纯浏览器 / 识别不可用 → 落回录音传哈文转写
+   A3：微信式交互——按住录、松开发送（先转文字可改）、上滑取消、失败自动重试2次 */
+const SRPlugin = (() => { try { return (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SpeechRecognition) || null } catch (e) { return null } })()
+let recStream = null, micHeld = false, srActive = false
+let recStartY = 0, recCancelled = false
+let pcmSt = null   // ★ v29（2026-10-16）：WebAudio PCM 录音状态（替代 MediaRecorder）
+
+function micUI(state, txt) {
+  const b = $('btn-mic')
+  b.classList.toggle('rec', state === 'rec' || state === 'cancel')
+  b.textContent = state === 'rec' ? '⏺' : (state === 'cancel' ? '✕' : (state === 'busy' ? '…' : '🎤'))
+  if (txt) $('msg').placeholder = txt
+}
+function evY(e) {
+  const t = e && (e.touches && e.touches[0])
+  return t ? t.clientY : (e && e.clientY) || 0
+}
+
+async function startRec(e) {
+  if (micHeld) return
+  recStartY = evY(e)
+  recCancelled = false
+  if (SRPlugin) { await srStart(); return }
+  await recStartMedia()
+}
+async function srStart() {
+  try {
+    try { await SRPlugin.requestPermission() } catch (_) {}
+    srActive = true; micHeld = true
+    micUI('rec', '正在听（手机本地识别）…松开结束')
+    try { SRPlugin.removeAllListeners() } catch (_) {}
+    SRPlugin.addListener('partialResults', d => {
+      const m = (d && (d.matches || d.value)) || []
+      if (m && m[0]) $('msg').value = m[0]
+    })
+    await SRPlugin.start({ language: 'zh-CN', maxMatches: 1, partialResults: true, popup: false })
+  } catch (e) {
+    srActive = false; micHeld = false
+    bubble('hv', '⚠️ 手机本地识别没启动（' + (e.message || e) + '），改用录音传家里识别')
+    await recStartMedia()
+  }
+}
+function srStop() {
+  srActive = false; micHeld = false
+  micUI('idle', '✅ 识别好了，说错了直接改字，然后点发送')
+  try { SRPlugin && SRPlugin.stop() } catch (_) {}
+}
+/* ★ v29（2026-10-16）语音采集换 WebAudio PCM——APP 壳 WebView 的 MediaRecorder 实录翻车
+   （家里日志实锤 16:56~16:57：11 条 webm 解不开 Invalid data + 7 条数字静音 rms≈0.00002）。
+   改采原始 PCM→打包 16k WAV 传家里转写，绕开坏文件；录完本地先测能量，
+   静音不白传（省流量）并直接给手机侧排查指引。 */
+function pcmNew() { return { ctx: null, proc: null, chunks: [], n: 0, sr: 16000 } }
+function pcmStart(st, stream) {
+  try { st.ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 }) }
+  catch (e) { st.ctx = new (window.AudioContext || window.webkitAudioContext)() }
+  st.sr = st.ctx.sampleRate
+  const src = st.ctx.createMediaStreamSource(stream)
+  st.proc = st.ctx.createScriptProcessor(4096, 1, 1)
+  st.chunks = []; st.n = 0
+  st.proc.onaudioprocess = ev => {
+    const d = ev.inputBuffer.getChannelData(0)
+    st.chunks.push(new Float32Array(d)); st.n += d.length
+  }
+  src.connect(st.proc); st.proc.connect(st.ctx.destination)
+}
+function pcmFinish(st, cancelled) {
+  try { if (st.proc) st.proc.disconnect() } catch (e) {}
+  try { if (st.ctx) st.ctx.close() } catch (e) {}
+  st.ctx = null; st.proc = null
+  if (cancelled) return { blob: null, why: 'cancelled' }
+  const dur = st.n / st.sr
+  if (dur < 0.7) return { blob: null, why: 'short' }
+  const all = new Float32Array(st.n); let off = 0
+  for (const c of st.chunks) { all.set(c, off); off += c.length }
+  st.chunks = []
+  let sum = 0; for (let i = 0; i < all.length; i++) sum += all[i] * all[i]
+  const rms = Math.sqrt(sum / all.length)
+  if (rms < 0.005) return { blob: null, why: 'silent' }   // 数字静音/没采到声，家里阈值 0.0015 更严，这里宽一点
+  return { blob: encodeWav(all, st.sr), why: '' }
+}
+function encodeWav(f32, sr) {
+  const n = f32.length, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf)
+  const ws = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)) }
+  ws(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); ws(8, 'WAVE'); ws(12, 'fmt ')
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true)
+  v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true)
+  ws(36, 'data'); v.setUint32(40, n * 2, true)
+  let o = 44
+  for (let i = 0; i < n; i++, o += 2) { const s = Math.max(-1, Math.min(1, f32[i])); v.setInt16(o, s < 0 ? s * 0x8000 : s * 0x7fff, true) }
+  return new Blob([buf], { type: 'audio/wav' })
+}
+async function recStartMedia() {
+  if (pcmSt) return
+  // ★ #979 麦克风可用性预检：http+IP 页面 navigator.mediaDevices 直接不存在（不是权限问题，
+  //   是浏览器只给加密页面用麦克风）——先探测再调，报错才不会是一句看不懂的 TypeError
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    micUI('idle', '给哈文捎句话…')
+    bubble('hv', '⚠️ 这个页面开不了麦克风：浏览器只给加密页面（地址带锁图标）使用麦克风的权限，http 开头的老地址不行。\n两个办法：一、直接打字，功能都一样；二、用「哈文 APP」说话（APP 不受这个限制）。')
+    return
+  }
+  try {
+    recStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    pcmSt = pcmNew(); pcmStart(pcmSt, recStream)   // ★ v29 WebAudio PCM，不再用 MediaRecorder
+    micHeld = true
+    micUI('rec', '正在听你说话…松开发送 · 上滑取消')
+  } catch (e) {
+    // ★ #955: 手机浏览器安全铁律——http+IP 一律不给麦克风，这不是 bug，指引用 APP
+    bubble('hv', '⚠️ 打不开麦克风：' + (e.message || e) + '\n手机浏览器有安全限制（地址栏不是锁形图标就不给麦克风），说话请用「哈文 APP」，或直接打字。')
+  }
+}
+function moveRec(e) {
+  if (!micHeld || srActive) return
+  recCancelled = (evY(e) - recStartY) < -70   // 上滑超 70px = 取消（微信同款）
+  micUI(recCancelled ? 'cancel' : 'rec', recCancelled ? '松开取消，不会发送' : '正在听你说话…松开发送 · 上滑取消')
+}
+function stopRec() {
+  if (!micHeld) return
+  if (srActive) { srStop(); return }
+  micHeld = false
+  if (!pcmSt) { micUI('idle', '给哈文捎句话…'); return }
+  micUI('busy', '正在转成文字…')
+  const r = pcmFinish(pcmSt, recCancelled); pcmSt = null
+  if (r.why === 'cancelled') { micUI('idle', '已取消'); return }
+  if (r.why === 'short') { micUI('idle', '给哈文捎句话…'); bubble('hv', '⚠️ 录音太短，按住别松，说完再松开'); return }
+  if (r.why === 'silent') {
+    micUI('idle', '给哈文捎句话…')
+    bubble('hv', '⚠️ 这条没录到声音，多半是手机那边的事：\n① 麦克风可能被占用（比如正在打电话/别的应用在用）\n② 手机设置里哈文的麦克风权限给了没\n③ 离手机近一点，再按住说一次')
+    return
+  }
+  transcribeVoice(r.blob)   // #833: 松开只转写，不再自动发送
+}
+async function transcribeVoice(blob) {
+  const t = blob.type || ''
+  const fmt = t.includes('mp4') ? 'mp4' : (t.includes('ogg') ? 'ogg' : (t.includes('wav') ? 'wav' : 'webm'))
+  micUI('busy', '正在转成文字…')
+  const b64 = await new Promise(res => {
+    const r = new FileReader(); r.onload = () => res(r.result.split(',')[1]); r.readAsDataURL(blob)
+  })
+  let lastErr = null
+  for (let i = 0; i < 3; i++) {   // ★ A3 自动重试2次：出门网络抖一下大多retry就好
+    if (i > 0) micUI('busy', `网络抖了一下，自动重试中（第 ${i} 次）…`)
+    try {
+      const { status, data } = await jpost('/api/relay/send',
+        { action: 'voice_text', params: { audio: b64, format: fmt } }, true)
+      if (status === 200 && data.success) {
+        // #833 两段式：识别结果填输入框，主脑可改错字后再点发送
+        $('msg').value = data.data.text || ''
+        micUI('idle', '✅ 识别好了，说错了直接改字，然后点发送')
+        try { $('msg').focus() } catch (e) {}
+        return
+      }
+      lastErr = new Error(errMsg(data, status))
+    } catch (e) { lastErr = e }
+  }
+  bubble('hv', '⚠️ 转文字没成功（重试2次都不行）：' + (lastErr && lastErr.message || lastErr))
+  micUI('idle', '给哈文捎句话…')
+}
+const mic = $('btn-mic')
+mic.addEventListener('touchstart', e => { e.preventDefault(); startRec(e) })
+mic.addEventListener('touchmove', e => { e.preventDefault(); moveRec(e) })
+mic.addEventListener('touchend', e => { e.preventDefault(); stopRec() })
+mic.addEventListener('touchcancel', () => stopRec())
+mic.addEventListener('mousedown', e => startRec(e))
+mic.addEventListener('mousemove', e => { if (micHeld) moveRec(e) })
+mic.addEventListener('mouseup', () => stopRec())
+mic.addEventListener('contextmenu', e => e.preventDefault())
+
+/* ── #815: 📷 拍照问哈文 → ★ r30 重做版在下方（确认卡 + 分级画质 + 排队） ──
+   ★ #1089：附件小面板退役 ——「＋」直接开九宫格（拍照/图册/文件/面板/服务/自定义） */
+$('btn-attach').addEventListener('click', openGridSheet)
+
+/* ── #815: 📷 拍照问哈文（★ r30 重做：确认卡 + 分级画质 + 用途入库） ── */
+function compressImg(file, maxSide, jpegQ) {
+  maxSide = maxSide || 1024; jpegQ = jpegQ || 0.75
+  return new Promise((res, rej) => {
+    const img = new Image()
+    img.onload = () => {
+      let w = img.width, h = img.height
+      if (w > maxSide || h > maxSide) { const k = maxSide / Math.max(w, h); w = Math.round(w * k); h = Math.round(h * k) }
+      const cv = document.createElement('canvas'); cv.width = w; cv.height = h
+      cv.getContext('2d').drawImage(img, 0, 0, w, h)
+      res(cv.toDataURL('image/jpeg', jpegQ))
+    }
+    img.onerror = () => rej(new Error('图片读取失败'))
+    img.src = URL.createObjectURL(file)
+  })
+}
+/* ★ 照片链 C1（2026-10-11 重做）：画质不再设全局开关——拍照确认卡现场选：
+   hd=原图直传 / eco=压缩 / queue=压缩先发，原图排队回家 WiFi 自动补传。
+   原图超过 9MB（哈文单图上限）不再悄悄降质，自动落 queue 档（开发者 10-11 拍板）。 */
+function isHomeNet() {
+  const h = location.hostname || ''
+  return h === 'localhost' || /^(127\.|192\.168\.|10\.)/.test(h) || /^172\.(1[6-9]|2\d|3[01])\./.test(h)
+}
+function prepareImg(file, q) {
+  q = q || (isHomeNet() ? 'hd' : 'eco')   // 默认跟随网络：在家原图，出门压缩
+  const raw = () => new Promise((res, rej) => {
+    const r = new FileReader()
+    r.onload = () => res(r.result); r.onerror = () => rej(new Error('图片读取失败'))
+    r.readAsDataURL(file)
+  })
+  const shrink = () => compressImg(file, 1024, 0.75)
+  if (q === 'hd') {
+    return raw().then(d => {
+      if (d.length > 9000000) {   // 超上限 → 自动转第三档：先发压缩版，原图排队回家补
+        return shrink().then(d2 => ({ dataUrl: d2, quality: 'compressed', queued: true }))
+      }
+      return { dataUrl: d, quality: 'hd' }
+    })
+  }
+  if (q === 'queue') {
+    return shrink().then(d => ({ dataUrl: d, quality: 'compressed', queued: true }))
+  }
+  return shrink().then(d => ({ dataUrl: d, quality: 'compressed' }))
+}
+
+/* ★ 照片链 C1（2026-10-11）：确认卡现场选画质——原图带真实大小 / 压缩 / 压缩先发+回家补原图；
+   流量下原图置灰（isHomeNet 判定，零新逻辑）。rest=多选时剩下的照片（C3 逐张确认） */
+/* ★ #1089 确认卡 6 槽位（2026-10-11）：六个常用键用户可自选（长按任意键进编辑），
+   默认：记冰箱/记账/存相册/存物品/体检档案/随便问问；↑ 键=说明文字直接问（修「没发送键」） */
+const PC_SLOTS_KEY = 'hv_pc_slots'
+const PC_POOL = [
+  { k: 'fridge', icon: '🍽', name: '记冰箱' },
+  { k: 'account', icon: '💰', name: '记账' },
+  { k: 'album_save', icon: '🖼', name: '存相册' },
+  { k: 'panel:home_items', icon: '📦', name: '存物品' },
+  { k: 'panel:health_file', icon: '🩺', name: '体检档案' },
+  { k: 'panel:med_cabinet', icon: '💊', name: '记药箱' },
+  { k: 'panel:child_growth', icon: '🌱', name: '记成长' },
+  { k: 'panel:fitness_log', icon: '🏃', name: '记健身' },
+  { k: 'panel:meal_diary', icon: '🍜', name: '记餐饮' },
+  { k: 'ask', icon: '❓', name: '随便问问' }
+]
+function hvPcSlots() {
+  try { return JSON.parse(localStorage.getItem(PC_SLOTS_KEY) || '["fridge","account","album_save","panel:home_items","panel:health_file","ask"]') } catch (e) { return ['fridge', 'account', 'album_save', 'panel:home_items', 'panel:health_file', 'ask'] }
+}
+function pcSlotBtns() {
+  return hvPcSlots().map(k => {
+    let it = PC_POOL.find(x => x.k === k)
+    if (!it && k.indexOf('panel:') === 0) {
+      /* ★ v31 #1159 键名修复：自定义面板键显示面板名/图标，不再裸显 panel:xxx id */
+      const pid = k.slice(6)
+      const p = (window._hvPanels || []).find(x => x.id === pid)
+      it = p ? { k, icon: p.icon || '📋', name: p.name || pid } : { k, icon: '📋', name: pid }
+    }
+    if (!it) it = { k, icon: '📋', name: k }
+    return `<button class="ghost pc-key" data-k="${escHtml(it.k)}" data-name="${escHtml(it.name)}" style="font-size:14px">${it.icon} ${escHtml(it.name)}</button>`
+  }).join('')
+}
+const PC_RECENT_KEY = 'hv_pc_recent'
+function pcRecent() { try { return JSON.parse(localStorage.getItem(PC_RECENT_KEY) || '[]') } catch (e) { return [] } }
+function pcRecentAdd(note) {
+  if (!note) return
+  let a = pcRecent().filter(x => x !== note)
+  a.unshift(note)
+  try { localStorage.setItem(PC_RECENT_KEY, JSON.stringify(a.slice(0, 3))) } catch (e) {}
+}
+/* ★ v31 #1159 确认卡 2.0 —— 组合多图状态（本次卡片生命周期内） */
+let pcCombo = []      // File 数组（不含当前主图）
+let pcPcm = null      // 🎤 PCM 状态
+let pcHeld = false
+function pcRecentChipsHtml() {
+  const a = pcRecent()
+  return a.length ? a.map(t => `<button class="chip pc-rc" data-t="${escHtml(t)}" style="width:auto;font-size:12px;flex-shrink:0;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(t)}</button>`).join('') : ''
+}
+function pcComboPaint() {
+  const prev = $('pc-combo-prev'); if (!prev) return
+  prev.innerHTML = pcCombo.map((f, i) => `<span style="font-size:11px;color:#7a8291;background:#F1F3F8;border-radius:6px;padding:2px 6px">图${i + 2}·${escHtml((f.name || '').slice(0, 8))}</span>`).join('') +
+    (pcCombo.length ? `<button id="pc-combo-clear" style="border:0;background:#F5F6F8;color:#C0392B;border-radius:6px;padding:2px 8px;font-size:11px">✕清空</button>` : '')
+  const cl = $('pc-combo-clear')
+  if (cl) cl.onclick = () => { pcCombo = []; pcComboPaint() }
+}
+async function pcComboSend(k, pname, qual, card) {
+  /* ★ v31 组合提交：全部图一次走 photo.combo——一条记录挂多张照片 */
+  const note = (($('pc-note') || {}).value || '').trim()
+  card.remove()
+  try {
+    const th = thWithStop('哈文在组合存照片…')
+    const imgs = []
+    const files = [_pcFile, ...pcCombo].slice(0, 9)   // ★ #1408 上限对齐桌面 #1407（主图+8）
+    for (const f of files) {
+      const b64 = await compressImg(f, 1024, 0.75)
+      imgs.push(b64.split(',')[1] || b64)
+    }
+    const q = note ? (pname ? `把这几张照片存到「${pname}」面板。说明：${note}` : note) : ''
+    const { status, data } = await jpost('/api/relay/send',
+      { action: 'photo.combo', params: { images: imgs, note, tag: k, quality: qual, question: q } }, true)
+    try { th.remove() } catch (e) {}
+    if (status !== 200 || !data.success) throw new Error(errMsg(data, status))
+    bubble('me', `📷 组合存 ${imgs.length} 张` + (note ? `：${note}` : ''))
+    bubble('hv', `✅ 已合成一条记录存好（${(data.data && data.data.count) || imgs.length} 张图${(data.data && data.data.record_id) ? '，记录 #' + data.data.record_id : ''}）`)
+    pcRecentAdd(note)
+  } catch (e) { bubble('hv', '⚠️ 组合存没成功：' + escHtml(e.message) + '；可以一张一张单独存') }
+  pcCombo = []
+}
+function pcMicBind() {
+  /* ★ v31 🎤 按住说话（独立于主聊天/抽屉麦克风，转写回填说明框） */
+  const mic = $('pc-mic'); if (!mic) return
+  const start = async e => {
+    if (e.cancelable) e.preventDefault()
+    if (pcHeld || pcPcm) return
+    pcHeld = true
+    mic.textContent = '⏺'; mic.style.background = '#FFE9E9'
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      pcPcm = pcmNew(); pcmStart(pcPcm, stream)
+      $('pc-note').placeholder = '正在听你说话…松开转文字'
+    } catch (err) {
+      pcHeld = false; mic.textContent = '🎤'; mic.style.background = ''
+      bubble('hv', '⚠️ 麦克风打不开：去手机设置给哈文麦克风权限')
+    }
+  }
+  const stop = () => {
+    if (!pcHeld) return
+    pcHeld = false
+    mic.textContent = '🎤'; mic.style.background = ''
+    if (!pcPcm) return
+    const r = pcmFinish(pcPcm, false); pcPcm = null
+    const nt = $('pc-note'); if (nt) nt.placeholder = '写点说明（可不写），比如：今天买的菜 / 这张发票'
+    if (r.why === 'short') { bubble('hv', '⚠️ 录音太短，按住别松'); return }
+    if (r.why === 'silent') { bubble('hv', '⚠️ 没录到声音：①麦克风被占用 ②设置里给哈文权限 ③离近点再按住说'); return }
+    pcTranscribe(r.blob)
+  }
+  mic.addEventListener('touchstart', start, { passive: false })
+  mic.addEventListener('touchend', e => { e.preventDefault(); stop() })
+  mic.addEventListener('touchcancel', () => stop())
+  mic.addEventListener('mousedown', start)
+  mic.addEventListener('mouseup', () => stop())
+  mic.addEventListener('contextmenu', e => e.preventDefault())
+}
+async function pcTranscribe(blob) {
+  /* 🎤 转写回填确认卡说明框（复用 voice_text 链路） */
+  const t = blob.type || ''
+  const fmt = t.includes('wav') ? 'wav' : 'webm'
+  const b64 = await new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result.split(',')[1]); r.readAsDataURL(blob) })
+  for (let i = 0; i < 3; i++) {
+    try {
+      const { status, data } = await jpost('/api/relay/send', { action: 'voice_text', params: { audio: b64, format: fmt } }, true)
+      if (status === 200 && data.success) {
+        const nt = $('pc-note')
+        if (nt) nt.value = ((nt.value ? nt.value + ' ' : '') + ((data.data && data.data.text) || '')).trim()
+        return
+      }
+    } catch (e) { if (i === 2) bubble('hv', '⚠️ 语音转文字没成功，直接打字也一样') }
+  }
+  bubble('hv', '⚠️ 语音转文字没成功（试了3次），直接打字也一样')
+}
+function svListDrawer(title, rowsHtml, emptyTip) {
+  /* ★ v31 服务抽屉 2.0：任务/知识库直读列表（点开即看，不再对话代查） */
+  const old = $('sv-list'); if (old) old.remove()
+  const d = document.createElement('div')
+  d.id = 'sv-list'
+  d.style.cssText = 'position:fixed;inset:0;background:#FBFCFE;z-index:70;display:flex;flex-direction:column'
+  d.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid #E8EBF0;flex-shrink:0">
+      <button id="svl-back" style="width:auto;border:0;background:#F1F3F8;color:var(--main);border-radius:8px;padding:6px 12px;font-size:14px">← 服务</button>
+      <b style="font-size:15px">${escHtml(title)}</b>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:12px">${rowsHtml || `<div class="loading">${escHtml(emptyTip || '空的')}</div>`}</div>`
+  document.body.appendChild(d)
+  $('svl-back').onclick = () => { d.remove(); const so = $('services-drawer'); if (so) document.body.appendChild(so) }
+  return d
+}
+/* ★ #1177 svOpenTasks 已收进管家抽屉（butlerTasks 页签），独立函数删除 */
+function svOpenKb() {
+  const d = svListDrawer('📚 知识库', '<div class="loading">读知识库里…</div>')
+  jpost('/api/relay/send', { action: 'kb.list', params: {} }, true).then(({ status, data }) => {
+    const box = d.children[1]
+    if (status !== 200 || !data.success) { box.innerHTML = '<div class="loading">读不出来：' + escHtml(errMsg(data, status)) + '</div>'; return }
+    const total = (data.data && data.data.total) || 0
+    const its = (data.data && data.data.items) || []
+    if (!total) { box.innerHTML = '<div class="loading">知识库还是空的。电脑端「知识库」上传文档后这里就能看到。</div>'; return }
+    box.innerHTML = `<p style="font-size:12px;color:#889;margin:0 0 8px">共 ${total} 条资料，最近的：</p>` + its.map(t => `
+      <div style="padding:10px 2px;border-bottom:1px dashed #E8EBF0">
+        <div style="font-size:13px;white-space:pre-wrap">${escHtml(t.text || '')}</div>
+        ${t.src ? `<div style="font-size:11px;color:#889;margin-top:2px">${escHtml(t.src)}</div>` : ''}
+      </div>`).join('')
+  }).catch(e => { const box = d.children[1]; if (box) box.innerHTML = '<div class="loading">网络问题：' + escHtml(e.message) + '</div>' })
+}
+function openPcSlotEditor() {
+  const old = $('pc-slot-editor'); if (old) old.remove()
+  const slots = hvPcSlots()
+  const d = document.createElement('div')
+  d.id = 'pc-slot-editor'
+  d.style.cssText = 'position:fixed;inset:0;z-index:95;background:rgba(0,0,0,.45);display:flex;align-items:flex-end'
+  const rows = PC_POOL.map(it => {
+    const on = slots.includes(it.k)
+    return `<button class="chip pe-k" data-k="${escHtml(it.k)}" style="flex-shrink:0;${on ? 'background:#3D6BFF;color:#fff' : ''}">${it.icon} ${escHtml(it.name)}${on ? ' ✓' : ''}</button>`
+  }).join('')
+  d.innerHTML = `<div style="width:100%;max-width:520px;margin:0 auto;background:#fff;border-radius:18px 18px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom))">
+    <b style="font-size:14px">挑 6 个常用键（点选/取消，拍照确认卡上长按也能到这）</b>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">${rows}</div>
+    <p style="font-size:12px;color:#889;margin:12px 0 0">全部面板（往下滚，想把照片记进哪个面板就点哪个）</p>
+    <div id="pe-extra" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;max-height:38vh;overflow:auto"><span style="font-size:12px;color:#99a">面板列表加载中…</span></div>
+    <button id="pe-done" style="margin-top:14px">好了</button>
+  </div>`
+  d.addEventListener('click', ev => { if (ev.target === d) d.remove() })
+  document.body.appendChild(d)
+  /* ★ #1096 候选扩容（2026-10-11）：原来 PC_POOL 写死 10 个——拍照确认卡和横条共用的这个编辑器
+     只能看到这 10 个，33 个面板根本选不到。打开时异步拉全量面板追加成第二组 */
+  const fixedKs = new Set(PC_POOL.map(it => it.k))
+  ensurePhotoPanels().then(ps => {
+    const box = $('pe-extra'); if (!box) return
+    const extra = (ps || []).filter(p => !fixedKs.has('panel:' + p.id))
+    box.innerHTML = extra.length ? extra.map(p => {
+      const k = 'panel:' + p.id, on = slots.includes(k)
+      return `<button class="chip pe-k" data-k="${escHtml(k)}" style="flex-shrink:0;${on ? 'background:#3D6BFF;color:#fff' : ''}">${escHtml(p.icon || '📋')} ${escHtml(p.name || p.id)}${on ? ' ✓' : ''}</button>`
+    }).join('') : '<span style="font-size:12px;color:#99a">（没有更多面板）</span>'
+    box.querySelectorAll('.pe-k').forEach(b => { b.onclick = pePick })
+  }).catch(() => { const box = $('pe-extra'); if (box) box.innerHTML = '<span style="font-size:12px;color:#99a">面板列表拉不到，先用上面的快捷动作</span>' })
+  function pePick() {
+    const k = this.dataset.k
+    let s = hvPcSlots()
+    if (s.includes(k)) s = s.filter(x => x !== k)
+    else { if (s.length >= 6) return; s.push(k) }
+    localStorage.setItem(PC_SLOTS_KEY, JSON.stringify(s))
+    openPcSlotEditor()
+  }
+  d.querySelectorAll('.pe-k').forEach(b => { b.onclick = pePick })
+  $('pe-done').onclick = () => { d.remove(); if (window._pcRepaintSlots) window._pcRepaintSlots() }
+}
+let _pcFile = null
+/* ★ #1079 确认卡横条数据源修复（2026-10-11）：原版横条读 window._hvPanels.slice(0,8)，
+   但这个数组只有进过面板中心才会被填——没进过就永远空白。改为：弹卡时异步拉全量
+   panels.list 现场填充，横滑可看全部；高频拍照存模块钉最前（冰箱→健康四件套→其余按序） */
+const PC_PIN_IDS = ['fridge_stock_1', 'health_file', 'med_cabinet', 'fitness_log', 'child_growth']
+function sortPhotoPanels(list) {
+  const arr = (list || []).slice()
+  arr.sort((a, b) => {
+    const ia = PC_PIN_IDS.indexOf(a.id), ib = PC_PIN_IDS.indexOf(b.id)
+    return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib)
+  })
+  return arr
+}
+let _pcPanelsFetching = null
+function ensurePhotoPanels() {
+  if (window._hvPanels && window._hvPanels.length) return Promise.resolve(window._hvPanels)
+  if (!_pcPanelsFetching) {
+    _pcPanelsFetching = plFetchPanels()
+      .then(ps => { window._hvPanels = ps || []; return window._hvPanels })
+      .catch(() => { _pcPanelsFetching = null; return [] })
+  }
+  return _pcPanelsFetching
+}
+function pcStripHtml(panels) {
+  // ★ #1200（2026-10-25）：学习类面板前面插「📝 批作业加分析」一键批改——
+  //   实测实锤：选学习面板常忘填说明，照片发过去啥也没干。一键批改不用填说明。
+  const STUDY = ['study_center', 'kid_archive']
+  return (panels || []).map(p => {
+    const base = `<button class="chip pc-key" data-k="panel:${escHtml(p.id)}" data-name="${escHtml(p.name || p.id)}" style="flex-shrink:0;font-size:13px">${escHtml(p.icon || '📋')} ${escHtml(p.name || p.id)}</button>`
+    return STUDY.includes(p.id)
+      ? `<button class="chip pc-key" data-k="grade" data-name="批改" style="flex-shrink:0;font-size:13px;background:#FFF4E0">📝 批作业加分析</button>` + base
+      : base
+  }).join('')
+}
+function openPhotoCard(f, rest) {
+  _pcFile = f
+  rest = rest || []
+  const old = $('photo-card'); if (old) old.remove()
+  const url = URL.createObjectURL(f)
+  const panels = sortPhotoPanels(window._hvPanels || [])  // ★ #1079 全量+钉选排序（不再 slice 8 个）
+  const home = isHomeNet()
+  const mb = (f.size / 1048576).toFixed(1)
+  const d = document.createElement('div')
+  d.id = 'photo-card'
+  d.style.cssText = 'position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.45);display:flex;align-items:flex-end'
+  d.innerHTML = `
+    <div style="width:100%;max-width:520px;margin:0 auto;background:#fff;border-radius:18px 18px 0 0;padding:14px 16px calc(14px + env(safe-area-inset-bottom))">
+      <div style="display:flex;gap:12px;align-items:flex-start">
+        <img src="${url}" style="width:84px;height:84px;object-fit:cover;border-radius:12px;flex-shrink:0;background:#F1F3F8" />
+        <div style="flex:1;min-width:0">
+          <b style="font-size:14px">这张照片要做什么？</b>
+          ${rest.length ? `<div style="color:#7a8291;font-size:12px;margin-top:2px">共 ${rest.length + 1} 张，这张弄完自动弹下一张</div>` : ''}
+          <div style="display:flex;gap:6px;align-items:flex-start;margin-top:6px">
+            <textarea id="pc-note" rows="2" placeholder="写点说明（可不写），比如：今天买的菜 / 这张发票" style="flex:1;min-width:0;border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:14px;resize:none;font-family:inherit;color:var(--main)"></textarea>
+            <!-- ★ v31 #1159 确认卡 2.0：🎤 按住说话转文字填说明（复用 v29 PCM 链） -->
+            <button id="pc-mic" title="按住说话，转文字填说明" style="width:42px;height:42px;flex-shrink:0;border-radius:50%;font-size:17px;padding:0">🎤</button>
+            <!-- ★ #1089 ↑ 键：说明文字直接问哈文（修「输了字没地方发」） -->
+            <button id="pc-ask" title="带着照片问这句" style="width:42px;height:42px;flex-shrink:0;border-radius:50%;font-size:17px;padding:0">↑</button>
+          </div>
+          <div id="pc-recent" style="display:none;gap:6px;overflow-x:auto;margin-top:6px;scrollbar-width:none"></div>
+          <div id="pc-combo-row" style="display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap">
+            <!-- ★ v31 #1159 确认卡 2.0：多图组合——物品多角度合成一条记录；#1408 同步拍照进组合 -->
+            <button id="pc-combo-add" class="chip" style="width:auto;font-size:12px">🔗 加图组合（可多选）</button>
+            <button id="pc-combo-cam" class="chip" style="width:auto;font-size:12px">📷 拍照进组合</button>
+            <div id="pc-combo-prev" style="display:flex;gap:4px;flex-wrap:wrap"></div>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">
+        <button class="chip pc-q" data-q="hd" ${home ? '' : 'disabled'} style="width:auto${home ? '' : ';opacity:.45'}">原图 (${mb}MB)</button>
+        <button class="chip pc-q" data-q="eco" style="width:auto">压缩</button>
+        <button class="chip pc-q" data-q="queue" style="width:auto">压缩先发，回家补原图</button>
+      </div>
+      <p class="sub" id="pc-qhint" style="margin-top:6px"></p>
+      <div id="pc-key-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px">
+        ${pcSlotBtns()}
+      </div>
+      <p class="sub" style="margin-top:6px;text-align:right">长按任意键可换这 6 个键</p>
+      <p id="pc-selhint" style="display:none;margin:6px 0 0;color:#3D6BFF;font-size:12px;font-weight:600"></p>
+      <div id="pc-panel-strip">${panels.length ? `<div style="display:flex;gap:6px;overflow-x:auto;margin-top:8px;padding-bottom:2px;scrollbar-width:none">${pcStripHtml(panels)}</div>` : ''}</div>
+      <button id="pc-cancel" class="ghost" style="margin-top:10px;background:none;color:var(--sub)">✕ 取消，不发了</button>
+    </div>`
+  document.body.appendChild(d)
+  setTimeout(() => { try { $('pc-note').focus() } catch (e) {} }, 250)
+  // 画质现场选：默认跟随网络（在家原图 / 出门压缩）；流量下原图键置灰
+  let _pcQ = home ? 'hd' : 'eco'
+  /* ★ #1269（2026-10-29 实测实锤「点模块键直接发送，备注来不及写」）选中制改造：
+     点模块键 = 只选中（高亮），说明照常可写；按 ↑ 才发送；再点一次取消选中。
+     ↑ 无选中时保持旧语义：说明文字直接带图问（#1089）。 */
+  let _pcSel = null   // 当前选中的模块 {k, name}
+  const qhint = () => {
+    const ex = $('pc-qhint')
+    if (ex) ex.textContent = home
+      ? '在家连 WiFi：原图不费手机流量，存相册更清晰。'
+      : '出门用流量：原图先不传（置灰）。选「压缩先发」，原图存在手机里，回家连 WiFi 自动补传升级。'
+  }
+  const paintPcQ = () => {
+    d.querySelectorAll('.pc-q').forEach(b => {
+      const on = b.dataset.q === _pcQ
+      b.style.background = on ? '#3D6BFF' : '#F1F3F8'
+      b.style.color = on ? '#fff' : 'var(--main)'
+    })
+    qhint()
+  }
+  d.querySelectorAll('.pc-q').forEach(b => {
+    b.addEventListener('click', () => { if (!b.disabled) { _pcQ = b.dataset.q; paintPcQ() } })
+  })
+  paintPcQ()
+  const paintPcSel = () => {
+    d.querySelectorAll('.pc-key').forEach(b => {
+      const on = _pcSel && b.dataset.k === _pcSel.k
+      b.style.background = on ? '#3D6BFF' : ''
+      b.style.color = on ? '#fff' : ''
+      b.style.borderColor = on ? '#3D6BFF' : ''
+    })
+    const askBtn = $('pc-ask')
+    if (askBtn) {
+      askBtn.style.background = _pcSel ? '#3D6BFF' : ''
+      askBtn.style.color = _pcSel ? '#fff' : ''
+      askBtn.title = _pcSel ? `发送到「${_pcSel.name}」` : '带着照片问这句'
+    }
+    const hint = $('pc-selhint')
+    if (hint) {
+      hint.style.display = _pcSel ? 'block' : 'none'
+      hint.textContent = _pcSel ? `已选「${_pcSel.name}」——写好说明点 ↑ 发送；再点一下可取消` : ''
+    }
+  }
+  const pcDoSend = () => {
+    const note = (($('pc-note') || {}).value || '').trim()
+    const k = _pcSel.k; const pname = _pcSel.name || ''
+    if (pcCombo.length) { pcComboSend(k, pname, _pcQ, d); return }
+    d.remove(); URL.revokeObjectURL(url)
+    pcRecentAdd(note)   // ★ v31 快捷短语：记下这次说明，下次点一下就能带出
+    handlePhotoKey(k, pname, _pcFile, note, _pcQ)
+    if (rest.length) setTimeout(() => openPhotoCard(rest[0], rest.slice(1)), 400)
+  }
+  const bindPcKeys = () => {
+    d.querySelectorAll('.pc-key').forEach(b => {
+      // ★ #1089 长按（0.6 秒）任意键 = 换 6 槽位；松开前没到时长照常执行动作
+      let lpTimer = null, lpFired = false
+      const armLp = () => { lpFired = false; lpTimer = setTimeout(() => { lpFired = true; openPcSlotEditor() }, 600) }
+      const disarmLp = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null } }
+      b.addEventListener('touchstart', armLp, { passive: true })
+      b.addEventListener('touchend', disarmLp, { passive: true })
+      b.addEventListener('touchmove', disarmLp, { passive: true })
+      b.addEventListener('contextmenu', e => { if (lpFired) e.preventDefault() })
+      b.onclick = () => {
+        if (lpFired) { lpFired = false; return }   // 长按已进编辑器，不触发动作
+        // ★ #1269：点键只选中不发送（防误触把没写备注的照片发出去）；↑ 才是发送
+        const k = b.dataset.k
+        if (_pcSel && _pcSel.k === k) { _pcSel = null } else { _pcSel = { k, name: b.dataset.name || '' } }
+        paintPcSel()
+      }
+    })
+  }
+  bindPcKeys()
+  // ★ #1089 槽位编辑器「好了」后重绘确认卡上的 6 键（卡片还开着才刷）
+  window._pcRepaintSlots = () => {
+    if (!document.body.contains(d)) return
+    const grid = d.querySelector('#pc-key-grid')
+    if (grid) { grid.innerHTML = pcSlotBtns(); bindPcKeys(); paintPcSel() }
+  }
+  // ★ #1269：有选中模块 → ↑=发送键；无选中 → 旧语义（说明直接问，#1089）
+  $('pc-ask').onclick = () => {
+    if (_pcSel) { pcDoSend(); return }
+    const note = (($('pc-note') || {}).value || '').trim()
+    if (!note) {
+      const n = $('pc-note')
+      if (n) { n.placeholder = '想问什么先写一句，再点 ↑'; try { n.focus() } catch (e) {} }
+      return
+    }
+    d.remove(); URL.revokeObjectURL(url)
+    askWithPhoto(_pcFile, note, '', _pcQ)
+    if (rest.length) setTimeout(() => openPhotoCard(rest[0], rest.slice(1)), 400)
+  }
+  // ★ #1079：横条异步补全——首次弹卡时面板列表还没拉过就现场拉，拉到即刷（卡片还开着才刷）
+  if (!panels.length) {
+    ensurePhotoPanels().then(ps => {
+      if (!ps.length || !document.body.contains(d)) return
+      const strip = d.querySelector('#pc-panel-strip')
+      if (!strip) return
+      strip.innerHTML = '<div style="display:flex;gap:6px;overflow-x:auto;margin-top:8px;padding-bottom:2px;scrollbar-width:none">' + pcStripHtml(sortPhotoPanels(ps)) + '</div>'
+      bindPcKeys()
+      paintPcSel()
+    })
+  }
+  // ★ v31 #1159 确认卡 2.0：快捷短语 chips / 🎤 / 组合多图
+  const rcRow = $('pc-recent')
+  if (rcRow) {
+    const chips = pcRecentChipsHtml()
+    if (chips) {
+      rcRow.style.display = 'flex'
+      rcRow.innerHTML = chips
+      rcRow.querySelectorAll('.pc-rc').forEach(b => { b.onclick = () => { const nt = $('pc-note'); if (nt) nt.value = b.dataset.t } })
+    }
+  }
+  pcCombo = []
+  const cmbBtn = $('pc-combo-add')
+  if (cmbBtn) cmbBtn.onclick = () => {
+    const inp = document.createElement('input')
+    inp.type = 'file'; inp.accept = 'image/*'; inp.multiple = true
+    inp.onchange = () => {
+      pcCombo = [...pcCombo, ...Array.from(inp.files || [])].slice(0, 8)
+      pcComboPaint()
+    }
+    inp.click()
+  }
+  /* ★ #1408（2026-11-03）拍照进组合：capture=environment 直拉后置相机，
+     拍完进同一组合预览；想多角度再点一次连拍，与云端 v27 同款 */
+  const camBtn = $('pc-combo-cam')
+  if (camBtn) camBtn.onclick = () => {
+    const inp = document.createElement('input')
+    inp.type = 'file'; inp.accept = 'image/*'; inp.capture = 'environment'
+    inp.onchange = () => {
+      if (!inp.files || !inp.files.length) return
+      pcCombo = [...pcCombo, ...Array.from(inp.files)].slice(0, 8)
+      pcComboPaint()
+    }
+    inp.click()
+  }
+  pcMicBind()
+  $('pc-cancel').onclick = () => {
+    try { if (pcPcm) { pcmFinish(pcPcm, true); pcPcm = null } } catch (e) {}
+    pcHeld = false; pcCombo = []
+    d.remove(); URL.revokeObjectURL(url)
+  }
+}
+function handlePhotoKey(k, pname, f, note, qual) {
+  if (k === 'album' || k === 'album_save') { sendAlbumPhoto(f, note, qual); return }   // ★ #1089 存相册双键名兼容
+  let tag = '', question = note || '看看这张照片'
+  // ★ #1200（2026-10-25）一键批改：不用填说明，点一下就进批改管线
+  if (k === 'grade') {
+    question = '批改这张作业照片，逐题对照给分析' + (note ? '。说明：' + note : '')
+  }
+  else if (k === 'fridge') { tag = 'fridge'; question = '把这张照片记入冰箱库存' + (note ? '。说明：' + note : '') + '，看不清的问我' }
+  else if (k === 'account') { tag = 'account'; question = '把这张照片记一笔账' + (note ? '。说明：' + note : '') + '，金额项目看不清就问我' }
+  else if (k.indexOf('panel:') === 0) {
+    tag = k.slice(6)
+    // ★ #1197/#1200（2026-10-25）根因1 修复：学习面板拍照默认走批改——
+    //   旧话术「把照片存到面板」不含批改意图，用户忘填说明就啥也没干。
+    //   现在学习面板点击直接发批改话术（说明可选），tag 照带（照片仍入面板照片库）。
+    if (tag === 'study_center' || tag === 'kid_archive') {
+      question = '批改这张作业照片，逐题对照给分析' + (note ? '。说明：' + note : '')
+    } else {
+      question = '把这张照片存到「' + pname + '」面板' + (note ? '。说明：' + note : '') + '，该记成记录的就帮我记一条'
+    }
+  }
+  askWithPhoto(f, question, tag, qual, note)
+}
+/* 存相册：不走 AI 回答，直接入记忆相册（带画质标记；queue 档回家自动补原图） */
+/* ★ #1096 照片链停止键（2026-10-11）：拍照问/存相册等待期思考气泡带 ⏹，点击断开请求（AbortController）；
+   哈文端识图/入库照常跑完并落库，回答稍后进历史，不丢 */
+let _photoAbort = null
+function thWithStop(txt) {
+  const th = showThinking(txt)
+  const b = document.createElement('button')
+  b.textContent = '⏹ 停止'
+  b.style.cssText = 'margin-left:8px;border:none;background:#F1F3F8;color:#667;font-size:12px;padding:2px 10px;border-radius:10px;vertical-align:middle'
+  b.onclick = () => { if (_photoAbort) _photoAbort.abort() }
+  th.appendChild(b)
+  return th
+}
+function sendAlbumPhoto(f, note, qual) {
+  const label = '🖼 存相册' + (note ? '：' + note : '')
+  const q = hvEnqueue(() => doAlbumPhoto(f, note || '', qual))
+  bubble('me', q.wait ? label + '\n⏳ 排队中 #' + q.pos : label)
+}
+async function doAlbumPhoto(f, note, qual) {
+  const th = thWithStop('哈文在存照片…')   // ★ #1096 存相册原来无过程提示，顺带补上（含停止）
+  _photoAbort = new AbortController()
+  try {
+    const prep = await prepareImg(f, qual)
+    if (prep.queued) bubble('me', 'ℹ️ 先发压缩版，原图已存手机，回家连 WiFi 自动补传升级')
+    const bare = prep.dataUrl.indexOf(',') >= 0 ? prep.dataUrl.split(',')[1] : prep.dataUrl
+    const res = await jpost('/api/relay/send', { action: 'images.upload', params: { image_b64: bare, note: note, quality: prep.quality } }, null, _photoAbort.signal)
+    if (res.status === 200 && res.data.success) {
+      // ★ 照片链 C2：queue 档发成功 → 原图进待补传队列（锚点=图库新行 id，回家存新删旧升级）
+      if (prep.queued) await enqueueOriginal(f, 'album', (res.data.data || {}).id, note || '')
+      // ★ #1156 相册导入同样智能命名：没写说明 → 浮条等 AI 起名
+      if (!note) photoNameBar((res.data.data || {}).id, 0)
+      bubble('hv', '🖼️ 已存进记忆相册' + (note ? '，说明：' + note : '') + (prep.quality === 'hd' ? '（高清原图）' : (prep.queued ? '（已发压缩版，回家自动补原图）' : '（已压缩）')))
+    } else {
+      bubble('hv', '⚠️ 没存进去：' + errMsg(res.data, res.status))
+    }
+  } catch (e) {
+    if (e && e.name === 'AbortError') bubble('hv', '⏹ 已停止等待。哈文那边可能仍在存，稍后进历史不丢。')
+    else bubble('hv', '⚠️ 网络错误：' + e.message)
+  } finally { th.remove(); _photoAbort = null }
+}
+
+/* ══ ★ #1156（2026-10-16）照片智能命名浮条
+   ★ #1246（2026-10-27 定版拍板）：AI 起名功能已下线（照片改用标准名录标签管理），
+   本浮条整个停用——函数直接返回，不再显示「起名字」提示条。══ */
+const PC_CATS = ['美食', '食材', '孩子', '宠物', '植物', '物品', '票据', '风景', '截图', '其他']
+function photoNameBar(imgId, pid, round) {
+  return  // ★ #1246 起名浮条已停用
+  round = round || 0
+  if (round > 10) return
+  let bar = $('photo-name-bar')
+  if (!bar) {
+    bar = document.createElement('div')
+    bar.id = 'photo-name-bar'
+    bar.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:calc(76px + env(safe-area-inset-bottom));z-index:88;background:#fff;border-radius:14px;box-shadow:0 4px 18px rgba(0,0,0,.18);padding:10px 14px;display:flex;gap:10px;align-items:center;max-width:92vw;font-size:13px'
+    document.body.appendChild(bar)
+  }
+  bar.innerHTML = '<span style="color:#889">⏳ 哈文在给照片起名字…</span>'
+  jpost('/api/relay/send', { action: 'images.title', params: { id: imgId } }, true)
+    .then(({ status: st, data }) => {
+      if (!document.body.contains(bar)) return
+      const d0 = (data || {}).data || {}
+      if (st === 200 && d0.err === '照片不存在') { bar.remove(); return }
+      if (st === 200 && d0.done && d0.title) {
+        const cat = d0.cat ? '「' + escHtml(d0.cat) + '」 · ' : ''
+        bar.innerHTML = '<span>👧 ' + cat + escHtml(d0.title) + '</span>' +
+          '<button id="pnb-ok" class="ghost" style="padding:4px 12px;font-size:13px">✓ 就这样</button>' +
+          '<button id="pnb-edit" class="ghost" style="padding:4px 12px;font-size:13px">✏️ 改</button>'
+        $('pnb-ok').onclick = () => bar.remove()
+        $('pnb-edit').onclick = () => photoNameEdit(imgId, pid, d0)
+        setTimeout(() => { try { bar.remove() } catch (e) {} }, 12000)
+      } else {
+        setTimeout(() => photoNameBar(imgId, pid, round + 1), 3000)
+      }
+    })
+    .catch(() => { try { bar.remove() } catch (e) {} })
+}
+function photoNameEdit(imgId, pid, cur) {
+  const old = $('pnb-edit-sheet'); if (old) old.remove()
+  const bar = $('photo-name-bar')
+  const d = document.createElement('div')
+  d.id = 'pnb-edit-sheet'
+  d.style.cssText = 'position:fixed;inset:0;z-index:95;background:rgba(0,0,0,.45);display:flex;align-items:flex-end'
+  d.innerHTML = `<div style="width:100%;max-width:520px;margin:0 auto;background:#fff;border-radius:18px 18px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom))">
+    <b style="font-size:14px">给这张照片改名字 / 换分类</b>
+    <input id="pnb-title" value="${escHtml(cur.title || '')}" placeholder="照片名字" style="width:100%;margin-top:10px" />
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">${PC_CATS.map(c => `<button class="chip pnb-c" data-c="${c}" style="${c === cur.cat ? 'background:#3D6BFF;color:#fff' : ''}">${c}</button>`).join('')}</div>
+    <p class="sub" style="margin-top:8px">只换分类不改名 → 名字会按新分类重新起一个</p>
+    <div style="display:flex;gap:10px;margin-top:12px">
+      <button id="pnb-save" style="flex:1">好了</button>
+      <button id="pnb-cancel" class="ghost" style="flex:1">算了</button>
+    </div></div>`
+  d.addEventListener('click', ev => { if (ev.target === d) d.remove() })
+  document.body.appendChild(d)
+  let _c = cur.cat || ''
+  d.querySelectorAll('.pnb-c').forEach(b => { b.onclick = () => { _c = b.dataset.c; d.querySelectorAll('.pnb-c').forEach(x => { x.style.background = ''; x.style.color = '' }); b.style.background = '#3D6BFF'; b.style.color = '#fff' } })
+  $('pnb-cancel').onclick = () => d.remove()
+  $('pnb-save').onclick = async () => {
+    const title = (($('pnb-title') || {}).value || '').trim()
+    d.remove()
+    if (bar) bar.innerHTML = '<span style="color:#889">⏳ 改好了，照片在更新…</span>'
+    try {
+      const { data } = await jpost('/api/relay/send', { action: 'images.set_title', params: { id: imgId, pid: pid || 0, title: title, cat: _c } }, true)
+      const r0 = (data || {}).data || {}
+      if (r0.error) { if (bar) bar.innerHTML = '<span>⚠️ ' + escHtml(r0.error) + '</span>'; setTimeout(() => { try { bar.remove() } catch (e) {} }, 4000); return }
+      if (r0.renaming) { photoNameBar(imgId, pid, 0); return }
+      if (bar) { bar.innerHTML = '<span>✅ 名字已更新：' + escHtml(r0.title || title) + '</span>'; setTimeout(() => { try { bar.remove() } catch (e) {} }, 3000) }
+    } catch (e) { if (bar) bar.remove() }
+  }
+}
+
+async function askWithPhoto(f, question, tag, qual, note) {
+  const label = '📷 ' + (question || '看看这张照片')
+  const q = hvEnqueue(() => doAskPhoto(f, question || '', tag || '', qual, note || ''))
+  bubble('me', q.wait ? label + '\n⏳ 排队中 #' + q.pos : label)
+}
+async function doAskPhoto(f, question, tag, qual, note) {
+  const btn = $('btn-attach'); btn.disabled = true
+  const th = thWithStop('哈文在看照片…')   // ★ #1090 拍照链思考提示 + #1096 停止按钮（上传+识图最慢，最需要）
+  _photoAbort = new AbortController()
+  try {
+    let prep
+    try { prep = await prepareImg(f, qual) } catch (e) { bubble('hv', '⚠️ ' + (e.message || e)); return }
+    if (prep.queued) bubble('me', 'ℹ️ 先发压缩版看图，原图已存手机，回家连 WiFi 自动补传升级')
+    // ★ #930-B2：自动重试 2 次（出门网络抖一下很常见）；★ #1096 用户主动停止则直接跳出不再重试
+    let lastErr = null, res = null, stopped = false
+    for (let i = 0; i < 3; i++) {
+      if (i > 0) bubble('me', `📷 网络抖了一下，自动重试中（第 ${i} 次）…`)
+      try {
+        res = await jpost('/api/relay/send',
+          { action: 'photo', params: { image: prep.dataUrl, question: question, note: note || '', mode: hvMode(), tag: tag, quality: prep.quality } }, null, _photoAbort.signal)
+        if (res.status === 200 && res.data.success) { lastErr = null; break }
+        lastErr = new Error(errMsg(res.data, res.status))
+        if (res.status !== 200 && res.status !== 504 && res.status !== 502) break   // 非网络类错误不重试
+      } catch (e) { if (e && e.name === 'AbortError') { stopped = true; throw e } lastErr = e }
+    }
+    if (!lastErr && res && res.status === 200 && res.data.success) {
+      if (res.data.data && res.data.data.queued) {
+        // ★ #930-B3：哈文不在家，Hub 替你收着了
+        bubble('hv', '📥 ' + (res.data.data.message || '哈文不在家，照片已替你收着，上线自动处理'))
+      } else {
+        bubble('hv', res.data.data.answer || '（哈文没说话）')
+      }
+      // ★ 照片链 C2：queue 档发成功 → 原图进待补传队列（锚点=照片库图行 pid，回家按 id 替换）
+      if (prep.queued && tag) await enqueueOriginal(f, 'tag', (res.data.data || {}).pid, question)
+      // ★ #1156 照片智能命名浮条：没写说明 → AI 后台起名字，浮条轮询展示（✓ 认可 / ✏️ 改）
+      const _nimg = (res.data.data || {}).img_id
+      if (_nimg && !note) photoNameBar(_nimg, (res.data.data || {}).pid || 0)
+    } else if (!stopped) {
+      bubble('hv', '⚠️ 照片没发出去（重试2次都不行）：' + (lastErr && lastErr.message || lastErr))
+    }
+  } catch (e) {
+    if (e && e.name === 'AbortError') bubble('hv', '⏹ 已停止等待。哈文那边可能仍在看，回答稍后会进历史。')
+    else bubble('hv', '⚠️ 网络错误：' + e.message)
+  }
+  finally { btn.disabled = false; th.remove(); _photoAbort = null }
+}
+$('photo-input').addEventListener('change', () => {
+  // ★ 照片链 C3（2026-10-11）：拍照/相册键升级多选——逐张弹确认卡
+  const files = [...$('photo-input').files]; $('photo-input').value = ''
+  if (files.length) openPhotoCard(files[0], files.slice(1))
+})
+$('album-input').addEventListener('change', () => {
+  const files = [...$('album-input').files]; $('album-input').value = ''
+  if (files.length) openPhotoCard(files[0], files.slice(1))
+})
+
+/* ══ ★ 照片链 C2（2026-10-11）待补传队列：IndexedDB 存原图（上限 20 张）
+   页顶徽标显数；回家 WiFi（isHomeNet）自动用原图升级已存压缩版：
+   · tag 照片 → images.replace_original 按图行 id 替换（A4 端点的同源走法）
+   · 相册照片 → images.upload 带 replace_img_id 存新删旧
+   流量下永不补传；队列满 20 张拒收新的（已发的压缩版不受影响） ══ */
+const Q_CAP = 20
+function qdb() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('hv_orig_queue', 1)
+    r.onupgradeneeded = () => r.result.createObjectStore('pending', { keyPath: 'id', autoIncrement: true })
+    r.onsuccess = () => res(r.result)
+    r.onerror = () => rej(r.error)
+  })
+}
+function qTx(db, mode) { return db.transaction('pending', mode).objectStore('pending') }
+function qAll() {
+  return qdb().then(db => new Promise((res, rej) => {
+    const rq = qTx(db, 'readonly').getAll()
+    rq.onsuccess = () => res(rq.result || []); rq.onerror = () => rej(rq.error)
+  }))
+}
+function qAdd(entry) {
+  return qdb().then(db => new Promise((res, rej) => {
+    const rq = qTx(db, 'readwrite').add(entry)
+    rq.onsuccess = () => res(true); rq.onerror = () => rej(rq.error)
+  }))
+}
+function qDel(id) {
+  return qdb().then(db => new Promise((res, rej) => {
+    const rq = qTx(db, 'readwrite').delete(id)
+    rq.onsuccess = () => res(true); rq.onerror = () => rej(rq.error)
+  }))
+}
+async function enqueueOriginal(file, kind, anchor, note) {
+  if (!anchor) { bubble('hv', 'ℹ️ 压缩版已发；这张没拿到存档编号，原图就不排队了（不影响使用）') ; return }
+  try {
+    const items = await qAll()
+    if (items.length >= Q_CAP) {
+      bubble('hv', 'ℹ️ 待补传原图已存满 ' + Q_CAP + ' 张，这张不排了（已发的压缩版照常用）')
+      return
+    }
+    await qAdd({ kind: kind, anchor: anchor, file: file, note: String(note || ''), ts: Date.now() })
+    paintQBadge()
+  } catch (e) { /* IndexedDB 偶发不可用：不影响主流程 */ }
+}
+function fileToDataUrl(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader()
+    r.onload = () => res(r.result); r.onerror = () => rej(new Error('图片读取失败'))
+    r.readAsDataURL(file)
+  })
+}
+function paintQBadge(txt) {
+  let bd = $('q-badge')
+  qAll().then(items => {
+    if (!items.length) { if (bd) bd.remove(); return }
+    if (!bd) {
+      bd = document.createElement('div')
+      bd.id = 'q-badge'
+      bd.style.cssText = 'font-size:12.5px;line-height:1.6;background:#FEF3C7;color:#92400E;border-radius:10px;padding:8px 12px;margin-bottom:10px;cursor:pointer;flex-shrink:0'
+      bd.onclick = () => tryUpgrade(true)
+      const tip = $('status-tip')
+      if (tip && tip.parentNode) tip.parentNode.insertBefore(bd, tip.nextSibling)
+    }
+    bd.textContent = txt || ('⏳ ' + items.length + ' 张原图待补传' + (isHomeNet() ? '（点这马上补）' : '，回家连 WiFi 自动补'))
+  }).catch(() => {})
+}
+let _upgrading = false
+async function tryUpgrade(manual) {
+  if (_upgrading) return
+  if (!isHomeNet()) { if (manual) bubble('hv', 'ℹ️ 现在不在家 WiFi，补传要回家连上家里网络才会跑（省流量）'); return }
+  let items = []
+  try { items = await qAll() } catch (e) { return }
+  if (!items.length) { paintQBadge(); return }
+  _upgrading = true
+  paintQBadge('📶 正在补传原图 0/' + items.length + '…')
+  let ok = 0
+  for (let i = 0; i < items.length && i < Q_CAP; i++) {
+    const it = items[i]
+    paintQBadge('📶 正在补传原图 ' + (i + 1) + '/' + items.length + '…')
+    try {
+      const dataUrl = await fileToDataUrl(it.file)
+      const bare = dataUrl.indexOf(',') >= 0 ? dataUrl.split(',')[1] : dataUrl
+      let good = false
+      if (it.kind === 'tag') {
+        const r = await jpost('/api/relay/send', { action: 'images.replace_original', params: { image_id: it.anchor, image: dataUrl } }, true)
+        good = r.status === 200 && r.data.success !== false && !(r.data.data && r.data.data.error)
+      } else {
+        const r = await jpost('/api/relay/send', { action: 'images.upload', params: { image_b64: bare, note: it.note, quality: 'hd', replace_img_id: it.anchor } }, true)
+        good = r.status === 200 && r.data.success !== false && !(r.data.data && r.data.data.error)
+      }
+      if (good) { await qDel(it.id); ok++ }
+    } catch (e) { /* 单张失败继续，下次再试 */ }
+  }
+  _upgrading = false
+  paintQBadge()
+  if (ok) bubble('hv', '📶 回家了：已把 ' + ok + ' 张照片升级成高清原图存档')
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) tryUpgrade() })
+tryUpgrade()
+
+// ★ #955 本地版：设备名单/钥匙轮换是云端配对的概念，本地轻页不显示（管理在电脑端设置页）
+
+$('btn-logout').addEventListener('click', logout)
+boot()
+</script>
+</body>
+</html>

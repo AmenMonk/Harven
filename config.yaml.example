@@ -1,129 +1,75 @@
-# config.yaml.example
-# 复制本文件为 config.yaml，并按需修改
-# DO NOT commit config.yaml to git (contains passwords)
+# HarvenAI 配置模板
+# 复制此文件为 config.yaml 并填入你自己的API Key
 
-ai:
-  temperature: 0.7
-app:
-  language: zh-CN
-  name: Harven AI
-  version: 0.1.0
-hardware:
-  advanced_vram_gb: 12
-  min_ram_gb: 16
-  min_vram_gb: 6
-independence:
-  allowed_domains:
-  - ollama.ai
-  - huggingface.co
-  - modelscope.cn
-  # ── 外部大模型 API（按需启用，不用的可以删掉）──
-  - api.deepseek.com
-  - dashscope.aliyuncs.com
-  - api.moonshot.cn
-  - ark.cn-beijing.volces.com
-  - api.openai.com
-  - api.anthropic.com
-  - generativelanguage.googleapis.com
-  - api.groq.com
-  - api.mistral.ai
-  - api.cohere.ai
-  - api.siliconflow.cn
-  - openrouter.ai
-  - api.hunyuan.cloud.tencent.com
-  - api.baichuan-ai.com
-  - open.bigmodel.cn
-  - api.lingyiwanwu.com
-  - api.stepfun.com
-  - api.minimaxi.chat
-  - qianfan.baidubce.com
-  - spark-api-open.xf-yun.com
-  - sky-api.singularity-ai.com
-  - api-inference.huggingface.co
-  - api.x.ai
-  - api.perplexity.ai
-  - api.together.xyz
-  # ── 联网搜索 ──
-  - cn.bing.com
-  - html.duckduckgo.com
-  - api.exa.ai
-  - hq.sinajs.cn
-  - finance.sina.com.cn
-  # ── 更新检查 ──
-  - harvenhub.com
-  blocked_protocols:
-  - gRPC集群
-  - 分布式张量
-language:
-  main_language: zh-CN
-  other_language_mode: translate
-  ui_language: follow
-memory:
-  snapshot_interval: 5
-  working_context_turns: 8
-morality:
-  answer_style: friend
-  conflict_mode: direct
-  lockdown_threshold: 3
-  lockdown_triggers:
-  - 制造危险物品
-  - 恐怖袭击
-  - 反人类
-  morality_level: default
-  show_reminders: true
-  show_thinking: false
-  warn_triggers:
-  - 伤害他人
-  - 欺骗
-  - 造假
+# === 外脑模型API Key ===
+model_keys:
+  deepseek: ""        # DeepSeek API Key (https://platform.deepseek.com)
+  zhipu: ""           # 智谱GLM API Key (https://open.bigmodel.cn)
+  doubao: ""          # 豆包API Key (https://www.volcengine.com)
+  qwen: ""            # 通义千问API Key (https://dashscope.aliyun.com)
+  kimi: ""            # Kimi API Key (https://platform.moonshot.cn)
+  yi: ""              # 零一万物API Key (https://platform.lingyiwanwu.com)
+  baichuan: ""        # 百川API Key (https://platform.baichuan-ai.com)
+  step: ""            # 阶跃星辰API Key (https://platform.stepfun.com)
+
+# === 本地模型 ===
+# ★ 2026-09-27 审计：出厂不内定任何模型。空 = 首次启动硬件检测引导用户自选/自下
 ollama:
-  base_url: http://localhost:11434
+  host: "http://localhost:11434"
   default_model: ""
-  model_scheduling: auto
-  models:
-  - desc: 日常对话、快速响应
-    model_id: qwen2.5:7b
-    name: Qwen2.5-7B（轻量）
-    speed: 25-40字/秒
-    vram: 5GB
-  - desc: 深度思考、复杂推理
-    model_id: qwen2.5:14b
-    name: Qwen2.5-14B（推荐）
-    speed: 10-20字/秒
-    vram: 10GB
-  - desc: 深度推理、技术分析
-    model_id: deepseek-r1:14b
-    name: DeepSeek-R1-Distill-14B
-    speed: 8-15字/秒
-    vram: 9GB
-  reasoning_mode: fast
+
+# === 协作模式 ===
+# off: 纯对话模式
+# cloud_local: 智能协作（Skill编排+外脑+垂直模型）
+# local_dual: 本地协作（Skill编排+本地模型+垂直模型）
+collab_mode: "off"
+
+# === 查询模式 ===
+# kb_only: 本地模式
+# direct: 外脑模式
+query_mode: "kb_only"
+
+# === 安全 ===
+admin_password: "harven2026"  # ⚠️ 初始密码！首次登录后强制修改
+security_mode: "safe"  # safe | full
 security:
-  admin_password: CHANGE_ME_ON_FIRST_RUN
-  antivirus_enabled: false
-  antivirus_path: ''
-  auto_lock_minutes: 0
-  privacy_password: 
-storage:
-  config: data/config/
-  conversations: data/conversations/
-  faiss: data/faiss/
-  knowledge: data/knowledge/
-  snapshots: data/snapshots/
-  sqlite: data/sqlite/lingzhi.db
-# HarvenHub 云端社区市场地址
-harvenhub_server_url: "https://harvenhub.com"
-ui:
-  bubble_style: default
-  font_size: medium
-  theme: system
-user:
-  answer_preference: detailed
-  avatar: ''
-  interests: []
-  nickname: ''
-  profession: ''
-web_search:
-  auto_search: true
-  default_query_mode: auto
-  enabled: true
-  search_engine: bing
+  # ★ v10（2026-10-04）配对保护：手机连接自家哈文时须输管理员密码（防配对码被旁人偷看兑换）。
+  # 密码连错 3 次配对码作废。改 false 可关闭（兼容不带密码框的旧 APP）
+  pair_require_password: true
+
+# === 服务端口 ===
+port: 7000
+host: "0.0.0.0"
+
+# === 出站控制 ===
+# ★ 默认不拦截（正常模式）——沙箱已防护恶意代码，正常使用不受限制
+# 想要更高安全：把 whitelist_enabled 改成 true
+independence:
+  whitelist_enabled: false  # false=正常模式(不拦) true=严格模式(只允许白名单)
+  allowed_domains:           # 严格模式下允许的域名（正常模式下不需要配）
+    # 外脑API
+    - "api.deepseek.com"
+    - "api.openai.com"
+    - "api.anthropic.com"
+    - "generativelanguage.googleapis.com"
+    - "open.bigmodel.cn"
+    - "ark.cn-beijing.volces.com"
+    - "dashscope.aliyuncs.com"
+    - "api.moonshot.cn"
+    - "api.lingyiwanwu.com"
+    - "api.baichuan-ai.com"
+    - "api.stepfun.com"
+    - "api.cohere.ai"
+    - "api.mistral.ai"
+    # Ollama + 模型下载
+    - "ollama.com"
+    - "registry.ollama.ai"
+    - "modelscope.cn"
+    - "hf-mirror.com"
+    - "huggingface.co"
+    # 联网搜索
+    - "cn.bing.com"
+    - "www.bing.com"
+    # pip安装
+    - "pypi.org"
+    - "files.pythonhosted.org"

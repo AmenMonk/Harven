@@ -171,6 +171,10 @@ def scan_ollama_models():
             for line in lines[1:]:  # 跳过表头
                 parts = line.split()
                 if parts:
+                    # ★ #1325（2026-10-30）：hv-pin-* 是钉选 GGUF 的 Ollama 注册件
+                    #   （内容寻址内部名，钉选链路自动管理），不进系统知识/模型发现清单
+                    if parts[0].startswith('hv-pin-'):
+                        continue
                     models.append({
                         'name': parts[0],
                         'size': parts[1] if len(parts) > 1 else '',

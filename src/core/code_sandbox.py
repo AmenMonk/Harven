@@ -460,11 +460,21 @@ class CodeSandbox:
     def _execute_shell(self, code: str, start_time: float) -> ExecutionResult:
         """执行 Shell 命令（Windows PowerShell）"""
         import time
+        import re as _re
         # Shell 模式强制安全检测，不受 allow_dangerous 影响
-        dangerous_shell = ["rm -rf", "format", "del /f", "rd /s", ":(){:|:&};:"]
-        for d in dangerous_shell:
-            if d.lower() in code.lower():
-                return ExecutionResult(False, error=f"⛔ 检测到危险 Shell 命令：{d}")
+        # ★ 2026-10-20 FC慢治理#3: 正则词边界（与 builtin_tools 同款）—
+        #   子串 'format' 误伤 Format-List 实锤；Python 代码含 "format" 字符串不误杀
+        _danger_patterns = [
+            (r'\brm\s+(-[a-z]*r[a-z]*f|-rf|--recursive)', '递归强制删除'),
+            (r'\bformat(\.com)?\s+[a-z]:', '磁盘格式化'),
+            (r'\bdel\s+/f', '强制删除'),
+            (r'\b(rmdir|rd)\s+/(s|q)', '递归删除'),
+            (r'\bdd\s+if=', '磁盘写入'),
+        ]
+        _code_lower = code.lower()
+        for _pat, _cat in _danger_patterns:
+            if _re.search(_pat, _code_lower):
+                return ExecutionResult(False, error=f"⛔ 检测到危险 Shell 命令：{_cat}")
 
         try:
             proc = subprocess.run(

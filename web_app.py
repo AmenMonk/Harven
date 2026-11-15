@@ -16,7 +16,75 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 """
-import os, sys, json, time, traceback, threading, tempfile, subprocess, sqlite3, logging
+# ★ 2026-11-10: 单实例预检 2.0（锁文件+PID 进程指纹，根治慢启动窗口双开）
+# 旧版只探 7000 端口监听——哈文加载模型需 40~60 秒，窗口期内二次双击=两个实例都过检=双开
+# 新版：本实例启动即抢锁（PID+端口落盘 data/runtime/harven.pid），
+#       后到的实例查锁命中存活 python 进程 → 只开浏览器连旧实例，不启第二服务
+# 端口探活保留为双保险（兼容无锁文件的旧实例/锁丢失等异常场景）
+if __name__ == '__main__':
+    import os as _os, sys as _sys, socket as _socket, webbrowser as _wb, atexit as _ae
+    from pathlib import Path as _Path
+    _lock_file = _Path(__file__).parent.resolve() / 'data' / 'runtime' / 'harven.pid'
+    _svc_port = 7000  # 与下方 __main__ 主块的 port 保持一致
+
+    def _pid_alive(_pid):
+        """轻量判定 PID 是否为存活的 python 进程（不引 psutil，预检阶段零重依赖）"""
+        try:
+            import ctypes
+            _k = ctypes.windll.kernel32
+            _h = _k.OpenProcess(0x1000, 0, _pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+            if not _h:
+                return False
+            try:
+                import ctypes.wintypes as _wt
+                _buf = ctypes.create_unicode_buffer(1024)
+                _sz = _wt.DWORD(1024)
+                if _k.QueryFullProcessImageNameW(_h, 0, _buf, ctypes.byref(_sz)):
+                    return 'python' in (_buf.value or '').lower()
+                return True  # 查不到映像名（权限等）时保守视为存活：宁可少开不多开
+            finally:
+                _k.CloseHandle(_h)
+        except Exception:
+            return True
+
+    _running_port = None
+    try:  # ① 锁文件优先：命中存活 python 进程即认定已在运行
+        if _lock_file.exists():
+            _parts = _lock_file.read_text(encoding='utf-8').strip().split()
+            _old_pid, _old_port = int(_parts[0]), int(_parts[1])
+            if _old_pid != _os.getpid() and _pid_alive(_old_pid):
+                _running_port = _old_port
+    except Exception:
+        pass
+    if _running_port is None:  # ② 双保险：锁没命中再探端口
+        with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as _s:
+            _s.settimeout(1)
+            if _s.connect_ex(('127.0.0.1', _svc_port)) == 0:
+                _running_port = _svc_port
+    if _running_port is not None:
+        print(f"[Harven] 检测到哈文已在运行（端口 {_running_port}），正在为您打开浏览器...")
+        _wb.open(f'http://localhost:{_running_port}')
+        _sys.exit(0)
+
+    # 抢锁：立即写 PID+端口（赶在重量级 import 之前，慢启动窗口也被覆盖）
+    try:
+        _lock_file.parent.mkdir(parents=True, exist_ok=True)
+        _lock_file.write_text(f'{_os.getpid()} {_svc_port}', encoding='utf-8')
+
+        def _release_lock():
+            """干净退出时释放锁；锁内容是自己的 PID 才删，防误删后到者的锁"""
+            try:
+                if _lock_file.exists() and \
+                        _lock_file.read_text(encoding='utf-8').strip().split()[0] == str(_os.getpid()):
+                    _lock_file.unlink()
+            except Exception:
+                pass
+        _ae.register(_release_lock)
+    except Exception:
+        pass
+
+import os, sys, json, time, traceback, threading, tempfile, subprocess, sqlite3, logging, atexit
+import shutil, hashlib
 from pathlib import Path
 from datetime import datetime
 
@@ -48,6 +116,7 @@ from markupsafe import Markup
 import yaml
 import logging
 from src.utils.config import Config
+from src.version import APP_VERSION  # ★ 版本号唯一户口（方案B 2026-10-07）
 
 # 全局配置对象（统一使用 Config 类，替代 plain dict）
 config = Config()
@@ -65,13 +134,34 @@ from model_routes import bp as models_bp
 # 技能管理路由（自动注册）
 from src.core.skills_routes import bp as skills_bp
 
+_handlers = [logging.StreamHandler()]
+try:
+    # ★ #924（2026-09-27）：日志同时落盘——此前只进控制台黑框，出问题想查「到底什么原因」
+    #   时黑框一关啥都没有。落 data/logs/runtime.log，10MB 一转，留 3 份。
+    from logging.handlers import RotatingFileHandler
+    _logdir = PROJECT_ROOT / 'data' / 'logs'
+    _logdir.mkdir(parents=True, exist_ok=True)
+    _handlers.append(RotatingFileHandler(_logdir / 'runtime.log',
+                                         maxBytes=10 * 1024 * 1024,
+                                         backupCount=3, encoding='utf-8'))
+except Exception:
+    pass
+
 logging.basicConfig(
     level=logging.INFO,
     format='[%(asctime)s] %(levelname)s %(name)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    datefmt='%Y-%m-%d %H:%M:%S',
+    handlers=_handlers
 )
 # 屏蔽 Flask 开发服务器警告（Harven 是本地桌面应用，不需要生产级 WSGI）
 logging.getLogger('werkzeug').setLevel(logging.WARNING)
+# ★ #1447（2026-11-05 r50）黑框降噪：第三方库/高频模块 INFO 刷屏分流到 WARNING。
+#   只改控制台级别，文件日志（runtime.log）同样受级别控制——这些本来就是心跳/常规
+#   流水不是异常，出问题时 ERROR/WARNING 依然完整可见。
+for _noisy in ('httpx', 'httpcore', 'jieba', 'faiss', 'faiss.loader', 'urllib3',
+               'src.core.voice_input', 'voice_input',
+               'faster_whisper', 'huggingface_hub', 'modelscope', 'onnxruntime'):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__,
@@ -214,12 +304,71 @@ def check_remote_auth():
     if request.path.startswith('/api/'):
         return jsonify({'error': '需要远程密码', 'code': 'remote_auth_required'}), 401
     # HTML 页面 → 重定向到登录
-    return redirect('/login?next=' + request.path)
+    # ★ 2026-10-10：加 no-store——防 APP WebView 缓存 302，导致登录成功后跳转又弹回登录页
+    resp = redirect('/login?next=' + request.path)
+    resp.headers['Cache-Control'] = 'no-store'
+    return resp
 
 
 @app.route('/login', methods=['GET'])
 def login_page():
     return render_template('login.html', next_url=request.args.get('next', '/'))
+
+
+# ★ #955（2026-10-03）本地轻页：手机在家一个界面（大按钮：说句话/拍张照/问一句）
+#   在家直连本地 /phone（快），出门走壳自动落云端 harvenhub.com/phone（中转）——统一轻页方案 B。
+#   鉴权：自动复用上面的远程密码门（before_request：无密码免登录/有密码跳 /login，API 返回 401）
+@app.route('/phone')
+def phone_local_page():
+    # ★ #1410（2026-11-03）手机页永远拿最新版：no-cache 强制回源验证，
+    #   根治「发了新版手机 WebView 还端旧页」——页头版本随 TEMPLATES_AUTO_RELOAD 即时生效
+    from flask import make_response
+    resp = make_response(render_template('phone_local.html'))
+    resp.headers['Cache-Control'] = 'no-cache, must-revalidate'
+    return resp
+
+
+@app.route('/api/phone/send', methods=['POST'])
+def phone_local_send():
+    """★ #955 本地轻页指令入口：与云端 /api/relay/send 同款 {action, params}，
+    同一份指令白名单（cloud_link._dispatch），能力一个不少（chat/语音/拍照/面板/图库/知识库）。
+    鉴权：不走设备令牌——复用远程密码门会话 cookie（check_remote_auth 已在 before_request 拦）。
+    本地即主战场：没有中转限速、没有配额、数据不出家门。"""
+    from src.core.cloud_link import _dispatch
+    body = request.get_json(silent=True) or {}
+    action = str(body.get('action', '')).strip()
+    params = body.get('params') or {}
+    result = _dispatch(action, params)   # 白名单在 _dispatch 里
+    ok = 'error' not in (result or {})
+    payload = {'success': ok, 'data': result} if ok else \
+        {'success': False, 'error': str((result or {}).get('error', '执行失败'))}
+    return jsonify(payload)
+
+
+@app.route('/api/relay/chat_stream', methods=['POST'])
+def relay_chat_stream():
+    """★ 2026-10-21 手机端流式对话（体感对齐豆包）：SSE 逐块推送。
+    请求：{message, mode?('local'|'cloud')}  响应：text/event-stream
+    事件：data: {"type":"status"|"text"|"done","content":...}
+    鉴权复用远程密码门会话（before_request check_remote_auth 已拦），同 /api/relay/send。"""
+    body = request.get_json(silent=True) or {}
+    msg = str(body.get('message', '')).strip()
+    mode = str(body.get('mode', '')).strip().lower()
+    if not msg:
+        return jsonify({'success': False, 'error': '缺少 message'}), 400
+    from src.core.cloud_link import mobile_chat_stream
+    from flask import Response, stream_with_context
+
+    def gen():
+        try:
+            for ev in mobile_chat_stream(msg, mode):
+                yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'status', 'content': f'⚠️ {e}'}, ensure_ascii=False)}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return Response(stream_with_context(gen()), mimetype='text/event-stream',
+                    headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
 
 
 @app.route('/api/auth/remote-login', methods=['POST'])
@@ -231,15 +380,19 @@ def remote_login():
     if not cfg_path.exists():
         return jsonify({'success': False, 'error': '配置不存在'}), 500
     cfg = yaml.safe_load(cfg_path.read_text(encoding='utf-8')) or {}
-    expected = cfg.get('security', {}).get('remote_password', 'harven2026')
-    if pwd == expected:
-        resp = jsonify({'success': True})
-        # ★ 修复：Cookie值带HMAC签名，不能伪造
-        expire_ts = int(time.time() + 86400 * 30)
-        cookie_val = _sign_cookie(expire_ts)
-        resp.set_cookie(REMOTE_AUTH_SESSION_KEY, cookie_val, max_age=86400 * 30, httponly=True, samesite='Lax')
-        return resp
-    return jsonify({'success': False, 'error': '密码错误'}), 401
+    # ★ R1 2026-09-23 密码统一：远程登录与管理员密码一把锁
+    # 优先管理员密码；兼容存量用户单独改过的 remote_password（避免升级后旧密码立即失效）
+    from src.core.security_guard import get_admin_password
+    expected = get_admin_password()
+    legacy = cfg.get('security', {}).get('remote_password', '')
+    if pwd != expected and (not legacy or legacy != pwd):
+        return jsonify({'success': False, 'error': '密码错误'}), 401
+    resp = jsonify({'success': True})
+    # ★ 修复：Cookie值带HMAC签名，不能伪造
+    expire_ts = int(time.time() + 86400 * 30)
+    cookie_val = _sign_cookie(expire_ts)
+    resp.set_cookie(REMOTE_AUTH_SESSION_KEY, cookie_val, max_age=86400 * 30, httponly=True, samesite='Lax')
+    return resp
 
 
 @app.route('/api/auth/remote-password', methods=['GET'])
@@ -250,35 +403,38 @@ def get_remote_password_hint():
     if not cfg_path.exists():
         return jsonify({'hidden': '****'})
     cfg = yaml.safe_load(cfg_path.read_text(encoding='utf-8')) or {}
-    pwd = cfg.get('security', {}).get('remote_password', 'harven2026')
-    # ★ 2026-08-09: 恢复 ?real=1 的明文显示（用户已在设置页登录，能看自己的密码）
+    # ★ R1 2026-09-23 密码统一：远程密码即管理员密码，显示同一把锁
+    from src.core.security_guard import get_admin_password
+    pwd = get_admin_password()
     from flask import request
     if request.args.get('real') == '1':
         return jsonify({'real': pwd, 'hidden': '*' * len(pwd)})
     return jsonify({'hidden': '*' * len(pwd)})
 
 
+@app.route('/api/sync/version', methods=['GET'])
+def api_sync_version():
+    """★ #1220-A（2026-10-25）数据版本总线：前端轮询此接口，
+    版本号变化即刷新面板/提醒等数据（电脑端写库 → 手机端/SPA 感知）。"""
+    from src.core.sync_bus import get_version
+    return jsonify(get_version())
+
+
 @app.route('/api/auth/remote-password', methods=['POST'])
 def update_remote_password():
-    """修改远程访问密码"""
-    import yaml
+    """修改远程访问密码（★ R1 2026-09-23 密码统一：改的就是管理员密码，走 security_guard 同步三处）"""
     data = request.get_json(silent=True) or {}
     # ★ 修复：必须验证旧密码
     old_pwd = data.get('old_password', '').strip()
     new_pwd = data.get('password', '').strip()
     if not new_pwd or len(new_pwd) < 8:  # ★ 修复：最少4位→8位
         return jsonify({'success': False, 'error': '新密码至少8位'}), 400
-    cfg_path = Path(__file__).parent / 'config.yaml'
-    if not cfg_path.exists():
-        return jsonify({'success': False, 'error': '配置不存在'}), 500
-    cfg = yaml.safe_load(cfg_path.read_text(encoding='utf-8')) or {}
-    current_pwd = cfg.get('security', {}).get('remote_password', 'harven2026')
-    # ★ 验证旧密码
-    if old_pwd != current_pwd:
-        return jsonify({'success': False, 'error': '旧密码错误'}), 401
-    cfg.setdefault('security', {})['remote_password'] = new_pwd
-    with open(cfg_path, 'w', encoding='utf-8') as f:
-        yaml.dump(dict(cfg), f, allow_unicode=True, default_flow_style=False)
+    from src.core.security_guard import change_admin_password
+    result = change_admin_password(old_pwd, new_pwd)
+    if not result.get('success'):
+        err = result.get('error', '')
+        code = 401 if '旧密码' in err else 400
+        return jsonify({'success': False, 'error': ('旧密码错误' if '旧密码' in err or '不对' in err else err)}), code
     return jsonify({'success': True})
 
 @app.before_request
@@ -360,6 +516,16 @@ def serve_media(filename):
     return send_from_directory(os.path.join(PROJECT_ROOT, 'data', 'media'), filename)
 
 
+# ★ 2026-11-02 老书签兼容（#1373）：/static/panels/xxx 是历史路径（路由已不存在），
+#   301 永久重定向到正门 /panel/xxx，老书签/旧入口永不断链
+@app.route('/static/panels/<path:subpath>')
+def redirect_legacy_panels(subpath):
+    target = '/panel/' + subpath
+    if target.endswith('/index.html'):
+        target = target[:-len('/index.html')]
+    return redirect(target, code=301)
+
+
 # Docker 环境变量覆盖 Ollama 地址
 _ollama_host = os.environ.get('OLLAMA_HOST', '')
 _ollama_port = os.environ.get('OLLAMA_PORT', '')
@@ -418,6 +584,8 @@ def _validate_model_vram(model_name: str) -> str:
             logger.warning(f"[Startup] → 降级模型: {fallback}")
             # 持久化修复到 config.yaml
             config.setdefault('ollama', {})['default_model'] = fallback
+            # ★ 2026-09-24 反杀修复：旧镜像同步降级，避免新旧不一致
+            config.setdefault('backends', {}).setdefault('local', {})['default_model'] = fallback
             try:
                 with open(PROJECT_ROOT / 'config.yaml', 'w', encoding='utf-8') as f:
                     yaml.dump(dict(config), f, allow_unicode=True, default_flow_style=False)
@@ -437,9 +605,14 @@ def get_mm():
                 from src.core.model_manager import ModelManager
                 base_url = config.get('ollama', {}).get('base_url', 'http://localhost:11434')
                 model_name = config.get('ollama', {}).get('default_model', '')
+                # ★ #1238: 用户选了 HarvenEye（混合模型引擎）→ 走 Eye 引擎分流
+                # （current_model 优先于 ollama.default_model——选 Eye 时不污染 Ollama 镜像）
+                if (config.get('current_model') or '').strip() == 'harveneye':
+                    model_name = 'harveneye'
                 # empty → 用户未选模型，不强制回退（让调用方自行判断可用引擎）
                 # 启动时验证模型是否适配本机显存（有模型名时才做）
-                model_name = _validate_model_vram(model_name)
+                if model_name != 'harveneye':
+                    model_name = _validate_model_vram(model_name)
                 _mm = ModelManager(base_url, model_name)
     return _mm
 
@@ -514,6 +687,267 @@ try:
 except Exception as e:
     logger.error(f"[Security] 安全防护路由注册失败: {e}")
 
+# ==================== Token 账本路由（A批A7 · 2026-09-13）====================
+try:
+    from src.core.token_ledger import bp as token_ledger_bp
+    app.register_blueprint(token_ledger_bp)
+    logger.info("[TokenLedger] Token账本路由已注册（GET /api/token/ledger）")
+except Exception as e:
+    logger.error(f"[TokenLedger] Token账本路由注册失败: {e}")
+
+# ==================== 运行状态聚合端点（B批B7 · 2026-09-13）====================
+# ==================== ★ 2026-09-17 #740 定时任务增删改 API（真调度器：APScheduler + scheduled_tasks 表） ====================
+@app.route('/api/cron/list', methods=['GET'])
+def cron_list():
+    """列出全部定时任务（含下次执行时间）"""
+    try:
+        from src.core.scheduler import get_scheduler
+        s = get_scheduler()
+        tasks = [t.to_dict() for t in s.get_all_tasks()]
+        next_runs = {n['task_id']: n['next_run'] for n in s.get_next_runs()}
+        for t in tasks:
+            t['next_run'] = next_runs.get(t['task_id'])
+        return jsonify({'success': True, 'tasks': tasks})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/cron/add', methods=['POST'])
+def cron_add():
+    """添加定时任务
+    schedule_type: cron（每天定时，hour/minute）| interval（每隔 minutes 分钟）| once（run_at=ISO 时间）
+    """
+    try:
+        from src.core.scheduler import get_scheduler, ScheduledTask
+        data = request.get_json(force=True, silent=True) or {}
+        name = (data.get('name') or '').strip()
+        prompt = (data.get('prompt') or '').strip()
+        stype = data.get('schedule_type', 'cron')
+        if not name or not prompt:
+            return jsonify({'success': False, 'error': '任务名称和「要干的事」都要填'}), 400
+        if stype == 'cron':
+            try:
+                hour, minute = int(data.get('hour', 8)), int(data.get('minute', 0))
+            except (TypeError, ValueError):
+                return jsonify({'success': False, 'error': '时间格式不对'}), 400
+            if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                return jsonify({'success': False, 'error': '时间要在 0-23 点 / 0-59 分'}), 400
+            config = {'hour': hour, 'minute': minute}
+        elif stype == 'interval':
+            try:
+                minutes = max(1, int(data.get('minutes', 30)))
+            except (TypeError, ValueError):
+                return jsonify({'success': False, 'error': '间隔分钟数不对'}), 400
+            config = {'minutes': minutes}
+        elif stype == 'once':
+            run_at = (data.get('run_at') or '').strip()
+            if not run_at:
+                return jsonify({'success': False, 'error': '请选择执行时间'}), 400
+            try:
+                datetime.fromisoformat(run_at)
+            except ValueError:
+                return jsonify({'success': False, 'error': '执行时间格式不对'}), 400
+            config = {'run_at': run_at}
+        else:
+            return jsonify({'success': False, 'error': f'不支持的类型: {stype}'}), 400
+        import uuid as _uuid
+        task_id = f'cron_{_uuid.uuid4().hex[:10]}'
+        task = ScheduledTask(task_id=task_id, name=name, prompt=prompt, schedule_type=stype, schedule_config=config)
+        return jsonify(get_scheduler().add_task(task))
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/cron/<task_id>/toggle', methods=['POST'])
+def cron_toggle(task_id):
+    """启用/停用定时任务"""
+    try:
+        from src.core.scheduler import get_scheduler
+        data = request.get_json(force=True, silent=True) or {}
+        return jsonify(get_scheduler().toggle_task(task_id, bool(data.get('enabled', True))))
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/cron/<task_id>/update', methods=['POST'])
+def cron_update(task_id):
+    """修改定时任务（名称/提示词/时间均可改）"""
+    try:
+        from src.core.scheduler import get_scheduler, ScheduledTask
+        data = request.get_json(force=True, silent=True) or {}
+        s = get_scheduler()
+        old = next((t for t in s.get_all_tasks() if t.task_id == task_id), None)
+        if not old:
+            return jsonify({'success': False, 'error': '任务不存在'}), 404
+        name = (data.get('name') or old.name).strip()
+        prompt = (data.get('prompt') or old.prompt).strip()
+        stype = data.get('schedule_type') or old.schedule_type
+        if stype == 'cron':
+            config = {'hour': int(data.get('hour', old.schedule_config.get('hour', 8))),
+                      'minute': int(data.get('minute', old.schedule_config.get('minute', 0)))}
+        elif stype == 'interval':
+            config = {'minutes': max(1, int(data.get('minutes', old.schedule_config.get('minutes', 30))))}
+        elif stype == 'once':
+            config = {'run_at': (data.get('run_at') or old.schedule_config.get('run_at', '')).strip()}
+        else:
+            config = old.schedule_config
+        s.delete_task(task_id)  # 先摘除旧 job 再重挂
+        result = s.add_task(ScheduledTask(task_id=task_id, name=name, prompt=prompt,
+                                          schedule_type=stype, schedule_config=config,
+                                          enabled=old.enabled, created_at=old.created_at))
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/cron/<task_id>', methods=['DELETE'])
+def cron_delete(task_id):
+    """删除定时任务"""
+    try:
+        from src.core.scheduler import get_scheduler
+        return jsonify(get_scheduler().delete_task(task_id))
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/status/monitor', methods=['GET'])
+def status_monitor():
+    """B7 运行状态页六卡数据聚合：资源/模型/今日对话/安全/定时任务/健康"""
+    result = {}
+
+    # 卡1 电脑资源
+    try:
+        import psutil
+        import shutil
+        cpu = int(psutil.cpu_percent(interval=0.25))
+        vm = psutil.virtual_memory()
+        ram = {'percent': int(vm.percent), 'used_gb': round(vm.used / 1024**3, 1), 'total_gb': round(vm.total / 1024**3, 1)}
+        vram = {'percent': 0, 'used_gb': 0, 'total_gb': 0, 'gpu': ''}
+        try:
+            smi = shutil.which('nvidia-smi')
+            if smi:
+                import subprocess
+                out = subprocess.run(
+                    [smi, '--query-gpu=memory.used,memory.total,name', '--format=csv,noheader,nounits'],
+                    capture_output=True, text=True, timeout=5
+                ).stdout.strip().splitlines()
+                if out:
+                    mu, mt, name = [x.strip() for x in out[0].split(',')]
+                    mu, mt = float(mu), float(mt)
+                    vram = {'percent': int(mu / mt * 100) if mt else 0, 'used_gb': round(mu / 1024, 1),
+                            'total_gb': round(mt / 1024, 1), 'gpu': name}
+        except Exception:
+            pass
+        if not vram['total_gb']:
+            # nvidia-smi/NVML 不可用时走 torch 兜底（RTX 4070 场景实测可用）
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    free_b, total_b = torch.cuda.mem_get_info(0)
+                    used_b = total_b - free_b
+                    vram = {'percent': int(used_b / total_b * 100) if total_b else 0,
+                            'used_gb': round(used_b / 1024**3, 1), 'total_gb': round(total_b / 1024**3, 1),
+                            'gpu': torch.cuda.get_device_name(0)}
+            except Exception:
+                pass
+        result['resources'] = {'cpu_percent': cpu, 'ram': ram, 'vram': vram}
+    except Exception as e:
+        result['resources'] = {'error': str(e)}
+
+    # 卡2 模型加载（本地 Ollama + 当前外脑）
+    try:
+        import json as _json
+        import urllib.request
+        loaded, installed = [], []
+        try:
+            with urllib.request.urlopen('http://127.0.0.1:11434/api/ps', timeout=2) as r:
+                for m in _json.loads(r.read().decode('utf-8')).get('models', []):
+                    sz = m.get('size', 0)
+                    loaded.append({'name': m.get('name', ''), 'size_gb': round(sz / 1024**3, 1) if sz else None})
+            with urllib.request.urlopen('http://127.0.0.1:11434/api/tags', timeout=2) as r:
+                loaded_names = {x['name'] for x in loaded}
+                for m in _json.loads(r.read().decode('utf-8')).get('models', []):
+                    if m.get('name') not in loaded_names:
+                        installed.append({'name': m.get('name', ''), 'size_gb': round(m.get('size', 0) / 1024**3, 1)})
+        except Exception:
+            pass
+        foreign = ''
+        try:
+            from src.core.multi_model_manager import get_multi_model_manager
+            foreign = get_multi_model_manager().current_model or ''
+            if foreign == 'ollama':
+                foreign = ''
+        except Exception:
+            pass
+        result['models'] = {'loaded': loaded, 'installed': installed[:6], 'ollama_reachable': bool(loaded or installed),
+                            'foreign_brain': foreign, 'external_ok': bool(foreign)}
+    except Exception as e:
+        result['models'] = {'error': str(e)}
+
+    # 卡3 今日对话（Token 账本 + 会话数）
+    try:
+        from src.core.token_ledger import summary as _ledger_summary
+        led = _ledger_summary()
+        from src.models.database import DEFAULT_DB_PATH
+        db_path = os.path.normpath(str(DEFAULT_DB_PATH))
+        today_chats = 0
+        try:
+            conn = sqlite3.connect(db_path, timeout=5)
+            today_chats = conn.execute("SELECT COUNT(*) FROM conversations WHERE substr(created_at,1,10)=date('now','localtime')").fetchone()[0]
+            conn.close()
+        except Exception:
+            pass
+        result['chat_today'] = {'ledger': led.get('counters', {}), 'conversations_today': today_chats,
+                                'ledger_updated': led.get('updated_at', '')}
+    except Exception as e:
+        result['chat_today'] = {'error': str(e)}
+
+    # 卡4 安全
+    try:
+        from src.core.security_guard import get_permission_mode
+        mode = get_permission_mode()
+        result['security'] = {'permission_mode': '全权模式' if mode == 'full' else '安全模式',
+                              'outbound': '仅外脑问答', 'fc_active': True}
+    except Exception as e:
+        result['security'] = {'error': str(e)}
+
+    # 卡5 定时任务
+    try:
+        from src.models.database import DEFAULT_DB_PATH
+        _db_path = os.path.normpath(str(DEFAULT_DB_PATH))
+        conn = sqlite3.connect(_db_path, timeout=5)
+        conn.row_factory = sqlite3.Row
+        tasks = []
+        for row in conn.execute('SELECT task_id, name, enabled, last_run FROM scheduled_tasks ORDER BY enabled DESC, task_id'):
+            runs_today = conn.execute(
+                "SELECT COUNT(*) FROM scheduled_task_runs WHERE task_id=? AND substr(started_at,1,10)=date('now','localtime')",
+                (row['task_id'],)).fetchone()[0]
+            tasks.append({'id': row['task_id'], 'name': row['name'], 'enabled': bool(row['enabled']),
+                          'last_run': row['last_run'] or '未运行', 'runs_today': runs_today})
+        running = conn.execute("SELECT COUNT(*) FROM scheduled_task_runs WHERE status='running'").fetchone()[0]
+        conn.close()
+        result['tasks'] = {'items': tasks[:8], 'running': running}
+    except Exception as e:
+        result['tasks'] = {'error': str(e)}
+
+    # 卡6 健康报告
+    try:
+        from src.models.database import DEFAULT_DB_PATH
+        _db_path = os.path.normpath(str(DEFAULT_DB_PATH))
+        db_size_mb = round(os.path.getsize(_db_path) / 1024**2, 1) if os.path.exists(_db_path) else 0
+        kb_count = 0
+        conn = sqlite3.connect(_db_path, timeout=5)
+        try:
+            kb_count = conn.execute('SELECT COUNT(*) FROM knowledge').fetchone()[0]
+        except Exception:
+            pass
+        conn.close()
+        result['health'] = {'db_size_mb': db_size_mb, 'kb_entries': kb_count, 'errors': 0, 'backup': '手动备份'}
+    except Exception as e:
+        result['health'] = {'error': str(e)}
+
+    return jsonify({'success': True, 'data': result})
+
 # ★ 2026-07-21: 受控进化路由
 try:
     from src.core.evolution_routes import bp as evolution_bp
@@ -537,17 +971,83 @@ except Exception as e:
 def fallback_health_stub():
     return jsonify({"success": True, "status": "healthy", "message": "stub"})
 
+
+@app.route('/api/net/check')
+def net_check():
+    """★ 2026-09-13: 轻量外网探测（首页🌐状态签真实化）——socket 连顶级域 443，2 秒超时"""
+    import socket
+    ok = False
+    try:
+        s = socket.create_connection(('223.5.5.5', 443), timeout=2)  # 阿里公共 DNS，国内可达性稳
+        s.close()
+        ok = True
+    except Exception:
+        try:  # 兜底再试一次 DNS 解析（IP 直连被防火墙挡但 DNS 通也算半通）
+            socket.getaddrinfo('www.baidu.com', 443, proto=socket.IPPROTO_TCP)
+            ok = True
+        except Exception:
+            ok = False
+    return jsonify({'online': ok})
+
 @app.route('/api/fallback/status')
 def fallback_status_stub():
     return jsonify({"success": True, "active": False, "message": "stub"})
+
+# ==================== SPA 托管（B0，灰度期与旧界面并存） ====================
+# 产物构建进 static/spa/，Flask 静态托管天然可达 /static/spa/index.html；
+# 此路由仅提供友好入口，302 到 SPA。旧 templates 首页不动，页全过才切换根路径。
+@app.route('/spa')
+@app.route('/spa/')
+def spa_entry():
+    return redirect('/static/spa/index.html')
+
+# ★ #1036（2026-10-06）SPA index.html 免缓存直出：Flask 默认缓存头让浏览器抱着旧
+#   index.html 引用旧 hash 的 js/css——每次发新版用户端「看起来没变化」（开发者 10-06 实锤：
+#   面板中心还是改造前的旧页面）。改为显式直读文件 + no-cache；assets 带 hash 可继续吃缓存
+@app.route('/static/spa/index.html')
+def spa_index_nocache():
+    import os
+    path = os.path.join(app.static_folder or 'static', 'spa', 'index.html')
+    with open(path, 'rb') as f:
+        body = f.read()
+    resp = app.response_class(body, mimetype='text/html')
+    resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    resp.headers['Pragma'] = 'no-cache'
+    resp.headers['Expires'] = '0'
+    return resp
+
+# ★ 2026-09-16 旧地址兼容：老版本曾把 SPA 挂在 /spa/index.html（带 ?panel= 参数），
+#   路由早已下线，但用户浏览器里的旧标签页/书签还在——统一 302 到现地址，防 404 蒙人
+# ★ #1037（2026-10-06）野地址兜底：开发者浏览器停在从未存在过的 /spa/spa-index（纯缓存
+#   渲染，强刷也刷不掉——服务器 404 后浏览器继续摆旧缓存）。改为：地址在 static/spa 里
+#   真实存在才原样跳，不存在一律兜底回 index.html（no-cache），旧书签/坏地址全部救活
+@app.route('/spa/<path:rest>')
+def spa_entry_sub(rest):
+    import os
+    target = os.path.join(app.static_folder or 'static', 'spa', rest)
+    if os.path.isfile(target):
+        dest = '/static/spa/' + rest
+        if request.query_string:
+            dest += '?' + request.query_string.decode('utf-8')
+        return redirect(dest)
+    return redirect('/static/spa/index.html')
 
 # ==================== Memory Dreaming 初始化 ====================
 try:
     from src.core.memory_dreaming import get_dream_engine, register_dreaming_scheduler
     dream = get_dream_engine()
-    # 设置 LLM 调用函数用于梦境（仅本地 Ollama，保护隐私）
+    # 设置 LLM 调用函数用于梦境（仅本地，保护隐私）
     def _dream_llm_fn(prompt: str) -> str:
+        # ★ #1510（2026-11-13）：梦境是纯文本任务，改走 chat_local 轻量通道
+        #   （Ollama 文本模型优先 → 进程内 GGUF 兜底）——原先走 mm.chat 会路由到
+        #   HarvenEye 理解通道，每小时梦境都唤醒 8B Qwen3-VL，白占显存（日志实锤）
         try:
+            from src.core.local_infer import chat_local
+            text, _info, _err = chat_local(prompt, timeout=120, temperature=0.3)
+            return text or ""
+        except Exception:
+            pass
+        try:  # chat_local 不可用时退回 mm.chat（原链路，保底不中断）
             mm = get_mm()
             return mm.chat([{"role": "user", "content": prompt}], stream=False)
         except Exception as e:
@@ -566,11 +1066,31 @@ try:
     # 注入任务执行回调：定时触发时调用 AI 引擎生成回复
     def _scheduler_execute(task_id: str, prompt: str):
         """定时任务到期时执行 AI 对话"""
+        # ★ 2026-09-12: 梦境任务拦截 — dream_ 前缀走本地 dream_if_needed()，绝不进外脑
+        #   旧实现把"执行 Memory Dreaming Light Dream"当普通消息发给 AI（走外脑计费），
+        #   且记忆整理逻辑根本没执行，纯烧 token（2026-06-25~08-20 实测偷跑 1068 次）。
+        #   现改为：直接调用梦境引擎，LLM 用本地 Ollama（set_llm_fn 已绑 mm.chat），零 API 费。
+        if task_id.startswith("dream_"):
+            try:
+                from src.core.memory_dreaming import get_dream_engine
+                _session = get_dream_engine().dream_if_needed()
+                if _session:
+                    logger.info(
+                        f"[Scheduler] 梦境任务 {task_id} 本地完成: type={_session.dream_type} "
+                        f"input={_session.input_count} removed={_session.removed_count}"
+                    )
+                    return f"本地梦境完成: {_session.dream_type}"
+                logger.info(f"[Scheduler] 梦境任务 {task_id} 未到执行门槛，本轮跳过")
+                return None
+            except Exception as _de:
+                logger.error(f"[Scheduler] 梦境任务 {task_id} 本地执行失败: {_de}")
+                return None
         logger.info(f"[Scheduler] 执行定时任务: {task_id} -> {prompt[:80]}")
         try:
             from src.core.engine import ConversationEngine
-            from src.core.model_manager import ModelManager
-            mm = ModelManager()
+            # ★ 2026-10-04 P1 修复：裸 ModelManager() 不带模型名 → 400「model is required」。
+            #   改用 get_mm() 单例（读 config ollama.default_model，与主聊天同源同模型）。
+            mm = get_mm()
             engine = ConversationEngine(
                 model_manager=mm,
                 conversation_id=f"sched_{task_id}"
@@ -623,7 +1143,7 @@ def health_check():
     """Docker 健康检查端点"""
     return jsonify({
         'status': 'ok',
-        'version': config.get('app', {}).get('version', '0.1.0'),
+        'version': APP_VERSION,
         'timestamp': datetime.now().isoformat()
     })
 
@@ -672,27 +1192,10 @@ def docs_guide():
 
 @app.route('/')
 def index():
-    # 首次启动引导：已移除密码要求（2026-06-17），直接进入主页面
-    pass  # 保留空白块保持缩进一致
-
-    # 服务端预检 Ollama 状态，绕过浏览器缓存问题
-    model_status_html = '<span id="modelStatus" class="model-status">⏳ 连接中...</span>'
-    try:
-        from src.core.model_manager import check_ollama
-        base_url = config.get('ollama', {}).get('base_url', 'http://localhost:11434')
-        ok, msg = check_ollama(base_url)
-        if ok:
-            current_model = config.get('ollama', {}).get('default_model', '')
-            model_status_html = f'<span id="modelStatus" class="model-status connected">🟢 已连接 · {current_model}</span>'
-        else:
-            model_status_html = '<span id="modelStatus" class="model-status disconnected">🔴 未连接</span>'
-    except Exception as _e:
-        logger.debug(f"[WebApp] 忽略错误: {_e}")
-    response = make_response(render_template('index.html', model_status_html=Markup(model_status_html), build_id=BUILD_ID))
-    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-    response.headers['Pragma'] = 'no-cache'
-    response.headers['Expires'] = '0'
-    return response
+    # ★ 2026-09-18 定版拍板：SPA 新版 8/8 迁移完成、全面体检通过，旧版主界面下线
+    #   根路径直通新版；旧版文件（templates/index.html + static/js/modules 等）暂留磁盘不删，
+    #   观察一两周无问题再清理，回滚只需还原本函数。
+    return redirect('/spa/')
 
 # ==================== Chat (SSE Stream) ====================
 
@@ -772,7 +1275,12 @@ def chat():
     collab_mode = data.get('collab_mode', None)  # None=读config.yaml, "off"/"cloud_local"/"local_dual"=强制覆盖
     web_search = data.get('web_search', False)  # 联网搜索（Bing内置+SearXNG可选）
     skip_vertical = data.get('skip_vertical', False)  # ★ 转通用模型跳过垂直路由
-    logger.info(f"[Chat] 收到原始 data: message={message[:30]!r}, query_mode={query_mode!r}, conv_id={conv_id}, collab_mode={collab_mode}, web_search={web_search}")
+    butler_mode = bool(data.get('butler'))  # ★ #1212 问管家来源：关 SkillDiscovery（「学习」等词误触发技能市场全网搜索，白耗 5-13 秒，10-25 实锤）
+    images = data.get('images') or []  # ★ 2026-09-15 A方案: 随消息图片（dataURL列表，≤4张）
+    if not isinstance(images, list):
+        images = []
+    images = [i for i in images if isinstance(i, str) and i][:4]
+    logger.info(f"[Chat] 收到原始 data: message={message[:30]!r}, query_mode={query_mode!r}, conv_id={conv_id}, collab_mode={collab_mode}, web_search={web_search}, images={len(images)}")
 
     # 记录公网访客对话次数
     sid = request.cookies.get('hv_sid', '')
@@ -783,13 +1291,14 @@ def chat():
         except Exception as _e:
             logger.debug(f"[WebApp] 忽略错误: {_e}")
 
-    if not message:
+    if not message and not images:
         return jsonify({'error': 'Empty message'}), 400
 
     # Create conversation if needed (验证ID是否存在，不存在则创建)
+    # ★ 2026-09-15: 纯图消息标题兜底（message 为空时用 [图片×N]）
     if not conv_id:
         from src.models.database import create_conversation
-        title = message[:15] + ('...' if len(message) > 15 else '')
+        title = (message or f'[图片×{len(images)}]')[:15] + ('...' if len(message) > 15 else '')
         conv_id = create_conversation(title, specialization_id=spec_id)
     else:
         # 验证 conversation_id 是否存在于数据库中
@@ -797,12 +1306,19 @@ def chat():
             from src.models.database import get_conversation, create_conversation
             existing = get_conversation(conv_id)
             if not existing:
-                title = message[:15] + ('...' if len(message) > 15 else '')
+                title = (message or f'[图片×{len(images)}]')[:15] + ('...' if len(message) > 15 else '')
                 conv_id = create_conversation(title, specialization_id=spec_id)
                 logger.info(f"[Chat] conversation_id 不存在，已创建新会话: {conv_id}")
         except Exception as _conv_err:
             logger.warning(f"[Chat] 检查会话存在性失败: {_conv_err}")
             # 不阻断流程，让 engine.send 处理可能的错误
+
+    # ★ 2026-10-10 #1052: 新请求开始前清掉该会话可能残留的停止标记
+    try:
+        from src.core.engine import clear_stop as _clear_stop
+        _clear_stop(conv_id)
+    except Exception:
+        pass
 
     # Note: user message is saved inside engine.send() to avoid duplicate
 
@@ -830,7 +1346,8 @@ def chat():
 
     # ===== 对话式技能自动发现（后台并行搜索 Resource Hub，不阻塞对话）=====
     skill_discovery_result = []
-    if not spec_prompt:  # 本地技能未命中时才触发全网搜索
+    _discovery_thread = None
+    if not spec_prompt and not butler_mode:  # 本地技能未命中时才触发全网搜索；★ #1212 问管家请求一律关断（数据查询不需要装技能）
         try:
             from src.core.skills_manager import get_skills_manager
             from src.core.skill_discovery import discover_suggestions
@@ -846,12 +1363,15 @@ def chat():
             _discovery_thread.start()
         except Exception as _e:
             logger.debug(f"[WebApp] 忽略错误: {_e}")
-
     mm = get_mm()  # Ollama ModelManager（始终初始化，作为 fallback）
 
     def generate():
         try:
             yield f"data: {json.dumps({'type': 'meta', 'conversation_id': conv_id}, ensure_ascii=False)}\n\n"
+            # ★ #1212 心跳保活：engine 首字前有 RAG/记忆注入/FC 非流式轮等多个 5-10 秒零字节间隙，
+            #   手机网络层/代理会把长时间静默的 SSE 连接掐掉（10-25 问管家 34 秒首字实锤零 text 事件）。
+            #   立刻补一条 thinking 占位字节，之后间隙由 engine 侧每轮 FC 前的 thinking 事件覆盖。
+            yield f"data: {json.dumps({'type': 'thinking', 'content': '正在思考…'}, ensure_ascii=False)}\n\n"
 
             # ===== 统一消息路径 =====
             _stream_full_text = ""
@@ -893,12 +1413,32 @@ def chat():
             if github_note:
                 final_spec = (spec_prompt or "") + github_note
 
+            # ★ #1220-B（2026-10-25）管家人格帽：管家入口（ButlerPage / 手机管家弹层）带
+            #   butler:true → 追加管家帽系统提示。复用 specialization_prompt 通道，engine 零改动。
+            #   只在 butler_mode 生效，普通聊天框不受影响（身份不冒用）。
+            if butler_mode:
+                _butler_hat = (
+                    "\n\n【管家模式】你现在以哈文管家的身份说话：\n"
+                    "- 称呼用户设置里的昵称（未设置就叫「你」），口吻像贴心的家人管家，简洁、主动、不啰嗦\n"
+                    "- 回答尽量短句直达，别写长篇大论；有行动建议就直接说\n"
+                    "- 适时利用你掌握的家庭数据（提醒/任务/面板记录）主动提醒和跟进\n"
+                    "- 用户问「有什么要紧事」时，可汇总当前议程要点\n"
+                    "- 保持哈文的基础人设不变，只是戴上管家这顶帽子"
+                )
+                final_spec = (final_spec or "") + _butler_hat
+
             from src.core.engine import ConversationEngine
             # 从 session 获取隐私模式状态
             _privacy_mode = session.get('privacy_mode', False)
             engine = ConversationEngine(mm, conv_id, specialization_prompt=final_spec, query_mode=query_mode, privacy_mode=_privacy_mode, collab_mode=collab_mode)
             engine._skip_vertical_route = skip_vertical  # ★ 转通用模型
-            for msg_type, content in engine.send(message, stream=True, query_mode=query_mode, web_search=web_search):
+            # ★ 2026-09-15 A方案: 带图消息（engine 内部自动路由看图模型）
+            # ⚠️ 修复：不能对闭包变量 message 赋值（会把 message 编译成 generate 的局部变量，
+            #    纯文字消息时未赋值 → UnboundLocalError → 所有 /api/chat 全挂 2026-09-15 开发者抓到）
+            _msg_text = message
+            if images and not _msg_text:
+                _msg_text = '请描述这张图片的内容。'
+            for msg_type, content in engine.send(_msg_text, stream=True, query_mode=query_mode, web_search=web_search, images=images):
                 if msg_type == 'text':
                     _stream_full_text += content
                 yield f"data: {json.dumps({'type': msg_type, 'content': content}, ensure_ascii=False)}\n\n"
@@ -918,15 +1458,53 @@ def chat():
             if skill_discovery_result:
                 yield f"data: {json.dumps({'type': 'suggestion', 'content': skill_discovery_result}, ensure_ascii=False)}\n\n"
 
+            # ===== ★ 2026-09-16 对话框导航（B路线）：回复末尾 [NAVIGATE:路径] → 发独立跳转事件 =====
+            # 前端收到 navigate 事件后 router.push；文本里的标记由前端在结束后剥离（老界面只剥离不跳转）
+            try:
+                import re as _re
+                _m = _re.search(r'\[NAVIGATE:([^\]\s]+)\]\s*$', _stream_full_text or '')
+                if _m:
+                    yield f"data: {json.dumps({'type': 'navigate', 'content': _m.group(1)}, ensure_ascii=False)}\n\n"
+            except Exception as _e:
+                logger.debug(f"[WebApp] 导航标记提取失败: {_e}")
+
             yield "data: [DONE]\n\n"
         except Exception as e:
             traceback.print_exc()
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)}, ensure_ascii=False)}\n\n"
+        finally:
+            # ★ 2026-10-10 #1052: 生成结束兜底清理停止标记（防残留影响下一轮）
+            try:
+                from src.core.engine import clear_stop as _cs_finally
+                _cs_finally(conv_id)
+            except Exception:
+                pass
 
     resp = Response(stream_with_context(generate()), mimetype='text/event-stream')
     resp.headers['Cache-Control'] = 'no-cache'
     resp.headers['X-Accel-Buffering'] = 'no'
     return resp
+
+
+@app.route('/api/chat/stop', methods=['POST'])
+def chat_stop():
+    """★ 2026-10-10 #1052: 停止当前会话的 AI 生成（前端点「⏹ 停止」时调用）
+
+    真停止：engine.send() 流式循环每块检查停止标记，命中立即收笔，
+    半截回复照常入库并追加「（已停止）」。
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    stop_conv_id = data.get('conversation_id')
+    if not stop_conv_id:
+        return jsonify({'ok': False, 'error': '缺少 conversation_id'}), 400
+    try:
+        from src.core.engine import request_stop as _req_stop
+        _req_stop(stop_conv_id)
+        logger.info(f"[Chat] #1052 收到停止请求: conv={stop_conv_id}")
+        return jsonify({'ok': True})
+    except Exception as e:
+        logger.error(f"[Chat] #1052 停止请求失败: {e}")
+        return jsonify({'ok': False, 'error': str(e)}), 500
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1039,6 +1617,25 @@ def chat_image():
                 break
         save_message(conv_id, 'assistant', full_text)
 
+        # ★ #912 旧图通道挂默录（2026-09-27）：此前 /api/chat/image 分析完图就用完即删，
+        #   「发图+说记账」只聊天不入档。现在把首图喂给家庭默录链（后台线程，不拖慢响应），
+        #   抽取成功自动入档 + 图存附件库挂记录——与主聊天 /api/chat 同等待遇。
+        try:
+            import base64 as _b64m
+            import threading as _thm
+            from src.core.panel_assist import maybe_home_record
+            _imgs = []
+            for p in tmp_paths:
+                try:
+                    _imgs.append(_b64m.b64encode(p.read_bytes()).decode('utf-8'))
+                except Exception:
+                    pass
+            if _imgs:
+                _thm.Thread(target=maybe_home_record,
+                            args=(conv_id, message, full_text, _imgs), daemon=True).start()
+        except Exception as _mh:
+            logger.debug(f"[ChatImage] 默录挂接跳过: {_mh}")
+
         return jsonify({'conversation_id': conv_id, 'response': full_text})
     except Exception as e:
         traceback.print_exc()
@@ -1140,8 +1737,12 @@ def chat_audio():
     if not audio_file:
         return jsonify({'error': 'No audio'}), 400
 
-    # 保存临时文件（前端已发WAV格式，无需转换）
-    tmp_path = Path(tempfile.mktemp(suffix='.wav'))
+    # 保存临时文件（★ 2026-09-23: 后缀跟随前端原始文件名——手机录音可能是 webm/mp4，不再硬编码 .wav）
+    _orig_name = (audio_file.filename or '').strip()
+    _suffix = os.path.splitext(_orig_name)[1].lower() if _orig_name else '.wav'
+    if _suffix not in ('.wav', '.webm', '.mp3', '.m4a', '.mp4', '.ogg', '.flac', '.aac', '.amr'):
+        _suffix = '.wav'
+    tmp_path = Path(tempfile.mktemp(suffix=_suffix))
     audio_file.save(str(tmp_path))
 
     # 文件安全扫描
@@ -1211,6 +1812,9 @@ def chat_audio():
 
     except Exception as e:
         traceback.print_exc()
+        # ★ #954: AMR 录音引擎解不开时给小白能看懂的提示
+        if _suffix == '.amr':
+            return jsonify({'error': '这段录音的格式（AMR）没能转成文字。可以在手机「录音机」里换一种保存格式再试，或直接打字告诉哈文。'}), 422
         return jsonify({'error': str(e)}), 500
     finally:
         tmp_path.unlink(missing_ok=True)
@@ -1324,18 +1928,23 @@ def _read_file_content(file_path, filename):
 
         # ── 旧版PowerPoint ppt（暂不支持）──
         if ext == '.ppt':
-            return '（旧版 .ppt 格式暂不支持预览，请转换为 .pptx 后上传）'
+            return '[系统注：旧版 .ppt 格式本地解析不了。请告诉用户转成 .pptx 后重新发送即可，请勿在电脑上搜索此文件。]'
 
         # ── 旧版Excel xls（需xlrd，暂不支持）──
         if ext == '.xls':
-            return '（旧版 .xls 格式暂不支持预览，请转换为 .xlsx 后上传）'
-        
+            return '[系统注：旧版 .xls 格式本地解析不了。请告诉用户转成 .xlsx 后重新发送即可，请勿在电脑上搜索此文件。]'
+
         # ── 其他格式 ──
-        return f'（暂不支持预览 {ext} 格式文件内容）'
+        return f'[系统注：「{{filename}}」的 {ext} 格式本地解析不了内容。请直接告诉用户暂不支持该格式，可转成 pdf/txt/docx 再发，请勿在电脑上搜索此文件。]'.replace('{filename}', filename)
     
     except Exception as e:
         logger.warning(f"[FileChat] 读取文件内容失败 {filename}: {e}")
-        return f'（文件内容读取失败: {e}）'
+        # ★ 2026-09-26 引导话术（定版拍板）：不再报「读取失败」结论诱发模型全盘搜文件，
+        #   改为系统注事实+出路，模型照着转述即可
+        return (f'[系统注：文件「{filename}」在本地解析不出文字内容，'
+                f'很可能是扫描版/图片型文档。请勿在电脑上搜索这个文件（它不在硬盘其他位置）。'
+                f'请直接告诉用户：这类文档建议切到外脑模式重新发送（GLM-5.3-Flash / Gemini 等'
+                f'支持直接读文件），或把内容拍照/截图发给我走看图识别。]')
 
 
 @app.route('/api/chat/file', methods=['POST'])
@@ -1423,9 +2032,64 @@ def chat_file():
 
         def generate():
             try:
+                import base64 as _b64mod
                 from src.core.engine import ConversationEngine
                 mm = get_mm()
                 engine = ConversationEngine(mm, conv_id, specialization_prompt=spec_prompt)
+
+                # ★ 2026-09-26 文件直发优先（定版拍板）：外脑模式 + 单文件 pdf/docx/pptx/xlsx
+                #   → 文件 base64 直发外脑原生读取（GLM-5.3-Flash / Gemini 能吃文件，扫描版 PDF 也能读），
+                #   失败自动降级走本地解析文本管线，不堵死路
+                _ext_hit = Path(filenames[0]).suffix.lower() if len(filenames) == 1 else ''
+                if engine._query_mode == 'direct' and _ext_hit in ('.pdf', '.docx', '.pptx', '.xlsx'):
+                    try:
+                        _ext_id = (getattr(mm, 'current_model', '') or '')
+                        if _ext_id:
+                            _mname = ''
+                            try:
+                                _mname = (mm.config.get('models', {}).get(_ext_id, {}) or {}).get('model_name', '') or ''
+                            except Exception:
+                                pass
+                            _mime_map = {
+                                '.pdf': 'application/pdf',
+                                '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                                '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                                '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                            }
+                            with open(saved_tmp_paths[0], 'rb') as _ff:
+                                _fb64 = _b64mod.b64encode(_ff.read()).decode()
+                            _q = message.strip() or f'请阅读这个文件（{filenames[0]}），总结它的主要内容。'
+                            _file_msg = [
+                                {'role': 'system', 'content': '你是哈文，本地AI助手。用户发来一个文件，请用中文、口语化地回答关于文件内容的问题。'},
+                                {'role': 'user', 'content': [
+                                    {'type': 'text', 'text': _q},
+                                    {'type': 'file', 'file': {'filename': filenames[0],
+                                                              'file_data': f'data:{_mime_map[_ext_hit]};base64,{_fb64}'}},
+                                ]},
+                            ]
+                            # ★ #1265（2026-10-29）：模型显式传参，不再临时换血 mm.current_model
+                            #   （stream=False 全程在换血窗口内消费，并发批改读到临时值实锤）
+                            _full = ''
+                            for evt in mm.generate_response(_file_msg, stream=False, model=_ext_id):
+                                _t = evt.get('type', '') if isinstance(evt, dict) else ''
+                                _c = evt.get('content', '') if isinstance(evt, dict) else ''
+                                if _t == 'text':
+                                    _full += _c
+                                elif _t == 'error':
+                                    logger.warning(f"[FileChat] 外脑直读文件报错，降级本地解析: {str(_c)[:150]}")
+                                    _full = ''
+                                    break
+                            if _full.strip():
+                                _label = f'🤖 外脑读文件 · {_mname or _ext_id}'
+                                yield f"data: {json.dumps({'type': 'model_source', 'content': {'model': _ext_id, 'label': _label, 'is_external': True, 'mode': 'file'}}, ensure_ascii=False)}\n\n"
+                                yield f"data: {json.dumps({'type': 'text', 'content': _full}, ensure_ascii=False)}\n\n"
+                                save_message(conv_id, 'assistant', _full, metadata={'source': _label})
+                                yield "data: [DONE]\n\n"
+                                return
+                            # _full 为空 → 外脑不收文件，降级到下方本地解析管线
+                    except Exception as _de:
+                        logger.warning(f"[FileChat] 文件直发外脑异常，降级本地解析: {_de}")
+
                 for msg_type, content in engine.send(combined, stream=True):
                     yield f"data: {json.dumps({'type': msg_type, 'content': content}, ensure_ascii=False)}\n\n"
                 yield "data: [DONE]\n\n"
@@ -1453,7 +2117,12 @@ def transcribe_audio():
     if not audio_file:
         return jsonify({'error': 'No audio'}), 400
 
-    tmp_path = Path(tempfile.mktemp(suffix='.wav'))
+    # ★ 2026-09-23 下午补漏: 此接口才是手机录音真正走的路——后缀跟随原始文件名（webm/mp4），不再硬编码 .wav
+    _orig_name = (audio_file.filename or '').strip()
+    _suffix = os.path.splitext(_orig_name)[1].lower() if _orig_name else '.wav'
+    if _suffix not in ('.wav', '.webm', '.mp3', '.m4a', '.mp4', '.ogg', '.flac', '.aac', '.amr'):
+        _suffix = '.wav'
+    tmp_path = Path(tempfile.mktemp(suffix=_suffix))
     audio_file.save(str(tmp_path))
 
     # 文件安全扫描
@@ -1471,11 +2140,32 @@ def transcribe_audio():
         from src.core.voice_input import get_voice_input
         vi = get_voice_input()
         text = vi.transcribe(str(tmp_path), language='zh')
+        # ★ #929-A4：暂存最近一次转写文字，供「💾 存档 / 这段话存下来」直接入库
+        try:
+            from src.core.voice_archive import stash_last_transcription
+            stash_last_transcription(text)
+        except Exception:
+            pass
         return jsonify({'text': text})
     except Exception as e:
+        err = str(e)
+        if 'faster-whisper not installed' in err or 'No module named' in err:
+            return jsonify({'error': '语音组件未安装。请在哈文对话中说"帮我安装语音输入组件"，或手动运行: python\\python.exe -m pip install faster-whisper', 'need_install': True}), 503
+        # ★ #954: AMR 等老式录音格式引擎解不开时，给小白能看懂的提示（不再裸抛堆栈英文）
+        if _suffix == '.amr':
+            return jsonify({'error': '这段录音的格式（AMR）没能转成文字。可以在手机「录音机」里换一种保存格式再试，或直接打字告诉哈文。'}), 422
         return jsonify({'error': str(e)}), 500
     finally:
         tmp_path.unlink(missing_ok=True)
+
+# ★ 2026-08-20: 语音依赖状态检测（前端录音前预检）
+@app.route('/api/voice/status', methods=['GET'])
+def voice_status():
+    try:
+        import faster_whisper  # noqa: F401
+        return jsonify({'available': True})
+    except ImportError:
+        return jsonify({'available': False, 'error': '语音组件未安装，录音功能暂不可用。可对哈文说"帮我安装语音输入组件"来安装。'})
 
 # ==================== Conversations ====================
 
@@ -1876,6 +2566,128 @@ def get_unread_count():
 
 # ==================== Knowledge Base ====================
 
+# ── ★ 2026-09-24 定版拍板：「+」菜单=发文件给哈文（不落知识库）──
+# 对话框选文件 → 后端解析成文本回给前端 → 拼进消息发给当前模型（本地/外脑都行）。
+# 与知识库上传完全无关：不入库、不建索引、不落 data/knowledge。
+_CHAT_FILE_MAX_BYTES = 30 * 1024 * 1024   # 30MB 上传上限
+_CHAT_TEXT_MAX_CHARS = 12000              # 提取文本截断（防上下文溢出，本地模型上下文有限）
+
+@app.route('/api/chat/read_file', methods=['POST'])
+def chat_read_file():
+    """解析单个文件为纯文本（供对话框「发文件给哈文」）。支持：
+    纯文本类直读（txt/md/代码/csv/json/log…utf-8/gbk 自动试）、pdf（pypdf）、docx（python-docx）。
+    返回 {'ok': True, 'text': ..., 'truncated': bool} 或 {'ok': False, 'message': ...}"""
+    try:
+        f = request.files.get('file')
+        if f is None:
+            return jsonify({'ok': False, 'message': '没有收到文件'})
+        name = f.filename or '文件'
+        suffix = Path(name).suffix.lower()
+        import tempfile as _tmp
+        tmp_path = Path(_tmp.mktemp(suffix=suffix or '.bin'))
+        try:
+            f.save(str(tmp_path))
+            if tmp_path.stat().st_size > _CHAT_FILE_MAX_BYTES:
+                return jsonify({'ok': False, 'message': f'文件超过 30MB，先拆小一点'})
+
+            text, how = '', ''
+            if suffix == '.pdf':
+                from pypdf import PdfReader
+                reader = PdfReader(str(tmp_path))
+                pages = []
+                for pg in reader.pages:
+                    try:
+                        pages.append(pg.extract_text() or '')
+                    except Exception:
+                        pages.append('')
+                text, how = '\n'.join(pages), f'pdf {len(reader.pages)} 页'
+            elif suffix == '.docx':
+                from docx import Document as _Doc
+                doc = _Doc(str(tmp_path))
+                paras = [p.text for p in doc.paragraphs if p.text.strip()]
+                for _tb in doc.tables:
+                    for _row in _tb.rows:
+                        _cells = [c.text.strip() for c in _row.cells if c.text.strip()]
+                        if _cells:
+                            paras.append(' | '.join(_cells))
+                text, how = '\n'.join(paras), 'docx'
+            else:
+                # 纯文本类直读（utf-8 优先，gbk 兜底）；doc/xls 等二进制旧格式不支持
+                raw = tmp_path.read_bytes()
+                for enc in ('utf-8', 'gb18030'):
+                    try:
+                        text, how = raw.decode(enc), f'文本({enc})'
+                        break
+                    except UnicodeDecodeError:
+                        continue
+                if not text:
+                    return jsonify({'ok': False,
+                                    'message': f'「{name}」是二进制格式，读不出文字。可以转成 txt/pdf/docx 再发，或传到知识库解析'})
+            if not text.strip():
+                # ★ 2026-09-26 引导话术：不说死路，给两条出路（外脑直读 / 拍照看图）
+                return jsonify({'ok': False,
+                                'message': f'「{name}」里没读出文字——它大概率是扫描版/图片型文档（文字被扫成了图像）。\n\n'
+                                           '两个办法：\n'
+                                           '1️⃣ 切到 🤖外脑模式 直接把文件发出去（GLM-5.3-Flash / Gemini 等能直接读文件）\n'
+                                           '2️⃣ 把内容截图/拍照发给我，走看图识别'})
+            truncated = len(text) > _CHAT_TEXT_MAX_CHARS
+            if truncated:
+                text = text[:_CHAT_TEXT_MAX_CHARS]
+            return jsonify({'ok': True, 'text': text, 'truncated': truncated, 'how': how})
+        finally:
+            tmp_path.unlink(missing_ok=True)
+    except Exception as e:
+        logger.error(f"[ChatFile] 解析文件失败: {e}", exc_info=True)
+        return jsonify({'ok': False,
+                        'message': f'「{name}」没能解析出来（{e}）。可以换个格式再试，或把关键内容截图发给我看图识别'})
+
+# ★ #1247（2026-10-27）：查询模式偏好持久化——SPA 切模式时同步写 user_preferences，
+#   引擎端 get_preference('query_mode') 兜底链路（手机拍照等不带 mode 的请求）保持一致
+@app.route('/api/prefs', methods=['GET', 'POST'])
+def api_prefs():
+    from src.models.database import get_preference, set_preference
+    if request.method == 'GET':
+        return jsonify({'success': True, 'query_mode': get_preference('query_mode', '') or ''})
+    d = request.get_json(silent=True) or {}
+    qm = str(d.get('query_mode', '')).strip()
+    if qm in ('direct', 'kb_only'):
+        set_preference('query_mode', qm)
+        logger.info(f"[Prefs] 查询模式偏好已存: {qm}")
+    return jsonify({'success': True, 'query_mode': get_preference('query_mode', '') or ''})
+
+
+# ★ #1242（2026-10-27）：知识库总开关（kb_search_enabled 偏好）——
+#   关=全链路跳过检索（本地+外脑都不查，嵌入模型也不再加载）；开=仅本地模式注入（隐私边界不动）。
+#   engine._resolve_query_mode 每消息实时刷新偏好，开关即时生效无需重启。
+@app.route('/api/kb/toggle', methods=['GET', 'POST'])
+def kb_toggle():
+    from src.models.database import get_preference, set_preference
+    if request.method == 'GET':
+        enabled = str(get_preference('kb_search_enabled', 'true')).lower() != 'false'
+        return jsonify({'success': True, 'enabled': enabled})
+    try:
+        data = request.json or {}
+        enabled = bool(data.get('enabled', True))
+        set_preference('kb_search_enabled', 'true' if enabled else 'false')
+        logger.info(f"[KnowledgeBase] 开关切换: {'开' if enabled else '关'}（即时生效）")
+        return jsonify({'success': True, 'enabled': enabled,
+                        'msg': '知识库已开启' if enabled else '知识库已关闭（检索全链路跳过，首问更快）'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+def _preload_knowledge_embedding():
+    """★ #1242 嵌入模型后台预热：bge-small 首次加载 3~5 秒原先卡在重启后第一问，
+    改为服务启动时后台加载（daemon 线程），第一问直接就绪。失败静默（检索有关键词兜底）。"""
+    try:
+        from src.core.knowledge_base import get_knowledge_base
+        kb = get_knowledge_base()
+        kb.search('预热', top_k=1)
+        logger.info("[KnowledgeBase] 嵌入模型预热完成（首问无需等待加载）")
+    except Exception as _e:
+        logger.debug(f"[KnowledgeBase] 嵌入预热跳过: {_e}")
+
+
 @app.route('/api/knowledge/upload', methods=['POST'])
 def upload_kb():
     try:
@@ -1950,6 +2762,16 @@ def upload_kb():
                 'error': result.get('error'),
                 'warning': result.get('warning'),
             })
+            # ★ #918（2026-09-27）图片上传知识库 → 自动进统一图库总账（原地登记不搬家）
+            if result.get('success') and Path(f.filename).suffix.lower() in (
+                    '.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'):
+                try:
+                    from src.core import img_store
+                    img_store.register(src_file=path, source='knowledge',
+                                       note=f'知识库图片 · {f.filename}')
+                    logger.info(f'[Knowledge] 图片已入图库: {f.filename}')
+                except Exception as _ie:
+                    logger.debug(f'[Knowledge] 图片入图库跳过: {_ie}')
         return jsonify(results)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -2022,6 +2844,27 @@ def view_kb_file(filename):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/media/knowledge/<path:filename>', methods=['GET'])
+def media_kb_file(filename):
+    """★ 2026-09-27 知识库图片直读（实测实锤：view 端点只会 read_text，jpg 必乱码）。
+    供知识库前端预览和主聊天气泡内嵌图片展示。仅放行图片扩展名，锁死 data/knowledge 目录。"""
+    from flask import send_file as _sendf
+    try:
+        kb_dir = (PROJECT_ROOT / 'data' / 'knowledge').resolve()
+        safe_path = (kb_dir / filename).resolve()
+        if not str(safe_path).startswith(str(kb_dir)):
+            return jsonify({'error': '路径越权'}), 403
+        if not safe_path.exists():
+            return jsonify({'error': '文件不存在'}), 404
+        ext = safe_path.suffix.lower()
+        _mime = {'.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+                 '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp'}.get(ext)
+        if not _mime:
+            return jsonify({'error': '仅支持图片文件预览'}), 404
+        return _sendf(safe_path, mimetype=_mime, max_age=3600)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/knowledge/delete/<path:filename>', methods=['DELETE'])
 def delete_kb_file(filename):
     """删除知识库文件"""
@@ -2036,6 +2879,487 @@ def delete_kb_file(filename):
         return jsonify({'error': '文件不存在'}), 404
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+# ════════════ ★ #916~#920 2026-09-27 统一图库 OneImg API ════════════
+
+@app.route('/api/images/list', methods=['GET'])
+def images_list():
+    """图库检索：?q=关键词 &album=相册 &source=来源 &panel_id=面板 &tag=精确标签 &trash=1回收站 &limit=N
+    ★ #1407-B：&group=组号筛选（'__none__'=只看未成组）；?groups=1 返回现有组清单"""
+    try:
+        from src.core import img_store
+        # ★ #1407-B 组清单模式：?groups=1 → 列现有组（不混图）
+        if request.args.get('groups') == '1':
+            return jsonify({'success': True, 'groups': img_store.group_list()})
+        items = img_store.search(
+            q=request.args.get('q', '').strip(),
+            album=request.args.get('album', '').strip(),
+            source=request.args.get('source', '').strip(),
+            panel_id=request.args.get('panel_id', '').strip(),
+            tag=request.args.get('tag', '').strip(),
+            trash=request.args.get('trash') == '1',
+            group_id=request.args.get('group', '').strip(),
+            limit=min(int(request.args.get('limit', 200)), 500))
+        return jsonify({'success': True, 'images': items, 'total': len(items)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ★ #1491（2026-11-12）记忆相册按人翻回忆：人物清单 / 按人筛图 / 全量扫描
+@app.route('/api/images/face/people', methods=['GET'])
+def images_face_people():
+    try:
+        from src.core import img_store
+        return jsonify({'success': True, 'people': img_store.face_people()})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e), 'people': []}), 500
+
+
+@app.route('/api/images/face/people/<name>', methods=['GET'])
+def images_face_person(name):
+    try:
+        from src.core import img_store
+        items = img_store.list_by_person(name.strip()[:30])
+        return jsonify({'success': True, 'images': items, 'total': len(items)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/images/face/scan', methods=['POST', 'GET'])
+def images_face_scan():
+    try:
+        from src.core import img_store
+        if request.method == 'POST':
+            ok, msg = img_store.face_scan_async()
+            return jsonify({'success': ok, 'message': msg})
+        return jsonify({'success': True, **img_store.face_scan_status()})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ★ #1377（2026-11-02 定版拍板 A+B+C）账单相册 → 账单模块分析
+# A 手动按钮：后台线程分析（视觉调用多张会慢，不拖 HTTP），结果进管家中心待确认
+@app.route('/api/images/bills/analyze', methods=['POST'])
+def images_bills_analyze():
+    try:
+        from src.core.bills_scan import scan_bills_async
+        ok, msg = scan_bills_async(source='manual')
+        return jsonify({'success': ok, 'message': msg})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# B 提示行数据源：账单相册还有几张没分析过（前端工具栏常驻提示）
+@app.route('/api/images/bills/status', methods=['GET'])
+def images_bills_status():
+    try:
+        from src.core import img_store
+        return jsonify({'success': True, 'pending': len(img_store.unprocessed_bills(limit=500))})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ★ #1379（2026-11-02）误识别黑名单管理：GET 列表 / POST 加词 / DELETE 移除
+#   词是用户在手机对话明说「以后别识别 X」进来的；这里供设置页查看/清除
+@app.route('/api/assist/blocklist', methods=['GET', 'POST', 'DELETE'])
+def assist_blocklist():
+    try:
+        from src.core import panel_assist as pa
+        if request.method == 'GET':
+            return jsonify({'success': True, 'words': pa.get_receipt_blocklist()})
+        d = request.get_json(silent=True) or {}
+        word = (d.get('word') or '').strip()
+        if not word:
+            return jsonify({'success': False, 'error': 'word 不能为空'}), 400
+        if request.method == 'POST':
+            added = pa.add_receipt_blocklist(word)
+            return jsonify({'success': True, 'added': added})
+        ok = pa.remove_receipt_blocklist(word)
+        return jsonify({'success': ok, 'error': '' if ok else '词不在黑名单里'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ★ #1003（2026-10-05）标签管理：GET 全库标签聚合 / POST 改名合并
+@app.route('/api/images/tags', methods=['GET', 'POST'])
+def images_tags():
+    try:
+        from src.core import img_store
+        if request.method == 'POST':
+            d = request.get_json(silent=True) or {}
+            changed = img_store.rename_tag(d.get('old', ''), d.get('new', ''))
+            if changed < 0:
+                return jsonify({'success': False, 'error': '新旧标签名都得填'}), 400
+            return jsonify({'success': True, 'changed': changed})
+        return jsonify({'success': True, 'tags': img_store.list_tags()})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ★ #1003 批量操作：{action: delete/restore/purge/album/tag/untag, ids: [...], album?, tags?}
+@app.route('/api/images/batch', methods=['POST'])
+def images_batch():
+    try:
+        from src.core import img_store
+        d = request.get_json(silent=True) or {}
+        ok, total = img_store.batch(d.get('action', ''), d.get('ids') or [],
+                                    album=d.get('album', ''), tags=d.get('tags', ''))
+        return jsonify({'success': ok > 0, 'ok': ok, 'total': total})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ★ #1003 回收站恢复
+@app.route('/api/images/<int:img_id>/restore', methods=['POST'])
+def images_restore(img_id):
+    try:
+        from src.core import img_store
+        return jsonify({'success': img_store.restore(img_id)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/images/albums', methods=['GET', 'POST'])
+def images_albums():
+    try:
+        from src.core import img_store
+        if request.method == 'POST':
+            d = request.get_json(silent=True) or {}
+            ok = img_store.add_album(d.get('name', ''))
+            return jsonify({'success': ok})
+        return jsonify({'success': True, 'albums': img_store.list_albums()})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# ★ #930-B6（2026-09-30）批量分类汇报：相册分布 + 待打标 + 建议入面板清单
+@app.route('/api/images/report', methods=['GET'])
+def images_report():
+    try:
+        from src.core import img_store
+        albums = img_store.list_album_names()   # ★ #1409 字符串形状（原被同名覆盖实锤，改名后显式调用）
+        recent = img_store.search(limit=500)
+        by_album, untagged, no_panel = {}, [], []
+        _PANEL_HINT = {'记账': '记账本', '票据': '记账本', '小票': '记账本',
+                       '食物': '冰箱管家', '冰箱': '冰箱管家', '菜': '冰箱管家',
+                       '物品': '物品存放', '书房': '物品存放', '玩具': '物品存放',
+                       '孩子': '孩子成长档案', '作业': '孩子成长档案', '错题': '孩子成长档案',
+                       '车': '车辆保养', '宠物': '宠物档案', '药': '老人用药',
+                       '证件': '证件保单', '保单': '证件保单'}
+        for it in recent:
+            a = it.get('album') or '未分类'
+            by_album[a] = by_album.get(a, 0) + 1
+            _tags = it.get('tags')
+            tags_str = ' '.join(_tags) if isinstance(_tags, list) else (_tags or '')
+            if not tags_str.strip():
+                untagged.append({'id': it.get('id'), 'thumb_url': it.get('thumb_url'), 'note': it.get('note', '')})
+            if not (it.get('panel_id') or '').strip():
+                hint = next((v for k, v in _PANEL_HINT.items()
+                             if k in tags_str + (it.get('note') or '') + a), None)
+                if hint:
+                    no_panel.append({'id': it.get('id'), 'thumb_url': it.get('thumb_url'),
+                                     'album': a, 'suggest_panel': hint})
+        return jsonify({'success': True,
+                        'total': len(recent), 'albums': albums, 'by_album': by_album,
+                        'untagged_count': len(untagged),
+                        'untagged': untagged[:12],
+                        'suggest_panel': no_panel[:12]})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/images/upload', methods=['POST'])
+def images_upload():
+    """图库直传：multipart 文件 file 或 JSON {image_b64, note, album, panel_id}"""
+    try:
+        from src.core import img_store
+        note = request.form.get('note', '') if request.files else (request.get_json(silent=True) or {}).get('note', '')
+        album = request.form.get('album', '') if request.files else (request.get_json(silent=True) or {}).get('album', '')
+        panel_id = request.form.get('panel_id', '') if request.files else (request.get_json(silent=True) or {}).get('panel_id', '')
+        if request.files and 'file' in request.files:
+            raw = request.files['file'].read()
+        else:
+            b64 = (request.get_json(silent=True) or {}).get('image_b64', '')
+            if not b64:
+                return jsonify({'success': False, 'error': '没有图片'}), 400
+            if ',' in b64 and b64.strip().startswith('data:'):
+                b64 = b64.split(',', 1)[1]
+            import base64 as _b64
+            raw = _b64.b64decode(b64)
+        r = img_store.register(image_data=raw, source=request.form.get('source', 'upload')
+                               if request.files else 'upload',
+                               album=album or None, note=note, panel_id=panel_id)
+        if not r:
+            return jsonify({'success': False, 'error': '登记失败'}), 500
+        return jsonify({'success': True, **r})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/images/<int:img_id>', methods=['POST', 'DELETE'])
+def images_update(img_id):
+    """改相册/标签/描述/面板关联（POST）或删除（DELETE）"""
+    try:
+        from src.core import img_store
+        if request.method == 'DELETE':
+            # ★ #1003 默认软删进回收站；?hard=1 才彻底删除（连库仓文件一起删）
+            hard = request.args.get('hard') == '1'
+            return jsonify({'success': img_store.remove(img_id, hard=hard)})
+        d = request.get_json(silent=True) or {}
+        if 'album' in d:
+            img_store.set_album(img_id, d['album'])
+        if 'note' in d:
+            img_store.set_note(img_id, d['note'])
+        if 'tags' in d:
+            img_store.set_tags(img_id, d['tags'])
+        if 'panel_id' in d:
+            img_store.link_panel(img_id, d['panel_id'], d.get('record_id'))
+        if 'group_id' in d:
+            img_store.set_group(img_id, d.get('group_id'))  # ★ #1407-B 照片组
+        return jsonify({'success': True, 'image': img_store.get(img_id)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/images/<int:img_id>/retag', methods=['POST'])
+def images_retag(img_id):
+    """minicpm-v 本地视觉打标签（手动按钮 + 后台补标共用）"""
+    try:
+        from src.core import img_store
+        tags, model, err = img_store.retag(img_id)
+        if err:
+            return jsonify({'success': False, 'error': err}), 200
+        return jsonify({'success': True, 'tags': tags, 'model': model})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/images/file/<int:img_id>', methods=['GET'])
+def images_file(img_id):
+    """图库文件直读（thumb=1 优先缩略图）。库仓图/原地登记图统一出口。"""
+    from flask import send_file as _sendf
+    try:
+        from src.core import img_store
+        p = img_store.get_file(img_id, thumb=request.args.get('thumb') == '1')
+        if not p:
+            return jsonify({'error': '图片不存在'}), 404
+        _mime = {'.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+                 '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp'}.get(p.suffix.lower())
+        if not _mime:
+            return jsonify({'error': '非图片文件'}), 404
+        return _sendf(p, mimetype=_mime, max_age=3600)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ════════════ ★ #925 T4 2026-09-29 记忆相册：AI 说话 + 修图（一期本地 PIL / 二期 SD img2img） ════════════
+
+@app.route('/api/images/<int:img_id>/edit', methods=['POST'])
+def images_edit_local(img_id):
+    """本地修图（PIL 零费用秒出）：{action, params:{strength,angle,box,color,width}, replace}
+    ★ #994 replace=true 时结果覆盖原文件（面板/相册引用不变自动生效），不另存新图"""
+    try:
+        from src.core import img_store
+        d = request.get_json(silent=True) or {}
+        new_id, url, err = img_store.edit_local(img_id, d.get('action', ''), d.get('params') or {},
+                                                replace=bool(d.get('replace')))
+        if err:
+            return jsonify({'success': False, 'error': err}), 200
+        return jsonify({'success': True, 'id': new_id, 'url': url})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/images/<int:img_id>/replace', methods=['POST'])
+def images_replace(img_id):
+    """★ #994 换图：上传新图覆盖原文件（登记行/相册/标签/面板关联全保留）{image_b64}"""
+    try:
+        from src.core import img_store
+        d = request.get_json(silent=True) or {}
+        b64 = (d.get('image_b64') or '').strip()
+        if not b64:
+            return jsonify({'success': False, 'error': '没收到新图'}), 400
+        ok, err = img_store.replace_with_upload(img_id, b64)
+        if not ok:
+            return jsonify({'success': False, 'error': err}), 200
+        return jsonify({'success': True, 'url': f'/api/images/file/{img_id}'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/images/genstatus', methods=['GET'])
+def images_genstatus():
+    """生成式修图可用性：探测 Stable Diffusion WebUI 是否在跑"""
+    try:
+        cfg = config.get('image_gen', {})
+        sd_url = cfg.get('stable_diffusion_url', 'http://127.0.0.1:7860')
+        import requests as _rq
+        # ★ 本地服务绝不过系统代理（实锤坑：代理劫持 127.0.0.1 请求导致误判/连不上）
+        _rq.get(f'{sd_url}/sdapi/v1/options', timeout=3, proxies={'http': None, 'https': None})
+        return jsonify({'success': True, 'available': True, 'backend': 'sd'})
+    except Exception:
+        return jsonify({'success': True, 'available': False,
+                        'msg': '生成式修图需要先启动 Stable Diffusion（画画引擎）。基础修图（滤镜/调亮/裁剪/相框）不受影响，都是免费的。'})
+
+@app.route('/api/images/<int:img_id>/gen_edit', methods=['POST'])
+def images_gen_edit(img_id):
+    """生成式修图（SD WebUI img2img）：{prompt, strength(0~1 重绘幅度 默认0.4)}。
+    依赖 SD WebUI 已启动；没启动则诚实报错（不回落不装死）。"""
+    try:
+        from src.core import img_store
+        d = request.get_json(silent=True) or {}
+        prompt = (d.get('prompt') or '').strip()
+        if not prompt:
+            return jsonify({'success': False, 'error': '请描述想改成什么样，比如「改成水彩画风格」'}), 400
+        src = img_store.get_file(img_id)
+        if not src:
+            return jsonify({'success': False, 'error': '图片不存在'}), 404
+        cfg = config.get('image_gen', {})
+        sd_url = cfg.get('stable_diffusion_url', 'http://127.0.0.1:7860')
+        import base64 as _b64, requests as _rq
+        from PIL import Image as _PIL, ImageOps as _Ops
+        import io as _io
+        img = _PIL.open(src).convert('RGB')
+        img.thumbnail((768, 768))  # 控制显存与耗时
+        buf = _io.BytesIO()
+        img.save(buf, 'PNG')
+        init_b64 = _b64.b64encode(buf.getvalue()).decode('ascii')
+        strength = max(0.05, min(0.95, float(d.get('strength', 0.4) or 0.4)))
+        resp = _rq.post(f'{sd_url}/sdapi/v1/img2img', json={
+            'init_images': [init_b64],
+            'prompt': prompt,
+            'negative_prompt': 'lowres, bad anatomy, watermark',
+            'steps': 20, 'cfg_scale': 7.0,
+            'denoising_strength': strength,
+            'width': img.size[0], 'height': img.size[1],
+        }, timeout=300, proxies={'http': None, 'https': None})
+        resp.raise_for_status()
+        out = resp.json().get('images') or []
+        if not out:
+            return jsonify({'success': False, 'error': '画画引擎返回了空结果'}), 200
+        raw = _b64.b64decode(out[0].split(',', 1)[-1])
+        cur = img_store.get(img_id) or {}
+        r = img_store.register(image_data=raw, source='edited',
+                               album=cur.get('album') or None,
+                               note=f"{(cur.get('note') or '图片')[:70]}（AI 修图：{prompt[:30]}）",
+                               auto_tag=False)
+        if not r:
+            return jsonify({'success': False, 'error': '结果登记失败'}), 500
+        logger.info(f'[ImageGenEdit] #{img_id} AI 修图 -> #{r["id"]} prompt={prompt[:40]}')
+        return jsonify({'success': True, 'id': r['id'], 'url': r['url']})
+    except Exception as e:
+        return jsonify({'success': False,
+                        'error': f'生成式修图失败：{e}。请确认 Stable Diffusion 已启动；基础修图（滤镜/调亮等）不受影响。'}), 200
+
+@app.route('/api/images/<int:img_id>/describe', methods=['POST'])
+def images_describe(img_id):
+    """AI 看图说话（minicpm-v 本地零费用）：{style: story/poem/kid/desc}"""
+    try:
+        from src.core import img_store
+        d = request.get_json(silent=True) or {}
+        text, model, err = img_store.describe(img_id, d.get('style', 'story'))
+        if err or not text:
+            return jsonify({'success': False, 'error': err or '视觉模型没有返回'}), 200
+        return jsonify({'success': True, 'text': text.strip(), 'model': model})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# ════════════ ★ 2026-09-19 (#797) 知识蒸馏 API — 三道门：资格→用户点头→审核入库 ════════════
+
+@app.route('/api/knowledge/distill/settings', methods=['GET', 'POST'])
+def distill_settings_api():
+    try:
+        from src.core import distiller
+        if request.method == 'GET':
+            return jsonify(distiller.get_distill_settings())
+        data = request.get_json(silent=True) or {}
+        key = data.get('key', '')
+        value = distiller.set_distill_setting(key, data.get('value', ''))
+        return jsonify({'success': True, 'key': key, 'value': value})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+@app.route('/api/knowledge/distill/categories', methods=['GET', 'POST', 'DELETE'])
+def distill_categories_api():
+    """全局分类目录（省 token 第二支柱）"""
+    try:
+        from src.core import distiller
+        if request.method == 'GET':
+            return jsonify({'categories': distiller.list_categories()})
+        data = request.get_json(silent=True) or {}
+        if request.method == 'POST':
+            cat = distiller.create_category(data.get('name', ''))
+            return jsonify({'success': True, 'category': cat})
+        distiller.delete_category(int(data.get('id', 0)))
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+@app.route('/api/knowledge/distill/sources', methods=['GET'])
+def distill_sources_api():
+    """门1 预检：可蒸馏资料列表（含资格检查结果与任务状态）"""
+    try:
+        from src.core import distiller
+        return jsonify({'sources': distiller.list_sources(),
+                        'settings': distiller.get_distill_settings(),
+                        'categories': distiller.list_categories()})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/knowledge/distill/start', methods=['POST'])
+def distill_start_api():
+    """门2 — 用户点头：明确选择资料与引擎（local/cloud）后启动"""
+    try:
+        from src.core import distiller
+        data = request.get_json(silent=True) or {}
+        source = data.get('source', '')
+        engine = data.get('engine', 'local')
+        resume = bool(data.get('resume', False))
+        job_id = distiller.start_job(source, engine=engine,
+                                     category_id=data.get('category_id', 0),
+                                     resume=resume)
+        return jsonify({'success': True, 'job_id': job_id})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+@app.route('/api/knowledge/distill/jobs', methods=['GET'])
+def distill_jobs_api():
+    try:
+        from src.core import distiller
+        return jsonify({'jobs': distiller.list_jobs()})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/knowledge/distill/jobs/<int:job_id>', methods=['GET', 'DELETE'])
+def distill_job_api(job_id):
+    try:
+        from src.core import distiller
+        if request.method == 'DELETE':
+            distiller.delete_job(job_id)
+            return jsonify({'success': True})
+        with distiller._conn() as c:
+            row = c.execute("SELECT * FROM kb_distill_jobs WHERE id=?", (job_id,)).fetchone()
+        if not row:
+            return jsonify({'error': '任务不存在'}), 404
+        job = dict(row)
+        # 运行中追加实时进度
+        if job['status'] == 'running' and job['total_chunks']:
+            job['progress'] = round(job['done_chunks'] / job['total_chunks'] * 100)
+        return jsonify(job)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/knowledge/distill/jobs/<int:job_id>/items', methods=['GET'])
+def distill_items_api(job_id):
+    """门3 — 蒸馏产物预览（待审）"""
+    try:
+        from src.core import distiller
+        pending_only = request.args.get('all', '') != '1'
+        return jsonify({'items': distiller.job_items(job_id, pending_only=pending_only)})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/knowledge/distill/jobs/<int:job_id>/approve', methods=['POST'])
+def distill_approve_api(job_id):
+    """门3 — 审核提交：approve 入库（双层存储，来源标注），reject 丢弃"""
+    try:
+        from src.core import distiller
+        data = request.get_json(silent=True) or {}
+        added = distiller.approve_items(job_id, data.get('approve', []), data.get('reject', []))
+        return jsonify({'success': True, 'added': added})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
 
 # ==================== System Agent ====================
 
@@ -2079,16 +3403,357 @@ def agent_approve():
 
 # ==================== Tasks ====================
 
+@app.route('/api/knowledge/list', methods=['GET'])
+def api_knowledge_list():
+    """★ #1159（2026-10-17）服务抽屉知识库直读（手机本地轻页用）：faiss meta 清单摘要"""
+    try:
+        import json as _json_kb
+        from pathlib import Path as _P
+        meta_p = _P(__file__).resolve().parent / 'data' / 'faiss' / 'knowledge_meta.json'
+        if not meta_p.exists():
+            return jsonify({'total': 0, 'items': []})
+        meta = _json_kb.load(open(meta_p, encoding='utf-8'))
+        items = []
+        for m in (meta if isinstance(meta, list) else list(meta.values()))[:8]:
+            items.append({'id': m.get('id', ''), 'text': str(m.get('text', '')).strip()[:48],
+                          'src': str(m.get('source', '') or m.get('file', '') or '')[:30]})
+        return jsonify({'total': len(meta) if hasattr(meta, '__len__') else len(items), 'items': items})
+    except Exception:
+        return jsonify({'total': 0, 'items': []})
+
+
+# ★ 2026-10-20 第二批 2.1: 权限中心路由
+@app.route('/api/permissions', methods=['GET'])
+def api_permissions_get():
+    try:
+        from src.core.permission_center import export_ui
+        return jsonify(export_ui())
+    except Exception as e:
+        return jsonify({'error': str(e), 'perms': [], 'net': []}), 500
+
+@app.route('/api/permissions', methods=['POST'])
+def api_permissions_set():
+    try:
+        from src.core.permission_center import set_setting
+        data = request.get_json(silent=True) or {}
+        key = data.get('key', '')
+        value = data.get('value')
+        ok, effective, msg = set_setting(key, value)
+        return jsonify({'ok': ok, 'value': effective, 'message': msg})
+    except Exception as e:
+        return jsonify({'ok': False, 'message': str(e)}), 500
+
+
+# ★ 2026-10-20 第二批 2.2: Goals 目标管理路由
+@app.route('/api/goals', methods=['GET'])
+def api_goals_list():
+    try:
+        from src.core.goal_manager import list_goals, summary_card
+        status = request.args.get('status') or None
+        panel_id = request.args.get('panel_id') or None
+        goals = [summary_card(g) for g in list_goals(status=status, panel_id=panel_id)]
+        return jsonify({'total': len(goals), 'goals': goals})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'total': 0, 'goals': [], 'error': str(e)}), 500
+
+
+# ★ 2026-10-20 面板内下任务：生成 structured_tasks 带「面板:xx」来源标签，进任务中枢统一列表
+@app.route('/api/panel_tasks', methods=['POST'])
+def api_panel_task_create():
+    try:
+        from src.core.task_manager import get_task_manager
+        from datetime import datetime as _dt
+        data = request.get_json(silent=True) or {}
+        title = (data.get('title') or '').strip()
+        panel_id = (data.get('panel_id') or '').strip()
+        if not title or not panel_id:
+            return jsonify({'ok': False, 'message': '缺少 title 或 panel_id'}), 400
+        tm = get_task_manager()
+        tags = [f'面板:{panel_id}']
+        due = (data.get('due') or '').strip()
+        task_id = tm.create_task(conversation_id='', title=title,  # ★ conversation_id NOT NULL：面板任务无会话传空串
+                                 description=data.get('description', ''),
+                                 priority=int(data.get('priority', 2) or 2),
+                                 tags=tags, due_date=due)
+        return jsonify({'ok': True, 'id': task_id, 'tag': tags[0]})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'ok': False, 'message': str(e)}), 500
+
+@app.route('/api/goals', methods=['POST'])
+def api_goals_create():
+    """body: {title, nodes:[{name,due,metric,target}], panel_id?, token_spent?}"""
+    try:
+        from src.core.goal_manager import create_goal, get_goal, summary_card
+        data = request.get_json(silent=True) or {}
+        title = (data.get('title') or '').strip()
+        nodes = data.get('nodes') or []
+        if not title or not nodes:
+            return jsonify({'ok': False, 'message': '缺少 title 或 nodes'}), 400
+        gid = create_goal(title, nodes, panel_id=data.get('panel_id', ''),
+                          token_spent=int(data.get('token_spent', 0) or 0))
+        return jsonify({'ok': True, 'id': gid, 'goal': summary_card(get_goal(gid))})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'ok': False, 'message': str(e)}), 500
+
+@app.route('/api/goals/<int:gid>', methods=['GET'])
+def api_goals_detail(gid):
+    """详情：全节点+每节点硬指标实时值（本地毫秒级）"""
+    try:
+        from src.core.goal_manager import get_goal, query_metric
+        g = get_goal(gid)
+        if not g:
+            return jsonify({'error': 'not found'}), 404
+        nodes = []
+        for i, n in enumerate(g.get('plan') or []):
+            done, target, metric = query_metric(gid, i)
+            nodes.append({**n, 'metric_now': done, 'metric_target': target, 'metric_type': metric})
+        return jsonify({'id': g['id'], 'title': g['title'], 'status': g['status'],
+                        'panel_id': g.get('panel_id', ''), 'token_spent': g.get('token_spent', 0),
+                        'created_at': g.get('created_at', ''), 'nodes': nodes})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/goals/<int:gid>/action', methods=['POST'])
+def api_goals_action(gid):
+    """操作：body {action: node_done|node_missed|defer|lower|pause|resume|abandon|delete,
+                   node_idx?, new_due?, new_target?}"""
+    try:
+        from src.core.goal_manager import (update_goal, delete_goal, set_node_status,
+                                           defer_node, lower_target, get_goal, summary_card)
+        data = request.get_json(silent=True) or {}
+        act = data.get('action', '')
+        nidx = int(data.get('node_idx', -1))
+        if act == 'node_done':
+            g = set_node_status(gid, nidx, 'done')
+        elif act == 'node_missed':
+            g = set_node_status(gid, nidx, 'missed')
+        elif act == 'defer':
+            g = defer_node(gid, nidx, data.get('new_due') or '')
+        elif act == 'lower':
+            g = lower_target(gid, nidx, data.get('new_target') or 1)
+        elif act == 'pause':
+            g = update_goal(gid, status='paused')
+        elif act == 'resume':
+            g = update_goal(gid, status='active')
+        elif act == 'abandon':
+            g = update_goal(gid, status='abandoned')
+        elif act == 'delete':
+            delete_goal(gid)
+            return jsonify({'ok': True, 'deleted': True})
+        else:
+            return jsonify({'ok': False, 'message': f'未知操作: {act}'}), 400
+        # 全节点收尾→目标完成
+        if g and g.get('plan') and all(n.get('status') == 'done' for n in g['plan']):
+            g = update_goal(gid, status='done')
+        return jsonify({'ok': True, 'goal': summary_card(g) if g else None})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'ok': False, 'message': str(e)}), 500
+
+
+# ★ 2026-10-20 第二批 2.3: 网页比价一期路由
+@app.route('/api/price_compare', methods=['POST'])
+def api_price_compare():
+    """body: {query: '北京周末酒店'} — 参谋不做代购：对比表+deep link，永不自动下单"""
+    try:
+        from src.core.price_compare import parse_query, compare
+        from src.core.permission_center import check_web
+        ok, msg = check_web('browse_compare')
+        if not ok:
+            return jsonify({'ok': False, 'message': msg, 'need_permission': True})
+        data = request.get_json(silent=True) or {}
+        parsed = parse_query(data.get('query') or '')
+        result = compare(parsed['kw'], parsed['kind'])
+        result['ok'] = True
+        return jsonify(result)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'ok': False, 'message': str(e)}), 500
+
+
+@app.route('/api/goals/parse', methods=['POST'])
+def api_goals_parse():
+    """AI 拆解：愿望→节点列表（外脑一次性 ~3k token，拆解只跑一次）"""
+    try:
+        data = request.get_json(silent=True) or {}
+        wish = (data.get('wish') or '').strip()
+        if not wish:
+            return jsonify({'nodes': [], 'message': '缺少愿望'}), 400
+        from src.core.multi_model_manager import get_multi_model_manager
+        mm = get_multi_model_manager()
+        prompt = (
+            "你是目标拆解助手。把用户的愿望拆成 2~5 个带截止日的节点。"
+            "只输出 JSON 数组，不要任何其他文字，格式："
+            '[{"name":"节点名(10字内)","due":"YYYY-MM-DD","metric":"manual|task_done|record_count","target":1}]。'
+            "metric 选 manual(手动确认) 或 task_done(关联任务) 或 record_count(面板记录数)；target=目标数量。\n"
+            f"今天 {__import__('datetime').datetime.now().strftime('%Y-%m-%d')}。愿望：{wish}"
+        )
+        nodes, spent = [], 3000
+        try:
+            gen = mm.generate_response([{'role': 'user', 'content': prompt}], stream=False)
+            text = ''
+            for ch in gen:
+                if isinstance(ch, dict) and ch.get('type') in ('text', 'content'):
+                    text += ch.get('content', '')
+            import re as _re
+            m = _re.search(r'\[.*\]', text, _re.S)
+            if m:
+                nodes = json.loads(m.group(0))
+                if not isinstance(nodes, list):
+                    nodes = []
+            nodes = [n for n in nodes if isinstance(n, dict) and n.get('name')][:5]
+        except Exception as _pe:
+            traceback.print_exc()
+            nodes = []
+        return jsonify({'nodes': nodes, 'token_spent': spent if nodes else 0,
+                        'ok': bool(nodes), 'message': '' if nodes else '拆解失败，可用下方草稿手动改'})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'nodes': [], 'ok': False, 'message': str(e)}), 500
+
+
+# ★ 2026-10-20 第四批4.3: 视频问答 L2 —— 抽帧→视觉模型直读（哨兵+大脑理念的 L2 步）
+@app.route('/api/video/ask', methods=['POST'])
+def api_video_ask():
+    """body: {video_b64: base64, question: '这是啥情况', frames?: N(1-8)}
+    ffmpeg 抽关键帧 → _camp_vision 多图问答（跟随看图路由偏好，含 HarvenEye 层）
+    """
+    try:
+        import base64, tempfile, subprocess, os as _os
+        data = request.get_json(silent=True) or {}
+        vb64 = data.get('video_b64') or ''
+        question = (data.get('question') or '这段视频里发生了什么？').strip()[:300]
+        n_frames = max(1, min(8, int(data.get('frames', 4) or 4)))
+        if not vb64:
+            return jsonify({'ok': False, 'error': '缺少视频数据'}), 400
+        # 落临时文件
+        tmp_dir = tempfile.mkdtemp(prefix='hv_video_')
+        vpath = _os.path.join(tmp_dir, 'in.mp4')
+        with open(vpath, 'wb') as f:
+            f.write(base64.b64decode(vb64))
+        # ffmpeg 抽帧（等间隔）
+        frame_paths = []
+        for i in range(n_frames):
+            ts = (i + 0.5) / n_frames
+            fp = _os.path.join(tmp_dir, f'f{i}.jpg')
+            r = subprocess.run(['ffmpeg', '-y', '-ss', f'{ts:.2f}', '-i', vpath,
+                                '-frames:v', '1', '-q:v', '4', fp],
+                               capture_output=True, timeout=30)
+            if r.returncode == 0 and _os.path.exists(fp):
+                frame_paths.append(fp)
+        if not frame_paths:
+            return jsonify({'ok': False, 'error': '抽帧失败（需 ffmpeg，或视频格式不支持）'}), 500
+        # 组多图 base64 → _camp_vision
+        imgs = []
+        for fp in frame_paths:
+            with open(fp, 'rb') as f:
+                imgs.append(base64.b64encode(f.read()).decode('ascii'))
+        from src.core.panel_assist import _camp_vision
+        text, model, err = _camp_vision(question, imgs, timeout=180)
+        # 清理
+        try:
+            import shutil as _sh
+            _sh.rmtree(tmp_dir, ignore_errors=True)
+        except Exception:
+            pass
+        if err and not text:
+            return jsonify({'ok': False, 'error': err})
+        return jsonify({'ok': True, 'answer': text, 'model': model, 'frames': len(imgs)})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+# ★ 2026-10-20 第五批5.1: 面板包导出/导入（规范 v1 + 三道闸）
+@app.route('/api/panel_packs/export', methods=['POST'])
+def api_panel_pack_export():
+    try:
+        from src.core.panel_package import export_pack
+        data = request.get_json(silent=True) or {}
+        result = export_pack(data.get('panel_id', ''), include_resources=bool(data.get('include_resources', True)))
+        return jsonify(result)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/panel_packs/import', methods=['POST'])
+def api_panel_pack_import():
+    try:
+        from src.core.panel_package import import_pack
+        data = request.get_json(silent=True) or {}
+        result = import_pack(data.get('pack_path', ''), auto_perms=data.get('auto_perms'))
+        return jsonify(result)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ★ 2026-10-20 第三批3.2 补实装：工作台「即将到来」——三源合一（任务due/随身记提醒/目标节点）
+@app.route('/api/home/upcoming', methods=['GET'])
+def api_home_upcoming():
+    days = int(request.args.get('days', 7) or 7)
+    out = []
+    try:
+        from datetime import datetime, timedelta
+        today = datetime.now().strftime('%Y-%m-%d')
+        horizon = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d')
+        # ① 任务 due
+        from src.core.task_manager import get_task_manager
+        for t in get_task_manager().get_tasks(limit=200):
+            due = str(t.get('due_date') or '')[:10]
+            if due and today <= due <= horizon and t.get('status') != 'completed':
+                out.append({'type': 'task', 'date': due, 'title': t.get('title', ''), 'id': t.get('id')})
+        # ② 随身记提醒
+        try:
+            with __import__('sqlite3').connect(__import__('src.models.database', fromlist=['DEFAULT_DB_PATH']).DEFAULT_DB_PATH) as c:
+                rows = c.execute("SELECT id, title, remind_at FROM home_reminders WHERE notified=0 AND substr(remind_at,1,10)>=? AND substr(remind_at,1,10)<=?",
+                                 (today, horizon)).fetchall()
+                for r in rows:
+                    out.append({'type': 'reminder', 'date': str(r[2])[:10], 'title': r[1], 'id': r[0]})
+        except Exception:
+            pass
+        # ③ 目标节点
+        from src.core.goal_manager import due_nodes
+        for n in due_nodes(days_ahead=days):
+            out.append({'type': 'goal', 'date': n['due'], 'title': f"{n['goal_title']} · {n['node_name']}", 'id': n['goal_id']})
+        # ④ 家人生日
+        try:
+            from src.core.panel_manager import get_panel_manager
+            for b in get_panel_manager().upcoming_birthdays(days):
+                d = (datetime.now() + timedelta(days=b['days_until'])).strftime('%Y-%m-%d')
+                out.append({'type': 'birthday', 'date': d,
+                            'title': f"{b.get('relation','')}{b['name']} 的生日", 'id': b['id']})
+        except Exception:
+            pass
+    except Exception as e:
+        traceback.print_exc()
+    out.sort(key=lambda x: x['date'])
+    return jsonify({'total': len(out), 'items': out[:12]})
+
+
 @app.route('/api/tasks', methods=['GET'])
 def list_tasks():
     try:
         from src.core.task_manager import get_task_manager
         tm = get_task_manager()
         tasks = tm.get_tasks(limit=50)
+        # ★ 2026-10-20 第三批3.1: 目标标签 join（goal_id → 🎯目标名）
+        goal_titles = {}
+        try:
+            from src.core.goal_manager import list_goals as _lg
+            for _g in _lg(limit=200):
+                goal_titles[_g['id']] = _g['title']
+        except Exception:
+            pass
         # 转换前端需要的字段
         result = []
         for t in tasks:
             status = t.get('status', 'pending')
+            gid = t.get('goal_id')
             result.append({
                 'id': t['id'],
                 'title': t.get('title', ''),
@@ -2097,6 +3762,8 @@ def list_tasks():
                 'priority': {1: 'low', 2: 'medium', 3: 'high', 4: 'urgent'}.get(t.get('priority', 2), 'medium'),
                 'progress': t.get('progress', 0),
                 'created_at': t.get('created_at', ''),
+                'goal_id': gid,
+                'goal_title': ('🎯 ' + goal_titles[gid]) if (gid and gid in goal_titles) else '',
             })
         return jsonify(result)
     except Exception as e:
@@ -2260,6 +3927,45 @@ def save_user_settings():
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/custom_keywords', methods=['GET', 'POST'])
+def custom_keywords_api():
+    """★ #1509（2026-11-13）用户自定义口令：config.yaml custom_keywords 段读写。
+    每条：{trigger: 命中词, reply: 回复文本(可选), open: 打开路径(可选), remind: bool(可选)}
+    只追加不覆盖内置词表；引擎 60s 缓存，保存即热生效。"""
+    global config
+    if request.method == 'GET':
+        items = config.get('custom_keywords') or []
+        return jsonify({'success': True, 'items': items})
+    data = request.get_json(silent=True) or {}
+    items = data.get('items')
+    if not isinstance(items, list):
+        return jsonify({'success': False, 'error': 'items 必须是列表'}), 400
+    clean = []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        trig = str(it.get('trigger') or '').strip()
+        if not trig:
+            continue
+        entry = {'trigger': trig[:30]}
+        reply = str(it.get('reply') or '').strip()
+        openth = str(it.get('open') or '').strip()
+        if reply:
+            entry['reply'] = reply[:300]
+        if openth:
+            entry['open'] = openth[:260]
+        if it.get('remind'):
+            entry['remind'] = True
+        if len(entry) > 1:
+            clean.append(entry)
+    config['custom_keywords'] = clean
+    try:
+        with open(PROJECT_ROOT / 'config.yaml', 'w', encoding='utf-8') as f:
+            yaml.dump(dict(config), f, allow_unicode=True, default_flow_style=False)
+        return jsonify({'success': True, 'items': clean})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/settings/model', methods=['POST'])
 def save_model_settings():
@@ -2532,7 +4238,10 @@ def ollama_models():
         r = requests.get(f"{base_url}/api/tags", timeout=5)
         data = r.json() if r.status_code == 200 else {}
         models = data.get('models', []) if isinstance(data, dict) else []
-        return jsonify([m['name'] for m in models])
+        # ★ #1324（2026-10-30）：hv-pin-* 是钉选 GGUF 的 Ollama 注册件（内容寻址内部名，
+        #   钉选链路自动管理），不该出现在用户手动选择列表里造成困惑
+        return jsonify([m['name'] for m in models
+                        if not str(m.get('name', '')).startswith('hv-pin-')])
     except Exception as e:
         logger.error(f"[API] Ollama 模型列表获取失败: {e}")
         return jsonify([])
@@ -2565,6 +4274,8 @@ def ollama_switch():
         mm = get_mm()
         mm.set_model(model)
         config.setdefault('ollama', {})['default_model'] = model
+        # ★ 2026-09-24 反杀修复：三处镜像同步，旧镜像一并写
+        config.setdefault('backends', {}).setdefault('local', {})['default_model'] = model
         with open(PROJECT_ROOT / 'config.yaml', 'w', encoding='utf-8') as f:
             yaml.dump(dict(config), f, allow_unicode=True, default_flow_style=False)
         return jsonify({'ok': True})
@@ -2605,10 +4316,16 @@ def ollama_pull():
                 json={"name": model, "stream": True},
                 stream=True, timeout=1800
             )
+            # ★ 2026-09-13 修复：Ollama 返回错误 chunk（模型名不存在等）时，
+            #   旧代码只认 'completed'/'success' 字段，错误被吞、误标为 done 假成功
+            if r.status_code != 200:
+                raise RuntimeError(f"Ollama 服务返回 HTTP {r.status_code}")
             for line in r.iter_lines():
                 if line:
                     try:
                         chunk = json.loads(line)
+                        if chunk.get('error'):
+                            raise RuntimeError(str(chunk['error']))
                         if 'completed' in chunk:
                             pct = chunk.get('completed', 0) / max(chunk.get('total', 1), 1)
                             app._pull_tasks[model]['progress'] = min(int(pct * 100), 99)
@@ -2653,6 +4370,9 @@ def ollama_delete_model(model_name):
         if r.status_code == 200:
             if config.get('ollama', {}).get('default_model') == model_name:
                 config['ollama']['default_model'] = ''
+                # ★ 2026-09-24 反杀修复：旧镜像同步清空
+                if 'backends' in config and 'local' in config.get('backends', {}):
+                    config['backends']['local']['default_model'] = ''
                 try:
                     with open(PROJECT_ROOT / 'config.yaml', 'w', encoding='utf-8') as f:
                         yaml.dump(dict(config), f, allow_unicode=True, default_flow_style=False)
@@ -2727,12 +4447,33 @@ def models_check():
 def models_local_all():
     """统一本地模型列表：Ollama + data/models/ + HuggingFace缓存"""
     models = []
+    # 0. ★ #1238 HarvenEye（混合模型引擎）——门禁：Eye 在线且模型已装才显示（开发者铁律：
+    #    模型未装不可出现在本地列表）；排在最前，失败静默不阻塞后两个源
+    try:
+        from src.core import eye_client
+        _eye = eye_client.models_ready()
+        if _eye.get('ready'):
+            _em = _eye.get('model', '')
+            # ★ #1324：展示名人读化（hv-pin-<哈希> → 如 qwen3-vl-8b-q6k）
+            try:
+                from src.core import vision_link as _vl_h
+                _em_show = _vl_h.human_label_for(_em)
+            except Exception:
+                _em_show = _em
+            models.append({'name': f'HarvenEye（{_em_show}）', 'source': 'HarvenEye',
+                           'size_gb': None, 'type': 'llm', 'icon': '👁️',
+                           'id': 'harveneye',
+                           'desc': '本地混合模型引擎 · 视觉+对话 · 零费用零上传'})
+    except Exception as _e: logger.debug(f'[WebApp] HarvenEye 门禁探测跳过: {_e}')
     # 1. Ollama
     try:
         from requests import get as rget
         r = rget('http://localhost:11434/api/tags', timeout=5)
         if r.status_code == 200:
             for m in r.json().get('models', []):
+                # ★ #1324：hv-pin-* 注册件不进用户模型列表（钉选链路自动管理）
+                if str(m.get('name', '')).startswith('hv-pin-'):
+                    continue
                 models.append({'name': m['name'], 'source': 'Ollama', 'size_gb': round(m['size']/1e9,1), 'type': 'llm', 'icon': '🦙', 'id': 'ollama:'+m['name']})
     except Exception as _e: logger.debug(f'[WebApp] 忽略: {_e}')
     # 2. data/models/
@@ -2805,6 +4546,69 @@ def models_quickpick():
     return jsonify({'items':items,'current':cur})
 
 
+def _apply_local_model(model_id):
+    """★ 2026-10-24 方案A 分槽记忆的公共持久化链（set-current 与 switch-mode 共用）：
+    yaml.current_model + by_mode.local 槽 + last_query_mode + ollama/backends 双镜像 +
+    json.current_model/mm 单例同步（互踩根治）+ 重置本地引擎单例 + 后台预热。"""
+    config['current_model'] = model_id
+    try:
+        _slots = config.setdefault('current_model_by_mode', {})
+        _slots['local'] = model_id
+        config['last_query_mode'] = 'local'
+    except Exception as _e:
+        logger.debug(f"[Models] 分槽记忆写入失败: {_e}")
+    # ★ R2 2026-09-23 模型四把钥匙收敛：本地聊天真正读 ollama.default_model
+    _actual = model_id
+    for _prefix in ('ollama:', 'local:'):
+        if _actual.startswith(_prefix):
+            _actual = _actual[len(_prefix):]
+    if model_id.startswith(('ollama:', 'local:')):
+        config.setdefault('ollama', {})['default_model'] = _actual
+        # ★ 2026-09-24 反杀修复：补写第三处镜像 backends.local（此前只写两处，旧镜像残留导致重启反杀）
+        config.setdefault('backends', {}).setdefault('local', {})['default_model'] = _actual
+    # ★ 2026-10-24 补另一半同步（互踩根治）：此前本地选择只写 yaml 不碰 mm 的 json——
+    #   引擎重启后按 json.current_model 判定模式（还是旧外脑）→ 与模型中心显示对不上。
+    try:
+        from src.core.multi_model_manager import get_multi_model_manager
+        _mmm = get_multi_model_manager()
+        _mmm.current_model = model_id
+        _mmm.config['current_model'] = model_id
+        _mmm._save_config()
+    except Exception as _e:
+        logger.warning(f"[Models] 同步 json.current_model 失败（重启后模式判定可能不准）: {_e}")
+    global _mm
+    try:
+        config.save()
+        # ★ R2: 重置本地引擎单例，get_mm() 下次重建即用新模型
+        with _mm_lock:
+            _mm = None
+        # ★ R4 2026-09-23 显存换班后台化：预热放后台线程，接口立即返回
+        # ★ #1238: HarvenEye 不走 Ollama 预热（Eye 服务自己管模型加载，探门禁即可）
+        if model_id != 'harveneye':
+            actual_name = _actual
+            import threading as _th
+            def _warmup(name):
+                try:
+                    import requests as _rq
+                    _rq.post(f'http://localhost:11434/api/generate',
+                             json={'model': name, 'prompt': '', 'stream': False, 'keep_alive': -1},
+                             timeout=120)
+                    logger.info(f"[Models] 模型已后台加载完成: {name}")
+                except Exception:
+                    logger.debug(f"[Models] 模型后台加载失败（将在首次对话时加载）: {name}")
+            _th.Thread(target=_warmup, args=(actual_name,), daemon=True,
+                       name=f'model-warmup-{actual_name}').start()
+        else:
+            try:
+                from src.core.model_manager import ModelManager as _MMCls
+                _mm2 = get_mm()
+                _mm2.warmup()
+            except Exception as _we:
+                logger.debug(f"[Models] HarvenEye warmup 跳过: {_we}")
+    except Exception as e:
+        logger.warning(f"[Models] 持久化 current_model 失败: {e}")
+
+
 @app.route('/api/models/set-current', methods=['POST'])
 def models_set_current():
     """设为当前对话模型"""
@@ -2823,27 +4627,669 @@ def models_set_current():
         if kw in _id_lower:
             return jsonify({'success': False, 'error': f'「{model_id}」是垂直模型，不能设为当前通用模型。请在模型配置里选择。'}), 400
 
-    config['current_model'] = model_id
-    try:
-        # 持久化到 config.yaml
-        config.save()
-        # ★ 立即加载模型（warmup）
-        actual_name = model_id
-        for prefix in ('ollama:', 'local:'):
-            if actual_name.startswith(prefix):
-                actual_name = actual_name[len(prefix):]
-        try:
-            import requests as _rq
-            _rq.post(f'http://localhost:11434/api/generate',
-                     json={'model': actual_name, 'prompt': '', 'stream': False, 'keep_alive': -1},
-                     timeout=10)
-            logger.info(f"[Models] 模型已切换并加载: {actual_name}")
-        except Exception:
-            logger.debug(f"[Models] 模型加载尝失败（将在首次对话时加载）: {actual_name}")
-    except Exception as e:
-        logger.warning(f"[Models] 持久化 current_model 失败: {e}")
-    
+    _apply_local_model(model_id)
     return jsonify({'success': True, 'current': model_id})
+
+
+@app.route('/api/models/eye-ready', methods=['GET'])
+def models_eye_ready():
+    """★ #1238 HarvenEye 门禁查询（前端模型卡状态灯用）。Eye 离线/模型未装 → ready=false。"""
+    try:
+        from src.core import eye_client
+        r = eye_client.models_ready()
+        return jsonify({'success': True, **r})
+    except Exception as e:
+        return jsonify({'success': False, 'ready': False, 'error': str(e)})
+
+
+# ★ #1276（2026-10-29 v1.3 融合）视觉模型选型三件套——理解槽（批改/看图/问图）的大脑选择。
+#   铁律 0：用户钉谁用谁；清空=回退「当前外脑带 vision 位 > 配置默认」。
+@app.route('/api/vision/models', methods=['GET'])
+def vision_models_list():
+    """视觉模型可选清单：外脑（带 vision 能力位）+ 本地已落位的 GGUF。"""
+    try:
+        from src.core.multi_model_manager import PROVIDERS, get_multi_model_manager
+        from src.core import vision_link
+        cloud = []
+        try:
+            mm = get_multi_model_manager()
+            enabled = mm.config.get('models', {}) or {}
+            for pid, info in (PROVIDERS or {}).items():
+                if not info.get('vision') or pid in ('ollama', 'harveneye'):
+                    continue   # ★ ollama 是本地后端不是外脑，不能进 api 通道候选
+                cloud.append({'id': pid, 'name': info.get('name', pid), 'kind': 'api',
+                              'enabled': bool((enabled.get(pid) or {}).get('enabled'))})
+        except Exception:
+            pass
+        local = []
+        for m in vision_link.list_local_vision_models():
+            local.append({'id': m['id'], 'name': m['name'], 'kind': 'local',
+                          'size_gb': m.get('size_gb'), 'ready': m.get('ready')})
+        pinned = (vision_link._load_mm().get('vision_model') or '').strip()
+        return jsonify({'success': True, 'cloud': cloud, 'local': local,
+                        'pinned': pinned})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/vision/models/pin', methods=['POST'])
+def vision_models_pin():
+    """钉选视觉模型（vision_model 字段）。body: {model_id: 'zhipu' | 'local:vision/<名>' | ''}。
+    空串=清除钉选（回退当前外脑/默认通道）。钉选后即时重建理解引擎，无需重启。"""
+    try:
+        from src.core.multi_model_manager import PROVIDERS
+        from src.core import vision_link
+        data = request.get_json(silent=True) or {}
+        model_id = str(data.get('model_id', '')).strip()
+        if model_id in ('ollama', 'harveneye', ''):
+            if not model_id:
+                mm = vision_link._load_mm()
+                mm.pop('vision_model', None)
+                vision_link._mm_json.write_text(
+                    json.dumps(mm, ensure_ascii=False, indent=2), encoding='utf-8')
+                vision_link.rebuild_pipeline()
+                return jsonify({'success': True, 'pinned': ''})
+            return jsonify({'success': False,
+                            'error': f'「{model_id}」是本地后端，不是可钉选的 api 视觉模型；'
+                                     '本地视觉模型请用 local:vision/<名字> 形式'}), 400
+        if model_id and not model_id.startswith('local:vision/'):
+            if model_id not in (PROVIDERS or {}) or not (PROVIDERS.get(model_id) or {}).get('vision'):
+                return jsonify({'success': False,
+                                'error': f'「{model_id}」不是可用的视觉模型（无看图能力或不存在）'}), 400
+        mmf = vision_link._mm_json
+        mm = vision_link._load_mm()
+        if model_id:
+            mm['vision_model'] = model_id
+        else:
+            mm.pop('vision_model', None)
+        mmf.write_text(json.dumps(mm, ensure_ascii=False, indent=2), encoding='utf-8')
+        vision_link.rebuild_pipeline()   # 换引擎实例，即时生效
+        logger.info(f"[Vision] 视觉模型钉选: {model_id or '(清除)'}")
+        return jsonify({'success': True, 'pinned': model_id})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/vision/import', methods=['POST'])
+def vision_model_import():
+    """★ #1276 模型管家（v1.3 节点⑤）：把用户下载好的视觉模型文件导入哈文。
+    body: {name: 'qwen3-vl-8b', gguf_path: '...', mmproj_path: '...'}
+    校验存在性/后缀 → 归位 data/models/vision/<name>/ → 立即可选（扫描器自动发现）。
+    同名目录已存在且齐备 → 幂等返回成功（重复导入无害）。"""
+    try:
+        import shutil
+        from src.core import vision_link
+        data = request.get_json(silent=True) or {}
+        name = str(data.get('name', '')).strip()
+        gguf_path = str(data.get('gguf_path', '')).strip().strip('"')
+        mmproj_path = str(data.get('mmproj_path', '')).strip().strip('"')
+        if not name or '/' in name or '\\' in name or name in ('.', '..'):
+            return jsonify({'success': False, 'error': '名字不合法（不能带路径分隔符）'}), 400
+        for label, p in (('主模型', gguf_path), ('视觉投影', mmproj_path)):
+            if not p or not Path(p).exists():
+                return jsonify({'success': False, 'error': f'{label}文件不存在: {p or "(空)"}'}), 400
+        if not gguf_path.lower().endswith('.gguf') or not mmproj_path.lower().endswith('.gguf'):
+            return jsonify({'success': False,
+                            'error': '只认 GGUF 格式（主模型 + mmproj 两个 .gguf 文件）；'
+                                     '其他格式请先转换或从魔搭/HuggingFace 下载 GGUF 版'}), 400
+        dest = vision_link._VISION_MODELS_DIR / name
+        dest.mkdir(parents=True, exist_ok=True)
+        # 归位（跨盘 move 自动降级 copy+delete；同名文件已一致则跳过）
+        import hashlib
+        def _md5(p, buf=1 << 20):
+            h = hashlib.md5()
+            with open(p, 'rb') as f:
+                while True:
+                    b = f.read(buf)
+                    if not b:
+                        break
+                    h.update(b)
+            return h.hexdigest()
+        moved = []
+        for src in (gguf_path, mmproj_path):
+            s, d = Path(src), dest / s.name
+            if d.exists() and d.stat().st_size == s.stat().st_size and _md5(d) == _md5(s):
+                moved.append({'file': s.name, 'action': '已就位'})
+                continue
+            shutil.move(str(s), str(d))
+            moved.append({'file': s.name, 'action': '已导入'})
+        # 校验配对齐备
+        ggufs = list(dest.glob('*.gguf'))
+        mmproj = list(dest.glob('*mmproj*.gguf'))
+        main = [g for g in ggufs if g not in mmproj]
+        ready = bool(main and mmproj)
+        size_gb = round(sum(g.stat().st_size for g in ggufs) / 1024**3, 2)
+        logger.info(f"[Vision] 模型导入: {name} ready={ready} ({size_gb}GB)")
+        return jsonify({'success': True, 'name': name, 'ready': ready,
+                        'size_gb': size_gb, 'files': moved,
+                        'note': '' if ready else '目录内还缺主模型或 mmproj 文件，配对齐备后自动可用'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/vision/models/remove', methods=['POST'])
+def vision_model_remove():
+    """删除已导入的本地视觉模型目录（body: {name: '...'}）。回收站不可用则直接删，
+    删除前校验目录确在视觉模型真家内，防误删任意路径。"""
+    try:
+        import shutil
+        from src.core import vision_link
+        data = request.get_json(silent=True) or {}
+        name = str(data.get('name', '')).strip()
+        if not name or '/' in name or '\\' in name or name in ('.', '..'):
+            return jsonify({'success': False, 'error': '名字不合法'}), 400
+        dest = (vision_link._VISION_MODELS_DIR / name).resolve()
+        base = vision_link._VISION_MODELS_DIR.resolve()
+        if base not in dest.parents:
+            return jsonify({'success': False, 'error': '目标不在视觉模型目录内，拒绝删除'}), 400
+        if not dest.exists():
+            return jsonify({'success': False, 'error': f'模型目录不存在: {name}'}), 404
+        shutil.rmtree(dest)
+        from src.core import vision_link as _vl
+        _vl.rebuild_pipeline()
+        logger.info(f"[Vision] 模型已删除: {name}")
+        return jsonify({'success': True, 'removed': name})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ★ #1278（2026-10-29 v1.3 节点④）视觉引擎安装面板后端：底座（yolox+clip）一键下载
+@app.route('/api/vision/engine/status', methods=['GET'])
+def vision_engine_status():
+    """底座引擎文件就绪状态 + 安装进度（面板状态卡用）。"""
+    try:
+        from src.vision import installer
+        return jsonify({'success': True, **installer.engine_status(),
+                        'progress': installer.progress()})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/vision/engine/install', methods=['POST'])
+def vision_engine_install():
+    """一键安装底座引擎（yolox+clip ~757MB）。幂等：已就位跳过、已在跑返回进度。"""
+    try:
+        from src.vision import installer
+        r = installer.install_engine_async()
+        return jsonify({'success': True, **r})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/vision/models/download', methods=['POST'])
+def vision_model_download():
+    """★ ⑤ 模型管家·在线下载：用户给 url(+可选 sha256/filename) → 哈文后台下载
+    落位 data/models/vision/<name>/，完成即进本地清单可选。哈文不内置不代选任何模型。"""
+    try:
+        from src.vision import installer
+        data = request.get_json(silent=True) or {}
+        r = installer.download_model_async(str(data.get('name', '')),
+                                           data.get('files') or [])
+        return jsonify({'success': bool(r.get('started', False)), **r})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/vision/models/download/progress', methods=['GET'])
+def vision_model_download_progress():
+    """下载进度轮询（与底座安装共用一个进度态）。"""
+    try:
+        from src.vision import installer
+        return jsonify({'success': True, **installer.progress()})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ══ ★ #1470 人脸识别 API（2026-11-12，批次四）═════════════════════
+# 隐私红线：向量只存本地 face.db；删除级联；一键清除；默认关闭。
+
+@app.route('/api/face/status', methods=['GET'])
+def face_status():
+    """人脸功能总状态（设置页/状态卡用）。"""
+    try:
+        from src.vision import face_store, installer
+        return jsonify({'success': True,
+                        'enabled': face_store.is_enabled(),
+                        'threshold': face_store.get_threshold(),
+                        'tier': face_store.get_tier(),
+                        'models': installer.face_models_status(),
+                        'members': len(face_store.list_members()),
+                        'embeddings': face_store.count_embeddings(),
+                        'download_progress': installer.progress()})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/face/settings', methods=['POST'])
+def face_settings():
+    """开关/阈值/档位。开启时模型缺失自动后台下载（37MB，SHA256 校验）。"""
+    try:
+        from src.vision import face_store, installer
+        data = request.get_json(silent=True) or {}
+        if 'threshold' in data:
+            th = float(data['threshold'])
+            if not 0.2 <= th <= 0.9:
+                return jsonify({'success': False, 'error': '阈值须在 0.2~0.9 之间'}), 400
+            face_store.set_setting('threshold', str(th))
+        if 'tier' in data:
+            tier = str(data['tier'])
+            if tier not in ('lite', 'pro'):
+                return jsonify({'success': False, 'error': '档位只支持 lite/pro'}), 400
+            face_store.set_setting('tier', tier)
+        if 'enabled' in data:
+            enabled = bool(data['enabled'])
+            face_store.set_setting('enabled', '1' if enabled else '0')
+            dl = None
+            if enabled and not installer.face_models_status()['ready']:
+                dl = installer.install_face_async()
+            return jsonify({'success': True, 'enabled': enabled, 'model_download': dl})
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/face/members', methods=['GET'])
+def face_members_list():
+    try:
+        from src.vision import face_store
+        return jsonify({'success': True, 'members': face_store.list_members()})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/face/members', methods=['POST'])
+def face_members_create():
+    """建档成员（录入向量走 /enroll）。"""
+    try:
+        from src.vision import face_store
+        data = request.get_json(silent=True) or {}
+        name = str(data.get('name', '')).strip()
+        if not name:
+            return jsonify({'success': False, 'error': '名字不能为空'}), 400
+        pid = face_store.add_member(name, str(data.get('relation', '')),
+                                    str(data.get('note', '')))
+        return jsonify({'success': True, 'person_id': pid})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/face/members/<int:pid>', methods=['DELETE'])
+def face_members_delete(pid):
+    """删成员=级联删全部向量（隐私硬要求）。"""
+    try:
+        from src.vision import face_store
+        r = face_store.delete_member(pid)
+        if not r.get('ok'):
+            return jsonify({'success': False, 'error': r.get('error', '删除失败')}), 404
+        _face_invalidate_cache()
+        return jsonify({'success': True, **r})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/face/members/<int:pid>/enroll', methods=['POST'])
+def face_members_enroll(pid):
+    """录入：photo_ids（图片库 id，建议 3~5 张不同角度）→ 抽向量 → 剔离群帧 → 入库。
+    返回每人脸数/入库数；识别验证走 /api/face/identify。"""
+    try:
+        from src.vision import face_store
+        from src.vision.engines.face_engine import FaceEngine
+        from src.core import img_store
+        if not face_store.get_member(pid):
+            return jsonify({'success': False, 'error': '成员不存在，先建档'}), 404
+        data = request.get_json(silent=True) or {}
+        photo_ids = data.get('photo_ids') or []
+        if not isinstance(photo_ids, list) or not photo_ids:
+            return jsonify({'success': False, 'error': 'photo_ids 不能为空'}), 400
+        if not FaceEngine.models_ready():
+            return jsonify({'success': False,
+                            'error': '人脸模型还没下载（开启功能时会自动下载，稍候重试）'}), 409
+
+        engine = FaceEngine()
+        engine.load()
+        tier = face_store.get_tier()
+        kept, kept_src, skipped = [], [], []
+        for raw_id in photo_ids[:8]:                      # 上限 8 张（3~5 建议）
+            try:
+                photo_id = int(raw_id)
+            except (TypeError, ValueError):
+                continue
+            item = img_store.get(photo_id)
+            path = (item or {}).get('path', '')
+            if not path or not os.path.exists(path):
+                skipped.append({'photo_id': photo_id, 'reason': '图片不存在'})
+                continue
+            r = engine.embed_photo(path)
+            if r.get('ok'):
+                kept.append(r['vector']); kept_src.append(photo_id)
+            else:
+                skipped.append({'photo_id': photo_id, 'reason': r.get('error', '')})
+
+        if not kept:
+            return jsonify({'success': False,
+                            'error': '这些照片里都没找到人脸（换正面清晰照再试）',
+                            'skipped': skipped}), 400
+
+        # 离群帧剔除：>=3 帧时，与均值向量夹角过大的剔除（防糊脸/认错人拉低库质量）
+        removed = 0
+        if len(kept) >= 3:
+            import numpy as np
+            mat = np.stack(kept)
+            mean = mat.mean(axis=0)
+            mean = mean / (np.linalg.norm(mean) + 1e-9)
+            sims = mat @ mean / (np.linalg.norm(mat, axis=1) + 1e-9)
+            keep_mask = sims >= 0.5
+            if keep_mask.sum() >= 2:                      # 至少保 2 帧
+                removed = int((~keep_mask).sum())
+                kept = [v for v, k in zip(kept, keep_mask) if k]
+                kept_src = [s for s, k in zip(kept_src, keep_mask) if k]
+
+        n = face_store.add_embeddings(pid, kept, tier, kept_src)
+        _face_invalidate_cache()
+        member = face_store.get_member(pid)
+        return jsonify({'success': True, 'person_id': pid, 'name': member['name'],
+                        'enrolled': n, 'outliers_removed': removed,
+                        'skipped': skipped, 'tier': tier,
+                        'total_embeddings': face_store.count_embeddings(pid)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/face/check_photos', methods=['POST'])
+def face_check_photos():
+    """★ 2026-11-12 图片库录入口「当场质检」：勾选即检，不合格当场标红不返工。
+    body: {photo_ids:[...]} → results: {photo_id: {grade: ok|warn|bad, reason, face_count}}"""
+    try:
+        from src.vision.engines.face_engine import FaceEngine
+        from src.core import img_store
+        if not FaceEngine.models_ready():
+            return jsonify({'success': False, 'error': '人脸模型还没下载（先到视觉引擎页开启人脸识别）'}), 409
+        data = request.get_json(silent=True) or {}
+        ids = (data.get('photo_ids') or [])[:12]
+        if not ids:
+            return jsonify({'success': False, 'error': 'photo_ids 不能为空'}), 400
+        engine = FaceEngine()
+        engine.load()
+        results = {}
+        for raw in ids:
+            try:
+                pid = int(raw)
+            except (TypeError, ValueError):
+                continue
+            item = img_store.get(pid)
+            path = (item or {}).get('path', '')
+            if not path or not os.path.exists(path):
+                results[str(pid)] = {'grade': 'bad', 'reason': '图片不存在'}
+                continue
+            try:
+                results[str(pid)] = engine.check_photo(path)
+            except Exception as ce:
+                results[str(pid)] = {'grade': 'bad', 'reason': f'检测失败: {ce}'}
+        return jsonify({'success': True, 'results': results})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/face/identify', methods=['POST'])
+def face_identify():
+    """识别测试/现场验证：photo_id → 找脸认人（含访客判定）。"""
+    try:
+        from src.vision.engines.face_engine import FaceEngine
+        from src.core import img_store
+        data = request.get_json(silent=True) or {}
+        item = img_store.get(int(data.get('photo_id', 0)))
+        path = (item or {}).get('path', '')
+        if not path or not os.path.exists(path):
+            return jsonify({'success': False, 'error': '图片不存在'}), 404
+        if not FaceEngine.models_ready():
+            return jsonify({'success': False, 'error': '人脸模型未就位'}), 409
+        engine = FaceEngine()
+        if not engine.loaded:
+            engine.load()
+        r = engine.infer(path)
+        return jsonify({'success': True, 'result': r.to_dict(),
+                        'faces': r.data.get('faces', []),
+                        'matched_names': r.data.get('matched_names', [])})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/face/wipe', methods=['POST'])
+def face_wipe():
+    """⚠️ 一键彻底清除所有人脸数据（生物特征零残留）。需 confirm=WIPE。"""
+    try:
+        from src.vision import face_store
+        data = request.get_json(silent=True) or {}
+        if str(data.get('confirm', '')) != 'WIPE':
+            return jsonify({'success': False,
+                            'error': '请传 confirm="WIPE" 确认（此操作不可恢复）'}), 400
+        r = face_store.wipe_all()
+        _face_invalidate_cache()
+        return jsonify({'success': True, **r})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/face/audit', methods=['GET'])
+def face_audit():
+    """生物特征操作留痕（注册/删除/清除可追溯）。"""
+    try:
+        from src.vision import face_store
+        return jsonify({'success': True, 'log': face_store.audit_log()})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+def _face_invalidate_cache():
+    """管线内人脸引擎向量缓存失效（录入/删除/清除后调用）。"""
+    try:
+        from src.core import vision_link
+        pipe = vision_link.get_pipeline()
+        fe = getattr(pipe, '_face_engine', None)
+        if fe is not None:
+            fe.invalidate_cache()
+    except Exception:
+        pass
+
+
+# ══════════ 能力五件套（2026-11-12）：OCR识字 / 扫码 / 车牌 / 活体 / 语义搜图 ══════════
+
+@app.route('/api/vision/capabilities', methods=['GET'])
+def vision_capabilities():
+    """能力卡状态总览（视觉引擎页「🧰 视觉能力」区用）。"""
+    try:
+        from src.vision.engines import ocr_engine, lpr_engine, alive_engine
+        from src.vision import photosearch
+        return jsonify({'success': True,
+                        'ocr': ocr_engine.available(),
+                        'qr': True,
+                        'lpr': lpr_engine.available(),
+                        'alive': alive_engine.models_ready(),
+                        'semsearch': photosearch.status()})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/vision/capability/<cap>', methods=['POST'])
+def vision_capability_run(cap):
+    """对单张图跑指定能力。body: {photo_id}。"""
+    try:
+        from src.core import img_store
+        data = request.get_json(silent=True) or {}
+        item = img_store.get(int(data.get('photo_id', 0)))
+        path = (item or {}).get('path', '')
+        if not path or not os.path.exists(path):
+            return jsonify({'success': False, 'error': '图片不存在'}), 404
+        if cap == 'ocr':
+            from src.vision.engines import ocr_engine
+            return jsonify({'success': True, 'result': ocr_engine.infer(path)})
+        if cap == 'qr':
+            from src.vision.engines import qr_engine
+            return jsonify({'success': True, 'result': qr_engine.infer(path)})
+        if cap == 'lpr':
+            from src.vision.engines import lpr_engine
+            return jsonify({'success': True, 'result': lpr_engine.infer(path)})
+        if cap == 'alive':
+            from src.vision.engines import alive_engine
+            return jsonify({'success': True, 'result': alive_engine.infer(path)})
+        return jsonify({'success': False, 'error': '未知能力'}), 404
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/photos/semsearch', methods=['GET'])
+def photos_semsearch():
+    """能力②：一句话搜照片。?q=老谭在海边&limit=40"""
+    try:
+        from src.vision import photosearch
+        q = (request.args.get('q') or '').strip()
+        if not q:
+            return jsonify({'success': False, 'error': '缺 q'}), 400
+        limit = min(int(request.args.get('limit', 40)), 100)
+        items = photosearch.search(q, limit=limit)
+        return jsonify({'success': True, 'items': items, 'count': len(items)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/photos/semindex', methods=['GET', 'POST'])
+def photos_semindex():
+    """能力②：语义索引状态查询(GET) / 启动后台建索引(POST)。"""
+    try:
+        from src.vision import photosearch
+        if request.method == 'POST':
+            return jsonify({'success': True, **photosearch.index_all()})
+        return jsonify({'success': True, **photosearch.status()})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/vision/tasks', methods=['GET'])
+def vision_tasks_list():
+    """★ ⑨ 队列通道任务清单（管家/面板用）。?status=pending 过滤。"""
+    try:
+        from src.vision import tasks
+        return jsonify({'success': True,
+                        'tasks': tasks.list_tasks(status=str(request.args.get('status', '')))})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/vision/tasks/enqueue', methods=['POST'])
+def vision_tasks_enqueue():
+    """手动入队深识任务 {image_path 或 img_id, kind, note}。幂等。"""
+    try:
+        from src.vision import tasks
+        d = request.get_json(silent=True) or {}
+        tid = tasks.enqueue(str(d.get('image_path', '')), kind=str(d.get('kind', 'general')),
+                            note=str(d.get('note', '')), img_id=str(d.get('img_id', '')))
+        tasks.ensure_loop()
+        return jsonify({'success': True, 'task_id': tid,
+                        'queued': bool(tid)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+def _platform_info():
+    """★ 节点⑧ 跨平台动力信息（检测只建议不代装）。失败返回极简兜底。"""
+    try:
+        from src.vision.platform import detect
+        return detect()
+    except Exception:
+        return {"os": "unknown", "backend": "cpu", "wheel_hint": ""}
+
+
+@app.route('/api/vision/status', methods=['GET'])
+def vision_status():
+    """视觉子系统状态总览（面板用）：通道/引擎/本地模型/组件齐备情况。"""
+    try:
+        from src.core import vision_link
+        from src.vision import config as vcfg
+        ch = vision_link.resolve_understand_channel()
+        u = vcfg.ENGINES.get('understand', {})
+        try:
+            import llama_cpp  # noqa: F401
+            _llamacpp = True
+        except ImportError:
+            _llamacpp = False
+        return jsonify({'success': True,
+                        'resolved': ch,
+                        'configured_provider': u.get('provider', 'ollama'),
+                        'llama_cpp_installed': _llamacpp,
+                        'local_models': vision_link.list_local_vision_models(),
+                        'platform': _platform_info()})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/models/switch-mode', methods=['POST'])
+def models_switch_mode():
+    """★ 2026-10-24 方案A 分槽记忆：前端切 🏠本地/🤖外脑 胶囊时调用——
+    自动换回该模式上次选的模型（各槽各记，互不覆盖）；重启后恢复最后用的模式+对应模型。
+    槽为空时惰性迁移：local=当前 current_model（若是本地）、cloud=collab_foreign_model。"""
+    data = request.get_json(silent=True) or {}
+    mode = str(data.get('mode', '')).strip().lower()
+    if mode not in ('local', 'cloud'):
+        return jsonify({'success': False, 'error': 'mode 必须是 local 或 cloud'}), 400
+    try:
+        slots = config.get('current_model_by_mode') or {}
+        if not slots:
+            slots = {}
+            _cur = (config.get('current_model') or '')
+            if _cur.startswith(('ollama:', 'local:')):
+                slots['local'] = _cur
+            _cfm = str(config.get('collab_foreign_model') or '').strip()
+            if _cfm and _cfm != 'ollama':
+                slots['cloud'] = _cfm
+            config['current_model_by_mode'] = slots
+        target = str(slots.get(mode) or '').strip()
+        # ★ #1275 节点⑦（2026-10-29）阵营对齐检查：只提醒不代选（铁律 0）——
+        #   外脑槽记着本地模型 / 本地槽记着外脑 = 历史污染，切过去必撞路由报错
+        _LOCAL_IDS = ('ollama', 'harveneye')
+        _is_local = target.startswith(('ollama:', 'local:')) or target in _LOCAL_IDS
+        if target and mode == 'cloud' and _is_local:
+            config['last_query_mode'] = mode
+            config.save()
+            return jsonify({'success': True, 'mode': mode, 'switched': False,
+                            'current_model': target,
+                            'hint': f'⚠️ 外脑模式记录的「{target}」是本地模型，外脑模式用不了它。'
+                                    '请到 设置→模型管理 选一个外脑（如 智谱AI），或切 🏠本地 模式使用它'})
+        if target and mode == 'local' and not _is_local:
+            config['last_query_mode'] = mode
+            config.save()
+            return jsonify({'success': True, 'mode': mode, 'switched': False,
+                            'current_model': target,
+                            'hint': f'⚠️ 本地模式记录的「{target}」是外脑模型，本地模式用不了它。'
+                                    '请到 设置→模型管理 的本地列表选一个，或切 🤖外脑 模式使用它'})
+        config['last_query_mode'] = mode
+        if not target:
+            config.save()
+            mm_cur = ''
+            try:
+                from src.core.multi_model_manager import get_multi_model_manager
+                mm_cur = get_multi_model_manager().current_model or ''
+            except Exception:
+                pass
+            return jsonify({'success': True, 'mode': mode, 'switched': False,
+                            'current_model': mm_cur or config.get('current_model'),
+                            'note': '该模式还没记住模型，保持现状'})
+        # ★ 2026-10-24 不设「target==current_model 短路」：yaml/json 两持久层可能历史错位
+        #   （开发者机器现状：yaml=本地、json=zhipu），切换动作必须总是执行——两条链都幂等，
+        #   重复写无害，顺带把错位对齐（自愈）。
+        if mode == 'cloud':
+            from src.core.multi_model_manager import get_multi_model_manager
+            j = get_multi_model_manager().set_current_model(target)
+            if not (j or {}).get('success'):
+                return jsonify({'success': False, 'error': (j or {}).get('error', '外脑切换失败')}), 400
+            # set_current_model 内部已同步 yaml 镜像 / by_mode.cloud / last_query_mode
+            return jsonify({'success': True, 'mode': mode, 'switched': True,
+                            'current_model': target})
+        _apply_local_model(target)
+        return jsonify({'success': True, 'mode': mode, 'switched': True,
+                        'current_model': target})
+    except Exception as e:
+        logger.exception('[Models] switch-mode 失败')
+        return jsonify({'success': False, 'error': str(e)[:150]}), 500
 
 
 # ==================== 模型搜索 & 安装 ====================
@@ -3015,9 +5461,9 @@ def version_check():
     """检测新版本"""
     try:
         import requests as ver_requests
-        current = config.get('app', {}).get('version', '0.1.0')
+        current = APP_VERSION
         try:
-            r = ver_requests.get(UPDATE_CHECK_URL, timeout=8)
+            r = ver_requests.get(UPDATE_CHECK_URL, timeout=8, params={'cur': APP_VERSION})
             if r.status_code == 200:
                 latest = r.json()
                 latest_ver = latest.get('version', current)
@@ -3030,6 +5476,13 @@ def version_check():
                     'has_update': has_update,
                     'url': update_url,
                     'changelog': changelog,
+                    # ★ #1361 透传更新包指纹（Hub 清单 package_md5/package_file）
+                    'package_md5': latest.get('package_md5', ''),
+                    'package_file': latest.get('package_file', ''),
+                    # ★ #1398（2026-11-02 定版拍板 A+B）增量更新通道 + 完整包直链
+                    'download_url': latest.get('download_url', ''),
+                    'package_size': latest.get('package_size', 0),
+                    'update_channel': latest.get('update_channel') or None,
                     'checked_at': datetime.now().isoformat()
                 })
             return jsonify({'current': current, 'error': f'服务器返回 {r.status_code}', 'has_update': False})
@@ -3042,58 +5495,183 @@ def version_check():
                 'detail': str(e)[:200]
             })
     except Exception as e:
-        return jsonify({'current': config.get('app', {}).get('version', '0.1.0'), 'error': str(e)[:200], 'has_update': False})
+        return jsonify({'current': APP_VERSION, 'error': str(e)[:200], 'has_update': False})
 
 
 @app.route('/api/version/update', methods=['POST'])
 def version_download():
-    """下载并安装更新包"""
+    """★ #1361 安全一键更新：下载 → MD5 校验 → 备份数据 → Zip Slip 安全解压 → 清废弃文件 → 提示重启
+
+    支持两种包格式：
+      A) pack_update.py 增量更新包（内含 update_payload.zip + delete_list.txt）— 首选
+      B) 老式整包（文件平铺 zip）— 兼容
+    """
     global _update_download_progress
     data = request.json or {}
     download_url = data.get('url', '')
+    expect_md5 = (data.get('md5') or '').strip().lower()
     if not download_url:
         return jsonify({'error': '下载地址为空'}), 400
+    if not download_url.lower().startswith(('http://', 'https://')):
+        return jsonify({'error': '下载地址不合法'}), 400
 
     _update_download_progress = {'status': 'downloading', 'progress': 0, 'error': None, 'file': None}
+
+    def _fail(msg):
+        _update_download_progress['status'] = 'error'
+        _update_download_progress['error'] = msg
+        logger.error(f"[Update] 更新失败: {msg}")
+
+    def _safe_extract(zf, dest_root):
+        """Zip Slip 防护解压（同 panel_manager._safe_extractall 口径）"""
+        n = 0
+        for info in zf.infolist():
+            if info.is_dir():
+                continue
+            rel = info.filename.replace('\\', '/').lstrip('/')
+            if not rel or rel.startswith('/') or (len(rel) > 1 and rel[1] == ':'):
+                raise ValueError(f'压缩包内出现非法路径: {info.filename}')
+            parts = [p for p in rel.split('/') if p not in ('.', '..')]
+            if not parts:
+                continue
+            target = Path(dest_root).joinpath(*parts).resolve()
+            if os.path.commonpath([str(target), str(dest_root)]) != str(dest_root):
+                raise ValueError(f'路径越界（Zip Slip 拦截）: {info.filename}')
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with zf.open(info) as src, open(target, 'wb') as dst:
+                shutil.copyfileobj(src, dst)
+            n += 1
+        return n
+
+    def _apply_deletes(delete_list_path):
+        """应用废弃文件清单（铁律：永不动 data/、config.yaml、.venv、python/）"""
+        removed = 0
+        with open(delete_list_path, 'r', encoding='utf-8-sig') as f:
+            for line in f:
+                rel = line.strip()
+                if not rel or rel.startswith('#'):
+                    continue
+                rel_n = rel.replace('\\', '/').strip('/')
+                # 保护性拒删：用户数据/运行时永不进删除范围
+                if (rel_n == 'config.yaml' or rel_n.startswith(('data/', '.venv/', 'python/'))
+                        or rel_n.split('/')[0] in ('.venv', 'python')):
+                    logger.warning(f"[Update] 删除清单命中保护区，跳过: {rel_n}")
+                    continue
+                target = (Path(PROJECT_ROOT) / rel_n).resolve()
+                root_s = str(Path(PROJECT_ROOT).resolve())
+                if os.path.commonpath([str(target), root_s]) != root_s:
+                    logger.warning(f"[Update] 删除清单路径越界，跳过: {rel_n}")
+                    continue
+                try:
+                    if target.is_file():
+                        target.unlink()
+                        removed += 1
+                except Exception as _e:
+                    logger.debug(f"[Update] 删除失败（忽略）: {rel_n}: {_e}")
+        return removed
+
+    def _backup_data(bak_dir):
+        """备份用户数据：data/ 全量排除可再生大件（models/media/downloads）+ config.yaml"""
+        src_data = Path(PROJECT_ROOT) / 'data'
+        skip_dirs = {'models', 'media', 'downloads'}
+        if src_data.is_dir():
+            for root_d, dirs_d, files_d in os.walk(src_data):
+                dirs_d[:] = [d for d in dirs_d if d not in skip_dirs]
+                rel_d = os.path.relpath(root_d, src_data)
+                out_d = bak_dir / 'data' / rel_d if rel_d != '.' else bak_dir / 'data'
+                out_d.mkdir(parents=True, exist_ok=True)
+                for f_d in files_d:
+                    try:
+                        shutil.copy2(os.path.join(root_d, f_d), out_d / f_d)
+                    except Exception as _e:
+                        logger.debug(f"[Update] 备份跳过 {f_d}: {_e}")
+        cfg = Path(PROJECT_ROOT) / 'config.yaml'
+        if cfg.is_file():
+            shutil.copy2(cfg, bak_dir / 'config.yaml')
 
     def _do_update():
         global _update_download_progress
         try:
             import requests as dl_requests
-            r = dl_requests.get(download_url, stream=True, timeout=600)
-            total = int(r.headers.get('content-length', 0))
             zip_path = os.path.join(tempfile.gettempdir(), 'harven_update.zip')
+            r = dl_requests.get(download_url, stream=True, timeout=600)
+            r.raise_for_status()
+            total = int(r.headers.get('content-length', 0))
             downloaded = 0
-
+            md5h = hashlib.md5()
             with open(zip_path, 'wb') as f:
-                for chunk in r.iter_content(chunk_size=8192):
+                for chunk in r.iter_content(chunk_size=1 << 16):
                     if chunk:
                         f.write(chunk)
+                        md5h.update(chunk)
                         downloaded += len(chunk)
                         if total > 0:
-                            _update_download_progress['progress'] = min(int(downloaded * 100 / total), 95)
+                            _update_download_progress['progress'] = min(int(downloaded * 95 / total), 90)
 
+            # [2] MD5 校验
+            _update_download_progress['progress'] = 92
+            _update_download_progress['status'] = 'verifying'
+            got_md5 = md5h.hexdigest()
+            if expect_md5 and got_md5 != expect_md5:
+                try:
+                    os.remove(zip_path)
+                except Exception:
+                    pass
+                _fail(f'更新包校验不符（可能下载不完整），已删除。期望 {expect_md5[:8]}…，实际 {got_md5[:8]}…')
+                return
+            logger.info(f"[Update] 下载完成 {downloaded} 字节，MD5 {got_md5}")
+
+            # [3] 备份用户数据
+            _update_download_progress['progress'] = 94
+            _update_download_progress['status'] = 'backup'
+            stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            bak_dir = Path(PROJECT_ROOT) / f'backup_update_{stamp}'
+            bak_dir.mkdir(parents=True, exist_ok=True)
+            _backup_data(bak_dir)
+            logger.info(f"[Update] 数据已备份: {bak_dir}")
+
+            # [4] 解包应用
             _update_download_progress['progress'] = 96
             _update_download_progress['status'] = 'extracting'
-
             import zipfile as zf_lib
             extract_dir = os.path.join(tempfile.gettempdir(), 'harven_update_extract')
-            with zf_lib.ZipFile(zip_path, 'r') as zf:
-                zf.extractall(extract_dir)
-            _update_download_progress['progress'] = 98
+            shutil.rmtree(extract_dir, ignore_errors=True)  # ★ 清上次残留，防旧文件混包
+            n_files = 0
+            with zf_lib.ZipFile(zip_path) as zf:
+                names = zf.namelist()
+                if 'update_payload.zip' in names:
+                    # A) pack_update.py 增量包格式
+                    with zf.open('update_payload.zip') as pf:
+                        import io as _io
+                        with zf_lib.ZipFile(_io.BytesIO(pf.read())) as inner:
+                            n_files = _safe_extract(inner, str(PROJECT_ROOT))
+                    if 'delete_list.txt' in names:
+                        with zf.open('delete_list.txt') as dl:
+                            dl_path = os.path.join(tempfile.gettempdir(), 'harven_update_deletes.txt')
+                            with open(dl_path, 'wb') as out:
+                                out.write(dl.read())
+                            n_del = _apply_deletes(dl_path)
+                            try:
+                                os.remove(dl_path)
+                            except Exception:
+                                pass
+                            logger.info(f"[Update] 清理废弃文件 {n_del} 个")
+                else:
+                    # B) 老式整包（平铺或单层目录包裹）
+                    top = {n.split('/')[0] for n in names if n}
+                    src = extract_dir
+                    zf.extractall(extract_dir)
+                    if len(top) == 1 and os.path.isdir(os.path.join(extract_dir, list(top)[0])):
+                        src = os.path.join(extract_dir, list(top)[0])
+                    for root2, _dirs2, files2 in os.walk(src):
+                        rel2 = os.path.relpath(root2, src)
+                        dest_dir = Path(PROJECT_ROOT) / rel2 if rel2 != '.' else Path(PROJECT_ROOT)
+                        dest_dir.mkdir(parents=True, exist_ok=True)
+                        for f2 in files2:
+                            shutil.copy2(os.path.join(root2, f2), dest_dir / f2)
+                            n_files += 1
 
-            import shutil
-            src = extract_dir
-            if os.path.isdir(os.path.join(extract_dir, 'HarvenAI')):
-                src = os.path.join(extract_dir, 'HarvenAI')
-
-            for root2, dirs2, files2 in os.walk(src):
-                rel = os.path.relpath(root2, src)
-                dest_dir = os.path.join(str(PROJECT_ROOT), rel)
-                os.makedirs(dest_dir, exist_ok=True)
-                for f in files2:
-                    shutil.copy2(os.path.join(root2, f), os.path.join(dest_dir, f))
-
+            # [5] 收尾
             try:
                 shutil.rmtree(extract_dir, ignore_errors=True)
                 os.remove(zip_path)
@@ -3103,12 +5681,12 @@ def version_download():
             _update_download_progress['status'] = 'done'
             _update_download_progress['progress'] = 100
             _update_download_progress['file'] = str(PROJECT_ROOT)
-            logger.info("[Update] Update complete, restart required")
+            _update_download_progress['backup'] = bak_dir.name
+            _update_download_progress['applied'] = n_files
+            logger.info(f"[Update] 更新完成（应用 {n_files} 个文件），重启后生效")
 
         except Exception as e:
-            _update_download_progress['status'] = 'error'
-            _update_download_progress['error'] = str(e)
-            logger.error(f"[Update] Update failed: {e}")
+            _fail(str(e)[:300])
 
     threading.Thread(target=_do_update, daemon=True).start()
     return jsonify({'ok': True, 'message': '开始下载更新...'})
@@ -3118,6 +5696,28 @@ def version_download():
 def version_update_progress():
     """查询更新进度"""
     return jsonify(_update_download_progress)
+
+
+@app.route('/api/version/restart', methods=['POST'])
+def version_restart():
+    """★ #1361 一键重启：派生独立进程等 3 秒后拉起 启动HarvenAI.bat，本进程退出"""
+    bat = Path(PROJECT_ROOT) / '启动HarvenAI.bat'
+    if not bat.is_file():
+        return jsonify({'error': '没找到启动脚本，请手动双击桌面「Harven AI」重启'}), 404
+    try:
+        # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
+        flags = 0x00000008 | 0x00000200 | 0x08000000
+        subprocess.Popen(
+            ['cmd', '/c', 'timeout', '/t', '3', '/nobreak', '>nul', '&', 'start', '""', str(bat)],
+            cwd=str(PROJECT_ROOT), creationflags=flags, close_fds=True)
+    except Exception as e:
+        return jsonify({'error': f'重启派生失败: {e}'}), 500
+
+    def _bye():
+        logger.info('[Update] 一键重启：进程退出，等待启动脚本拉起新实例')
+        os._exit(0)
+    threading.Timer(1.0, _bye).start()
+    return jsonify({'ok': True, 'message': '哈文正在重启，约 10 秒后页面自动恢复'})
 
 
 # ==================== Privacy Password ====================
@@ -3241,8 +5841,44 @@ def get_system_info():
     except (ImportError, AttributeError, RuntimeError) as e:
         logger.warning(f"[API] GPU 信息获取失败: {e}")
         info['gpu'] = {'name': 'Unknown', 'memory_total': 0, 'memory_allocated': 0}
-    
+
+    # ★ 2026-09-20 (#804): 局域网 IP（设置页「手机与云端」提示手机访问地址用）
+    try:
+        import socket as _sock
+        _s = _sock.socket(_sock.AF_INET, _sock.SOCK_DGRAM)
+        _s.connect(('8.8.8.8', 80))
+        info['lan_ip'] = _s.getsockname()[0]
+        _s.close()
+    except Exception:
+        info['lan_ip'] = ''
+
+    # ★ 2026-09-22 (#851): 实例名（同一台电脑跑多个哈文 / 多台电脑时区分「哈文开发者」「哈文1」）
+    try:
+        from src.utils.config import Config as _Cfg
+        _name = str(_Cfg().get('instance_name') or '').strip()
+        info['instance_name'] = _name or '哈文'
+    except Exception:
+        info['instance_name'] = '哈文'
+
     return jsonify(info)
+
+
+@app.route('/api/system/name', methods=['POST'])
+def set_instance_name():
+    """★ 2026-09-22 (#851): 改实例名（非安全项，不要求密码；1~20 字，空则恢复默认「哈文」）"""
+    data = request.get_json(silent=True) or {}
+    name = str(data.get('name') or '').strip()
+    if name and len(name) > 20:
+        return jsonify({'success': False, 'error': '名字太长了，最多 20 个字'}), 400
+    try:
+        from src.utils.config import Config
+        cfg = Config()
+        cfg.set('instance_name', name or '哈文')
+        cfg.save()
+        return jsonify({'success': True, 'instance_name': name or '哈文'})
+    except Exception as e:
+        logger.error(f"[API] 保存实例名失败: {e}")
+        return jsonify({'success': False, 'error': '保存失败'}), 500
 
 # ==================== GitHub Download ====================
 
@@ -4629,26 +7265,14 @@ def admin_change_password():
 
     if not current_pwd or not new_pwd:
         return jsonify({'error': '当前密码和新密码不能为空'}), 400
-    if len(new_pwd) < 6:
-        return jsonify({'error': '新密码不能少于 6 位'}), 400
 
-    # 验证当前密码（直接从 config dict 读取，由 startup 加载）
-    import hashlib as _hl
-    stored_pwd = config.get('security', {}).get('admin_password', '')
-
-    if current_pwd != stored_pwd:
-        return jsonify({'error': '当前密码错误'}), 403
-
-    # 写入新密码（明文存储，_admin_password_hash 读取时 SHA256 处理）
-    if 'security' not in config:
-        config['security'] = {}
-    config['security']['admin_password'] = new_pwd
-    try:
-        with open(PROJECT_ROOT / 'config.yaml', 'w', encoding='utf-8') as f:
-            yaml.dump(dict(config), f, allow_unicode=True, default_flow_style=False)
-        return jsonify({'success': True, 'message': '密码已修改，下次登录管理后台时生效'})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    # ★ 2026-09-17 收口：统一走 security_guard.change_admin_password
+    # （同步写 security.admin_password + 顶层 admin_password，保险箱/面板/全权模式全部生效）
+    from src.core.security_guard import change_admin_password
+    result = change_admin_password(current_pwd, new_pwd)
+    if result.get('success'):
+        return jsonify({'success': True, 'message': '密码已修改，保险箱/面板/全权模式同步生效'})
+    return jsonify({'error': result.get('error', '修改失败')}), 400
 
 
 @app.route('/api/visitor/status', methods=['GET'])
@@ -4764,7 +7388,7 @@ def security_get_settings():
             'sandbox_timeout': 30,
             'injection_detection': True,
             'device_bind_policy': 'log_only',
-            'password_protected_actions': [],
+            'password_protected_actions': ['evolution'],
         }
         for k, v in defaults.items():
             if k not in settings:
@@ -4848,8 +7472,40 @@ def security_verify_password():
         match = secrets.compare_digest(pwd, stored)
 
         if match:
+            resp = {'success': True, 'message': '验证通过'}
+            # ★ 2026-09-22 (#853): 仅登录页请求（register_device=True）时登记电脑设备并发放设备令牌，
+            # 面板解锁/全权模式等其它调 verify-password 的地方不受影响
+            try:
+                if data.get('register_device'):
+                    import secrets as _secrets
+                    from datetime import datetime as _dt
+                    devs = _load_computer_devices()
+                    tok = (data.get('device_token') or '').strip()
+                    rec = next((d for d in devs if d.get('token') == tok), None) if tok else None
+                    if rec is None:
+                        tok = _secrets.token_hex(16)
+                        ua = (request.headers.get('User-Agent') or '')
+                        browser = '电脑'
+                        for key, label in (('Edg/', 'Edge'), ('OPR/', 'Opera'), ('Chrome/', 'Chrome'), ('Firefox/', 'Firefox')):
+                            if key in ua:
+                                browser = label
+                                break
+                        rec = {
+                            'id': _secrets.token_hex(6),
+                            'token': tok,
+                            'name': f'{browser}-{tok[:4]}',
+                            'added': _dt.now().strftime('%Y-%m-%d %H:%M'),
+                            'last_seen': _dt.now().strftime('%Y-%m-%d %H:%M'),
+                        }
+                        devs.append(rec)
+                    rec['last_seen'] = _dt.now().strftime('%Y-%m-%d %H:%M')
+                    _save_computer_devices(devs)
+                    resp['device_token'] = tok
+                    resp['device_name'] = rec.get('name', '')
+            except Exception as e:
+                logger.warning(f'[Security] 电脑设备登记失败（不影响登录）: {e}')
             logger.info('[Security] 密码验证通过')
-            return jsonify({'success': True, 'message': '验证通过'})
+            return jsonify(resp)
         else:
             logger.warning('[Security] 密码验证失败')
             return jsonify({'success': False, 'error': '密码错误'}), 401
@@ -4857,6 +7513,94 @@ def security_verify_password():
     except Exception as e:
         logger.error(f'[Security] 密码验证异常: {e}')
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ===== ★ 2026-09-22 (#853) 电脑设备管理 =====
+
+def _computer_devices_path():
+    import os
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'computer_devices.json')
+
+
+def _load_computer_devices():
+    import json
+    try:
+        with open(_computer_devices_path(), 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+
+def _save_computer_devices(devs):
+    import json, os
+    p = _computer_devices_path()
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    with open(p, 'w', encoding='utf-8') as f:
+        json.dump(devs, f, ensure_ascii=False, indent=2)
+
+
+def _check_admin_pwd(pwd):
+    """校验管理员密码（设备管理操作用）"""
+    import secrets
+    cfg = _load_config()
+    stored = ((cfg.get('security', {}) or {}).get('admin_password') or cfg.get('admin_password') or '').strip()
+    if not stored:
+        return False
+    return secrets.compare_digest((pwd or '').strip(), stored)
+
+
+@app.route('/api/devices/computers', methods=['GET'])
+def devices_computers_list():
+    """已登录过的电脑列表（不含令牌本体）"""
+    try:
+        devs = _load_computer_devices()
+        out = [{'id': d.get('id', ''), 'name': d.get('name', ''), 'added': d.get('added', ''), 'last_seen': d.get('last_seen', '')} for d in devs]
+        return jsonify({'success': True, 'devices': out})
+    except Exception as e:
+        logger.error(f'[Devices] 列表失败: {e}')
+        return jsonify({'success': False, 'error': '读取失败'}), 500
+
+
+@app.route('/api/devices/computer/check', methods=['GET'])
+def devices_computer_check():
+    """前端启动时校验本地存的设备令牌是否还有效（被移除则失效）"""
+    tok = (request.args.get('token') or '').strip()
+    if not tok:
+        return jsonify({'success': True, 'valid': False})
+    devs = _load_computer_devices()
+    rec = next((d for d in devs if d.get('token') == tok), None)
+    return jsonify({'success': True, 'valid': rec is not None, 'name': (rec or {}).get('name', '')})
+
+
+@app.route('/api/devices/computer/rename', methods=['POST'])
+def devices_computer_rename():
+    """给某台电脑改名（免密：名字只是显示标签，方便区分谁是谁）"""
+    data = request.get_json(silent=True) or {}
+    name = str(data.get('name') or '').strip()[:20]
+    if not name:
+        return jsonify({'success': False, 'error': '名字不能为空'}), 400
+    devs = _load_computer_devices()
+    rec = next((d for d in devs if d.get('id') == data.get('id')), None)
+    if rec is None:
+        return jsonify({'success': False, 'error': '找不到这台电脑（可能已被移除）'}), 404
+    rec['name'] = name
+    _save_computer_devices(devs)
+    return jsonify({'success': True})
+
+
+@app.route('/api/devices/computer/revoke', methods=['POST'])
+def devices_computer_revoke():
+    """移除某台电脑的登录记录（需管理员密码；该浏览器下次登录会重新登记）"""
+    data = request.get_json(silent=True) or {}
+    if not _check_admin_pwd(data.get('password')):
+        return jsonify({'success': False, 'error': '管理员密码不对'}), 403
+    devs = _load_computer_devices()
+    before = len(devs)
+    devs = [d for d in devs if d.get('id') != data.get('id')]
+    if len(devs) == before:
+        return jsonify({'success': False, 'error': '找不到这台电脑（可能已被移除）'}), 404
+    _save_computer_devices(devs)
+    return jsonify({'success': True})
 
 
 # ===== 系统配置摘要 API =====
@@ -4925,12 +7669,14 @@ def get_api_keys():
         mkeys = config.get('model_keys', {}) or {}
         
         # ★ 合并 multi_models.json 中的 Key（旧存储路径）
+        _mm_items = []
         mm_path = PROJECT_ROOT / 'data' / 'multi_models.json'
         if mm_path.exists():
             try:
                 mm_config = json.loads(mm_path.read_text(encoding='utf-8'))
                 for pid, entry in mm_config.get('models', {}).items():
                     if pid == 'ollama': continue
+                    _mm_items.append((pid, entry))
                     if entry.get('api_key'):
                         mkeys[pid] = entry['api_key']
             except Exception as _e:
@@ -4952,6 +7698,10 @@ def get_api_keys():
                     'masked': (v[:4] + '****' + v[-4:]) if len(v) > 8 else (v or ''),
                     'name': k
                 }
+        # ★ 2026-09-13 用户反馈#9：外脑卡补"型号"回显（读 multi_models.json 的 model_name）
+        for pid, entry in _mm_items:
+            if pid in result and isinstance(entry, dict):
+                result[pid]['model_name'] = entry.get('model_name', '') or ''
         return jsonify({'success': True, 'keys': result})
     except Exception as e:
         return jsonify({'success': False, 'keys': {}, 'error': str(e)}), 500
@@ -4969,7 +7719,26 @@ def save_api_keys():
             key_data = data
             model_data = {}
         config = Config()
-        # ★ 2026-08-03: 保存所有传入的key（不再硬编码4个）
+        # ★ 2026-09-13: 支持 data.delete=["provider",...] 显式删除钥匙（此前空值会被忽略、旧key永远保留，用户删不掉）
+        delete_ids = data.get('delete') or []
+        old_keys0 = config.get('model_keys', {}) or {}
+        if delete_ids:
+            import json as _json
+            old_keys0 = {k: v for k, v in old_keys0.items() if k not in delete_ids}
+            config.set('model_keys', old_keys0)
+            config.save()
+            mm_path0 = PROJECT_ROOT / 'data' / 'multi_models.json'
+            if mm_path0.exists():
+                try:
+                    mm0 = _json.loads(mm_path0.read_text(encoding='utf-8'))
+                    for pid in delete_ids:
+                        if pid in mm0.get('models', {}):
+                            mm0['models'][pid].pop('api_key', None)
+                            mm0['models'][pid]['enabled'] = False
+                    mm_path0.write_text(_json.dumps(mm0, ensure_ascii=False, indent=2), encoding='utf-8')
+                except Exception:
+                    pass
+        # ★ 兼容旧存储：保存所有传入的key（不再硬编码4个）
         all_keys = {}
         for k, v in key_data.items():
             if v:  # 只保存非空的
@@ -5025,35 +7794,80 @@ def switch_foreign_model():
     try:
         from src.core.multi_model_manager import get_multi_model_manager
         data = request.get_json(force=True, silent=True) or {}
-        model = data.get('model', '')
+        model = (data.get('model') or '').strip()
+        # ★ v9 加固（2026-10-04）：空参曾静默切成 ollama 本地（model or 'ollama'）——
+        #   万一被空体调用会把用户选好的外脑悄悄清掉。现在空参直接 400 拒绝；
+        #   想切回本地模式必须显式传 model="ollama"，不再有隐式行为
+        if not model:
+            return jsonify({'success': False, 'error': '缺少 model 参数；切回本地模式请显式传 "ollama"'}), 400
         mm = get_multi_model_manager()
         # ★ 使用 set_current_model 持久化
-        result = mm.set_current_model(model or 'ollama')
-        return jsonify({'success': True, 'current': model or 'ollama'})
+        result = mm.set_current_model(model)
+        return jsonify({'success': True, 'current': model})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/models/current-foreign', methods=['GET'])
 def current_foreign_model():
-    """获取当前外脑模型"""
+    """获取当前外脑（★ #1326：只报云端槽；★ #1327：改读权威 yaml——json 槽位镜像
+    可能陈旧（历史欠账），yaml 的 current_model_by_mode.cloud 才是用户真实选择）"""
     try:
-        from src.core.multi_model_manager import get_multi_model_manager
+        from src.core.multi_model_manager import get_multi_model_manager, is_local_model
+        from src.utils.config import get_config
         mm = get_multi_model_manager()
-        model = mm.current_model
-        return jsonify({'model': model if model != 'ollama' else ''})
+        cloud = (((get_config() or {}).get('current_model_by_mode') or {}).get('cloud') or '').strip()
+        if not cloud:   # yaml 没有则退 json 槽
+            cloud = (((mm.config or {}).get('current_model_by_mode') or {}).get('cloud') or '').strip()
+        active = (mm.current_model or '').strip()
+        _local = is_local_model(active) if active else True
+        return jsonify({'model': cloud if cloud else (active if not _local else ''),
+                        'active_is_local': _local})
     except Exception:
         return jsonify({'model': ''})
 
+@app.route('/api/models/foreign-model-name', methods=['POST'])
+def set_foreign_model_name():
+    """★ 2026-09-13 用户反馈#9：设置外脑型号（如 deepseek-chat / deepseek-reasoner）"""
+    try:
+        from src.core.multi_model_manager import get_multi_model_manager
+        data = request.get_json(force=True, silent=True) or {}
+        pid = (data.get('provider') or '').strip()
+        name = (data.get('model_name') or '').strip()
+        if not pid or not name:
+            return jsonify({'success': False, 'error': '缺少 provider 或 model_name'}), 400
+        mm = get_multi_model_manager()
+        models_cfg = mm.config.setdefault('models', {})
+        entry = models_cfg.setdefault(pid, {})
+        entry['model_name'] = name
+        if not entry.get('base_url'):
+            providers = mm._get_all_providers()
+            if pid in providers:
+                entry['base_url'] = providers[pid].get('base_url', '')
+        mm._save_config()
+        logger.info(f"[Models] 外脑型号已设置: {pid} → {name}")
+        return jsonify({'success': True, 'provider': pid, 'model_name': name})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/models/test-connect', methods=['POST'])
 def test_model_connect():
-    """测试已配置的 API Key 连接（逐个测试，返回第一个成功的结果）"""
+    """★ #1516 连接测试改造（2026-11-14）：逐个测完全量返回 + 当前外脑必测置顶。
+    旧版「测到第一个成功就 return」实锤（老谭检测抓包）：配了 deepseek+zhipu 两个 key、
+    当前用的是 zhipu 而 zhipu key 失效时，端点测到 deepseek 通就报 ✅——误报连接正常。
+    兼容三种调用：
+      1. 无 body        → 逐个测所有已配置 key，全量结果（当前外脑排第一并带 current 标记）
+      2. body.model_id  → 只测该模型（body.api_key/base_url 优先，未传则用已保存配置）
+      3. 响应兼容旧前端：success / model / error 三字段语义不变，新增 results 数组
+    """
     try:
         from src.utils.config import Config
         import json
+        body = request.get_json(force=True, silent=True) or {}
         keys = Config().get('model_keys', {})
-        
+
         # ★ 合并 multi_models.json 中的 Key
         mm_path = PROJECT_ROOT / 'data' / 'multi_models.json'
+        mm_models = {}
         if mm_path.exists():
             try:
                 mm_config = json.loads(mm_path.read_text(encoding='utf-8'))
@@ -5061,61 +7875,97 @@ def test_model_connect():
                     if pid == 'ollama': continue
                     if entry.get('api_key'):
                         keys[pid] = entry['api_key']
-            except Exception as _e: logger.debug(f"[WebApp] 忽略错误: {_e}")
-        
-        # ★ 读取当前选定模型名（用户可在设置中选择）
-        mm_models = {}
-        if mm_path.exists():
-            try:
-                mm_config = json.loads(mm_path.read_text(encoding='utf-8'))
                 mm_models = mm_config.get('models', {})
             except Exception as _e: logger.debug(f"[WebApp] 忽略错误: {_e}")
-        
-        # 各厂商的测试端点（模型名优先从用户选择读取）
-        test_configs = [
-            ('deepseek', keys.get('deepseek', ''),
-             'https://api.deepseek.com/v1/chat/completions', mm_models.get('deepseek', {}).get('model_name', 'deepseek-chat')),
-            ('doubao', keys.get('doubao', ''),
-             'https://ark.cn-beijing.volces.com/api/v3/chat/completions', mm_models.get('doubao', {}).get('model_name', 'doubao-seed-2-0-pro-260215')),
-            ('qwen', keys.get('qwen', ''),
-             'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', 'qwen-turbo'),
-            ('kimi', keys.get('kimi', ''),
-             'https://api.moonshot.cn/v1/chat/completions', 'moonshot-v1-8k'),
-            ('zhipu', keys.get('zhipu', ''),
-             'https://open.bigmodel.cn/api/paas/v4/chat/completions', mm_models.get('zhipu', {}).get('model_name', 'glm-4-flash')),
-            ('yi', keys.get('yi', ''),
-             'https://api.lingyiwanwu.com/v1/chat/completions', mm_models.get('yi', {}).get('model_name', 'yi-lightning')),
-            ('baichuan', keys.get('baichuan', ''),
-             'https://api.baichuan-ai.com/v1/chat/completions', 'Baichuan4-Turbo'),
-            ('stepfun', keys.get('stepfun', ''),
-             'https://api.stepfun.com/v1/chat/completions', 'step-1-flash'),
-        ]
-        
-        tested = []
-        for name, key, url, model in test_configs:
-            if not key:
-                continue
+
+        # 各厂商默认测试端点（模型名优先从用户选择读取）
+        test_configs = {
+            'deepseek': ('https://api.deepseek.com/v1/chat/completions', 'deepseek-chat'),
+            'doubao':   ('https://ark.cn-beijing.volces.com/api/v3/chat/completions', 'doubao-seed-2-0-pro-260215'),
+            'qwen':     ('https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', 'qwen-turbo'),
+            'kimi':     ('https://api.moonshot.cn/v1/chat/completions', 'moonshot-v1-8k'),
+            'zhipu':    ('https://open.bigmodel.cn/api/paas/v4/chat/completions', 'glm-4-flash'),
+            'yi':       ('https://api.lingyiwanwu.com/v1/chat/completions', 'yi-lightning'),
+            'baichuan': ('https://api.baichuan-ai.com/v1/chat/completions', 'Baichuan4-Turbo'),
+            'stepfun':  ('https://api.stepfun.com/v1/chat/completions', 'step-1-flash'),
+        }
+
+        def _probe(name, key, url, model):
+            """单家探测：返回 {name, ok, error, model}"""
+            import time as _t
+            t0 = _t.time()
             try:
                 import requests as _r
                 resp = _r.post(url,
                     headers={'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'},
-                    json={'model': model, 'messages': [{'role':'user','content':'hi'}], 'max_tokens': 1},
+                    json={'model': model, 'messages': [{'role': 'user', 'content': 'hi'}], 'max_tokens': 1},
                     timeout=10)
+                ms = int((_t.time() - t0) * 1000)
                 if resp.status_code == 200:
-                    return jsonify({'success': True, 'model': f'{name} ✅', 'tested': tested + [name]})
-                else:
-                    err_info = f'{name}: HTTP {resp.status_code}'
-                    try:
-                        err_body = resp.json()
-                        err_info += f' ({err_body.get("error",{}).get("message","")})'
-                    except Exception as _e: logger.debug(f'[WebApp] 忽略: {_e}')
-                    tested.append(err_info)
+                    return {'name': name, 'ok': True, 'error': '', 'model': model, 'ms': ms}
+                err_info = f'HTTP {resp.status_code}'
+                try:
+                    err_body = resp.json()
+                    err_info += f' ({err_body.get("error", {}).get("message", "")})'
+                except Exception as _e: logger.debug(f"[WebApp] 忽略: {_e}")
+                return {'name': name, 'ok': False, 'error': err_info[:120], 'model': model, 'ms': ms}
             except Exception as e:
-                tested.append(f'{name}: {str(e)[:50]}')
-        
-        if tested:
-            return jsonify({'success': False, 'error': '; '.join(tested), 'tested': tested})
-        return jsonify({'success': False, 'error': '请先配置至少一个 API Key'})
+                return {'name': name, 'ok': False, 'error': str(e)[:120], 'model': model,
+                        'ms': int((_t.time() - t0) * 1000)}
+
+        # ── 模式 2：body.model_id 单测（传入 key/base_url 优先，兼容旧调用方）──
+        if body.get('model_id'):
+            mid = body['model_id'].strip()
+            key = (body.get('api_key') or '').strip() or keys.get(mid, '')
+            url = (body.get('base_url') or '').strip().rstrip('/')
+            if url:
+                url = url + '/chat/completions' if not url.endswith('/chat/completions') else url
+            else:
+                url = test_configs.get(mid, ('', ''))[0]
+            model = mm_models.get(mid, {}).get('model_name') or test_configs.get(mid, ('', ''))[1] or 'gpt-3.5-turbo'
+            if not url:
+                return jsonify({'success': False, 'error': f'未知模型 {mid} 且未提供 base_url'})
+            if not key:
+                return jsonify({'success': False, 'error': '请先输入 API 密钥'})
+            r = _probe(mid, key, url, model)
+            return jsonify({'success': r['ok'], 'model': f"{mid} ✅" if r['ok'] else '',
+                            'error': '' if r['ok'] else r['error'], 'results': [r]})
+
+        # ── 模式 1：无 body 全量逐测（当前外脑置顶）──
+        current_pid = ''
+        try:
+            from src.utils.config import get_config
+            cloud = (((get_config() or {}).get('current_model_by_mode') or {}).get('cloud') or '').strip()
+            current_pid = (cloud.split('/')[0] if cloud else '').strip()
+        except Exception as _e: logger.debug(f"[WebApp] 当前外脑读取失败: {_e}")
+
+        tested = []
+        for name, (url, default_model) in test_configs.items():
+            key = keys.get(name, '')
+            if not key:
+                continue
+            model = mm_models.get(name, {}).get('model_name') or default_model
+            tested.append(_probe(name, key, url, model))
+        # ★ 当前外脑排第一（哪怕测挂了也必须在最显眼的位置）
+        tested.sort(key=lambda r: (r['name'] != current_pid,))
+        for r in tested:
+            if r['name'] == current_pid:
+                r['current'] = True
+
+        if not tested:
+            return jsonify({'success': False, 'error': '请先配置至少一个 API Key'})
+
+        ok_list = [r for r in tested if r['ok']]
+        bad_list = [r for r in tested if not r['ok']]
+        if ok_list and not bad_list:
+            summary, success = ' / '.join(f"{r['name']} ✅ {r['ms']}ms" for r in tested), True
+        elif ok_list and bad_list:
+            summary, success = ' / '.join(f"{r['name']} {'✅' if r['ok'] else '❌ ' + r['error']}" for r in tested), True
+        else:
+            summary, success = '; '.join(f"{r['name']}: {r['error']}" for r in tested), False
+        return jsonify({'success': success, 'model': summary,
+                        'error': '' if success else summary, 'tested': [r['name'] for r in tested],
+                        'current': current_pid, 'results': tested})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -5243,25 +8093,41 @@ def search_installable_models():
         catalog_models = get_all_models()
     else:
         catalog_models = search_models(q)
-    
+
+    # ★ 2026-09-13 修复：目录模型统一标 ollama 型但没有真名，导致 pull 用错 id
+    #   推导规则：有 ollama_model 用之；否则把结尾的 -14b/-6.7b 等规格段换成冒号（qwen2.5-14b → qwen2.5:14b）
+    import re as _re
+    def _ollama_name(mid):
+        return _re.sub(r'-(\d+(?:\.\d+)?b)$', r':\1', (mid or ''), flags=_re.IGNORECASE)
+
+    # 本地 Ollama 已装列表（拉一次，供 installed 判断）
+    _local_tags = []
+    try:
+        import requests as _tags_rq
+        _base = config.get('ollama', {}).get('base_url', 'http://localhost:11434')
+        _local_tags = [x.get('name', '') for x in _tags_rq.get(f"{_base}/api/tags", timeout=2).json().get('models', [])]
+    except Exception:
+        pass
+
     for m in catalog_models:
         name_lower = m.get('name', '').lower()
         cat_lower = _norm_cat(m.get('category', ''))
-        
+
         # 跳过已存在的（来自安装器的同名模型）
         if m.get('name') in seen_names:
             continue
-        
+
         if category != 'all' and cat_lower != category:
             continue
-        
+
+        _pkg = m.get('ollama_model') or _ollama_name(m.get('id', '')) or m.get('id', '')
         entry = {
             'id': m.get('id', name_lower.replace(' ', '_').replace('-', '_')),
             'name': m.get('name', ''),
             'category': m.get('category', ''),
             'install': {
                 'type': 'ollama',
-                'package': m.get('ollama_model', m.get('model_id', '')),
+                'package': _pkg,
                 'desc': m.get('description', ''),
             },
             'model_size': m.get('size', m.get('size_gb', '?')),
@@ -5270,7 +8136,7 @@ def search_installable_models():
                 'gpu': m.get('vram_gb', 0) > 0 and '需要' or '可选',
                 'disk': '未知',
             },
-            'installed': False,
+            'installed': _pkg in _local_tags if _pkg else False,
             'source': 'catalog',
             'license': m.get('license', '开源'),
         }
@@ -5408,6 +8274,18 @@ def create_code_proposal():
 @app.route('/api/evolution/code-proposal/<int:proposal_id>/apply', methods=['POST'])
 def apply_code_proposal(proposal_id):
     try:
+        # ★ 2026-11-15 受保护动作密码门（方案A①+②）：AI 自动写代码的扳机，必须输管理员密码
+        from src.core.security_guard import is_protected_action, verify_admin_password
+        if is_protected_action('evolution'):
+            data_pwd = request.get_json(silent=True) or {}
+            pwd = (str(data_pwd.get('password') or '').strip()
+                   or (request.headers.get('X-Admin-Password') or '').strip())
+            if not pwd:
+                return jsonify({'success': False,
+                                'error': '应用代码提案受管理员密码保护，请输入密码后重试',
+                                'code': 'password_required'}), 401
+            if not verify_admin_password(pwd):
+                return jsonify({'success': False, 'error': '密码错误', 'code': 'password_wrong'}), 403
         from src.core.evolution_manager import get_evolution_manager
         em = get_evolution_manager()
         result = em.apply_code_proposal(proposal_id)
@@ -5528,7 +8406,62 @@ def agent_delete(agent_id):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/agents/<agent_id>/toggle', methods=['POST'])
+def agent_toggle(agent_id):
+    """★ 2026-09-13: 停用/启用开关（核心 3 位拒绝，其余可随时切换）"""
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        if 'enabled' not in data:
+            return jsonify({'success': False, 'error': '缺少 enabled'}), 400
+        from src.core.agent_registry import get_registry
+        return jsonify(get_registry().set_enabled(agent_id, bool(data['enabled'])))
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 # ★ 2026-07-14: /api/learner/* 路由已删除 — learner.py 模块不存在
+
+# ═══ ★ 2026-09-13: 邮箱配置页路由（修复 MailPage 调 /api/email/setup 404）═══
+@app.route('/api/email/setup', methods=['GET'])
+def email_setup_get():
+    """读取邮箱配置（脱敏：不回传授权码明文，只告知是否已配置）"""
+    try:
+        from src.core.builtin_tools import _get_email_config
+        cfg = _get_email_config() or {}
+        return jsonify({
+            'success': True,
+            'config': {
+                'email': cfg.get('address', ''),
+                'provider': cfg.get('provider', ''),
+                'imap_server': cfg.get('imap_server', ''),
+                'smtp_server': cfg.get('smtp_server', ''),
+                'has_token': bool(cfg.get('password')),
+            },
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/email/setup', methods=['POST'])
+def email_setup_post():
+    """保存邮箱配置（页面表单：email/provider/token → 复用 FC 工具的 server 自动推断）"""
+    try:
+        from src.core.builtin_tools import email_setup as _do_setup, _get_email_config, _save_email_config
+        data = request.get_json(force=True, silent=True) or {}
+        address = (data.get('email') or '').strip()
+        token = (data.get('token') or '').strip()
+        provider = (data.get('provider') or 'other').strip()
+        if not address or not token:
+            return jsonify({'success': False, 'error': '邮箱地址和授权码都要填'}), 400
+        r = _do_setup(address, token)
+        if not r.get('success'):
+            return jsonify({'success': False, 'error': r.get('error', '保存配置失败')}), 500
+        # provider 一并存入（页面回显用；email_setup 本身不存这个字段）
+        cfg = _get_email_config() or {}
+        cfg['provider'] = provider
+        _save_email_config(cfg)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/system/backup', methods=['POST'])
@@ -5880,6 +8813,68 @@ def profile_auto_summary():
         return jsonify({'error': str(e)}), 500
 
 
+# ==================== ★ 2026-09-18 #743 画像增强：时间线 / 手动编辑 / 主动服务 ====================
+@app.route('/api/profile/timeline', methods=['GET'])
+def profile_timeline():
+    """画像时间线：全部特征平铺按时间倒序（含证据/来源/时间）"""
+    try:
+        from src.core.profile_auto_updater import get_profile_updater
+        items = get_profile_updater().get_profile_timeline()
+        return jsonify({'success': True, 'items': items})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/profile/insights', methods=['GET'])
+def profile_insights():
+    """最近自动学到的新特征（画像页「最近新学到」卡片）"""
+    try:
+        from src.core.profile_auto_updater import get_profile_updater
+        items = get_profile_updater().get_recent_insights(days=7)
+        return jsonify({'success': True, 'items': items})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/profile/trait', methods=['POST'])
+def profile_add_trait():
+    """手动添加画像特征"""
+    try:
+        from src.core.profile_auto_updater import get_profile_updater
+        data = request.get_json(silent=True) or {}
+        result = get_profile_updater().add_manual_trait(
+            data.get('dimension', ''), data.get('label', ''))
+        return jsonify(result), (200 if result.get('success') else 400)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/profile/trait', methods=['PUT'])
+def profile_update_trait():
+    """修改画像特征标签"""
+    try:
+        from src.core.profile_auto_updater import get_profile_updater
+        data = request.get_json(silent=True) or {}
+        result = get_profile_updater().update_trait(
+            data.get('dimension', ''), data.get('label', ''), data.get('new_label', ''))
+        return jsonify(result), (200 if result.get('success') else 400)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/profile/trait', methods=['DELETE'])
+def profile_delete_trait():
+    """删除画像特征（哈文学错了就删掉）"""
+    try:
+        from src.core.profile_auto_updater import get_profile_updater
+        data = request.get_json(silent=True) or {}
+        result = get_profile_updater().delete_trait(
+            data.get('dimension', ''), data.get('label', ''))
+        return jsonify(result), (200 if result.get('success') else 400)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/profile/auto/suggestions/approve', methods=['POST'])
 def profile_approve_suggestion():
     """批准画像建议"""
@@ -5961,12 +8956,46 @@ def harvenhub_market_categories():
 
 @app.route('/api/harvenhub-market/stats', methods=['GET'])
 def harvenhub_market_stats():
-    """获取市场统计"""
+    """获取市场统计 — ★ 2026-09-13: 云端优先（与 browse 同源，修分类计数全 0 的口径分裂）"""
     try:
+        from src.core.harvenhub_client import hub_stats
+        cloud = hub_stats()
+        if cloud.get('success') and cloud.get('stats'):
+            cs = cloud['stats']
+            # ★ 2026-09-13: 云端响应是 {"stats": {...}} 双层包裹，需解包
+            if isinstance(cs.get('stats'), dict):
+                cs = cs['stats']
+            _CAT_NAMES = {
+                'code': '💻 开发', 'communication': '💬 沟通', 'creative': '🎨 创意',
+                'education': '📚 学习', 'finance': '💰 财务', 'general': '📦 通用',
+                'health': '🏥 健康', 'info': 'ℹ️ 资讯', 'life': '🏠 生活',
+                'office': '📄 办公', 'other': '📦 其他', 'reasoning': '🧠 推理',
+                'tech': '🔧 技术', 'tool': '🛠️ 工具', 'vertical': '🎯 垂直',
+            }
+            return jsonify({
+                'total': cs.get('total_items', 0),
+                'by_type': {t['type']: t['cnt'] for t in cs.get('type_stats', [])},
+                'total_downloads': cs.get('total_downloads', 0),
+                'total_ratings': 0,
+                'categories': [
+                    {
+                        'id': c['category'],
+                        'name': _CAT_NAMES.get(c['category'], c['category']),
+                        'item_count': c['cnt'],
+                        'description': '',
+                    }
+                    for c in cs.get('category_stats', [])
+                ],
+                'source': 'cloud',
+            })
+
+        # 云端不可用 → 本地统计兜底
         from src.core.harvenhub_market import get_market_stats, get_featured_items
         stats = get_market_stats()
         featured = get_featured_items(6)
         stats['featured'] = featured
+        stats['total'] = stats.get('total_items', 0)
+        stats['source'] = 'local'
         return jsonify(stats)
     except Exception as e:
         traceback.print_exc()
@@ -6328,11 +9357,12 @@ def harvenhub_market_my_published():
 import hashlib as _hashlib
 
 def _admin_password_hash() -> str:
-    """从 config dict 读取管理员密码并返回 SHA256 哈希（不存储明文）"""
-    pwd = config.get('security', {}).get('admin_password', '')
-    if not pwd:
-        # 未设置密码时，使用初始密码 harven2026
-        pwd = 'harven2026'
+    """管理员密码 SHA256 哈希（★ 2026-09-17 收口：改从磁盘读，改密后管理后台登录/会话立即同步）"""
+    try:
+        from src.core.security_guard import get_admin_password
+        pwd = get_admin_password()
+    except Exception:
+        pwd = config.get('security', {}).get('admin_password', '') or 'harven2026'
     return _hashlib.sha256(pwd.encode('utf-8')).hexdigest()
 
 
@@ -6377,13 +9407,12 @@ def admin_force_change_password():
         if new_pwd != confirm_pwd:
             return jsonify({'error': '两次输入的新密码不一致'}), 400
 
-        # 更新 config.yaml
+        # 更新 config.yaml（★ 2026-09-17 收口：统一走 security_guard，同步顶层 admin_password）
         try:
-            cfg = _load_config()
-            if 'security' not in cfg:
-                cfg['security'] = {}
-            cfg['security']['admin_password'] = new_pwd
-            _save_config(cfg)
+            from src.core.security_guard import change_admin_password
+            result = change_admin_password(current_pwd, new_pwd)
+            if not result.get('success'):
+                return jsonify({'error': result.get('error', '保存失败')}), 400
             return jsonify({'success': True})
         except Exception as e:
             return jsonify({'error': f'保存失败：{str(e)}'}), 500
@@ -6466,12 +9495,13 @@ document.getElementById('pwForm').addEventListener('submit', async (e) => {
 def admin_login():
     """管理员登录页"""
     error = ''
-    # 判断是否已设置密码，以及是否是初始密码
-    stored_pwd = config.get('security', {}).get('admin_password', '')
-    has_password = bool(stored_pwd)
-    is_initial = (has_password and 
-                  _hashlib.sha256(stored_pwd.encode('utf-8')).hexdigest() == 
-                  _hashlib.sha256('harven2026'.encode('utf-8')).hexdigest())
+    # 判断是否是初始密码（★ 2026-09-17 改磁盘读，改密后登录页立即同步）
+    try:
+        from src.core.security_guard import get_admin_password
+        stored_pwd = get_admin_password()
+    except Exception:
+        stored_pwd = config.get('security', {}).get('admin_password', '') or 'harven2026'
+    is_initial = (stored_pwd == 'harven2026')
     
     if request.method == 'POST':
         pwd = request.form.get('password', '').strip()
@@ -6932,8 +9962,7 @@ def trigger_system_scan():
 
 
 if __name__ == '__main__':
-    import webbrowser
-    import socket
+    import socket  # ★ 2026-09-19: webbrowser 移除（方案A，开浏览器归 bat 管）
     port = 7000  # ★ 2026-07-29: 5000被Windows/macOS占用，改为7000
 
     # ★ 2026-07-09: 启动时后台异步扫描系统知识
@@ -6942,6 +9971,10 @@ if __name__ == '__main__':
         scan_async()
     except Exception as e:
         print(f"[警告] 系统知识扫描启动失败: {e}")
+
+    # ★ #1242（2026-10-27）: 嵌入模型后台预热——重启后第一问不再等 bge 加载 3~5 秒
+    import threading as _th
+    _th.Thread(target=_preload_knowledge_embedding, daemon=True, name='kb-embed-preload').start()
 
     # ★ 2026-07-10: 启动时后台异步分类+注册模型
     try:
@@ -7058,7 +10091,10 @@ if __name__ == '__main__':
     # Cloudflare Tunnel 公网穿透功能暂未实现（计划后续添加）
     # enable_tunnel = os.environ.get('HARVEN_TUNNEL', '').lower() in ('1', 'true', 'yes')
 
-    threading.Timer(1.5, lambda: webbrowser.open(f'http://localhost:{port}')).start()
+    # ★ 2026-09-19 方案A（定版拍板）：删掉自动开浏览器——由 启动HarvenAI.bat 全权负责。
+    #   背景：bat 第50行也会 start http://localhost:7000/spa，旧版下线后 / 重定向 /spa，
+    #   两处各开一次 = 双开窗口。这里删掉后只在「已在运行时再点快捷方式」
+    #   由文件头端口预检（web_app.py 顶部）开一次浏览器，双击启动永远只弹一个窗口。
 
     # 注册模型管理路由（Blueprint）
     try:
@@ -7263,6 +10299,191 @@ if __name__ == '__main__':
         app.register_blueprint(panel_bp)
     except Exception as e:
         logger.warning(f"面板路由注册失败: {e}")
+
+    # ===== ★ 2026-10-05 #1012~#1015 冰箱深化（档案/食谱/买菜/拍照识别） =====
+    try:
+        from src.core.fridge_hub import bp as fridge_bp
+        app.register_blueprint(fridge_bp)
+        logger.info("[WebApp] 冰箱深化路由已注册 (/api/panels/fridge)")
+    except Exception as e:
+        logger.warning(f"冰箱深化路由注册失败: {e}")
+
+    # ===== ★ #1133（2026-10-14）随身记收件箱 =====
+    try:
+        from src.core.inbox import bp as inbox_bp
+        app.register_blueprint(inbox_bp)
+        logger.info("[WebApp] 随身记收件箱路由已注册 (/api/inbox)")
+    except Exception as e:
+        logger.warning(f"随身记路由注册失败: {e}")
+
+    # ===== ★ 2026-10-11 #1071~#1073 健康中枢（档案/药箱/提醒/预警） =====
+    try:
+        from src.core.health_profile import bp as health_bp
+        app.register_blueprint(health_bp)
+        logger.info("[WebApp] 健康中枢路由已注册 (/api/panels/health)")
+    except Exception as e:
+        logger.warning(f"健康中枢路由注册失败: {e}")
+
+    # ===== ★ 2026-10-11 #1072 健康中枢四面板出厂（缺哪个补哪个 + 旧体检数据迁入） =====
+    try:
+        from src.core.health_panels import ensure_health_panels
+        ensure_health_panels()
+    except Exception as e:
+        logger.warning(f"健康中枢面板出厂失败: {e}")
+
+    # ★ #1088 物品存放：复用现成 home_items「物品存放台账」（三级位置+照片+借出提醒全有），
+    #   不重复建设；随安装包 data/panels 自带，panel_manager 扫描即就绪，无需出厂逻辑。
+
+    # ===== ★ 2026-09-14 注册孩子成长档案路由 =====
+    try:
+        from src.core.kid_archive_routes import bp as kid_archive_bp
+        app.register_blueprint(kid_archive_bp)
+        logger.info("[WebApp] 孩子成长档案路由已注册 (/api/kid)")
+    except Exception as e:
+        logger.warning(f"孩子成长档案路由注册失败: {e}")
+
+    # ===== ★ 2026-09-18 宠物系统（档案/喂养/疫苗驱虫/洗澡就医） =====
+    try:
+        from src.core.pet_routes import bp as pet_bp
+        app.register_blueprint(pet_bp)
+        logger.info("[WebApp] 宠物系统路由已注册 (/api/pet)")
+    except Exception as e:
+        logger.warning(f"宠物系统路由注册失败: {e}")
+
+    # ===== ★ 2026-09-21 (#825) 语音识别模型管理（查看/下载/删除 Whisper） =====
+    try:
+        from src.core.voice_routes import bp as voice_bp
+        app.register_blueprint(voice_bp)
+        logger.info("[WebApp] 语音识别模型管理路由已注册 (/api/voice)")
+    except Exception as e:
+        logger.warning(f"语音识别模型管理路由注册失败: {e}")
+
+    # ===== ★ 2026-09-18 照片中心（全模块照片统一索引） =====
+    try:
+        from src.core.photo_center import bp as photo_bp
+        app.register_blueprint(photo_bp)
+        logger.info("[WebApp] 照片中心路由已注册 (/api/photos)")
+    except Exception as e:
+        logger.warning(f"照片中心路由注册失败: {e}")
+
+    # ===== ★ 2026-09-16 注册对话即录入路由 =====
+    try:
+        from src.core.panel_assist_routes import bp as panel_assist_bp
+        app.register_blueprint(panel_assist_bp)
+        logger.info("[WebApp] 对话即录入路由已注册 (/api/assist)")
+    except Exception as e:
+        logger.warning(f"对话即录入路由注册失败: {e}")
+
+    # ===== ★ 2026-09-16 注册家庭提醒/日历路由 =====
+    try:
+        from src.core.home_routes import bp as home_reminder_bp
+        app.register_blueprint(home_reminder_bp)
+        logger.info("[WebApp] 家庭提醒/日历路由已注册 (/api/home)")
+    except Exception as e:
+        logger.warning(f"家庭提醒/日历路由注册失败: {e}")
+
+    # ===== ★ 2026-10-15 #1150 提醒主动触达：蓝图 + 30s 扫描守护线程 =====
+    try:
+        from src.core.reminder_daemon import bp as reminder_daemon_bp, ensure_daemon_loop
+        app.register_blueprint(reminder_daemon_bp)
+        ensure_daemon_loop()
+        logger.info("[WebApp] 提醒主动触达已注册 (/api/reminders/due) + 守护线程已启动")
+    except Exception as e:
+        logger.warning(f"提醒主动触达启动失败: {e}")
+
+    # ===== ★ 2026-10-21 学习成长中心：批作业/错题本/学情周报 =====
+    try:
+        from src.core.study_coach import bp as study_coach_bp
+        app.register_blueprint(study_coach_bp)
+        logger.info("[WebApp] 学习成长中心已注册 (/api/study/*)")
+    except Exception as e:
+        logger.warning(f"学习成长中心注册失败: {e}")
+
+    # ===== ★ 2026-10-22 面板教练引擎：观察/行动按钮/早报 =====
+    try:
+        from src.core.coach_engine import bp as coach_bp
+        app.register_blueprint(coach_bp)
+        logger.info("[WebApp] 面板教练引擎已注册 (/api/coach/*)")
+    except Exception as e:
+        logger.warning(f"面板教练引擎注册失败: {e}")
+
+    # ===== ★ 2026-10-24 #1176 管家议程：声明扫描+统一议程+日两次简报 =====
+    try:
+        from src.core.butler_agenda import bp as butler_bp, ensure_butler_loop
+        app.register_blueprint(butler_bp)
+        ensure_butler_loop()
+        logger.info("[WebApp] 管家议程已注册 (/api/butler/*) + 心跳线程已启动")
+    except Exception as e:
+        logger.warning(f"管家议程启动失败: {e}")
+
+    # ===== ★ #1212（2026-10-25）Hub 安装确认卡：搜索+装前征求用户同意 =====
+    try:
+        from src.core.hub_install import bp as hub_install_bp
+        app.register_blueprint(hub_install_bp)
+        logger.info("[WebApp] Hub 安装引擎已注册 (/api/hub/search + /api/hub/install/*)")
+    except Exception as e:
+        logger.warning(f"Hub 安装引擎启动失败: {e}")
+
+    # ===== ★ #1207/#1208/#1210 数据中枢（2026-10-25）：成员全景 / 全家事件流 / 画像写回 =====
+    try:
+        from src.core.member_hub import get_bp as get_member_bp
+        app.register_blueprint(get_member_bp())
+        logger.info("[WebApp] 数据中枢已注册 (/api/members/*)")
+    except Exception as e:
+        logger.warning(f"数据中枢注册失败: {e}")
+
+    # ===== ★ 2026-10-21 速度包：启动后台预热（FC注册/CLI探测缓存/语义路由锚点） =====
+    #   实锤：重启后首条消息被冷启动拖 12s（FC 注册）+ 收笔后被锚点计算拖 66s（阻塞入库）
+    def _warmup_background():
+        def _run():
+            import time as _t
+            _t.sleep(4)   # 等主服务先起稳
+            try:
+                from src.core.fc_wrapper_loader import load_fc_wrappers
+                t, _e = load_fc_wrappers()
+                logger.info(f"[Warmup] FC 封装预热完成: {len(t)} 个")
+            except Exception as e:
+                logger.debug(f"[Warmup] FC 预热跳过: {e}")
+            try:
+                from src.core.builtin_tools import _check_cli_anything_installed
+                _check_cli_anything_installed()   # 结果进 1h 缓存，首条消息不再跑 pip show
+                logger.info("[Warmup] CLI-Anything 探测已缓存")
+            except Exception as e:
+                logger.debug(f"[Warmup] CLI 探测跳过: {e}")
+            try:
+                from src.core import db_router
+                if db_router._ensure_anchor_embeddings():
+                    logger.info("[Warmup] 语义路由锚点向量预热完成（首条消息不再等 60s+）")
+            except Exception as e:
+                logger.debug(f"[Warmup] 锚点预热跳过: {e}")
+        threading.Thread(target=_run, daemon=True, name='warmup-bg').start()
+
+    try:
+        _warmup_background()
+    except Exception as e:
+        logger.warning(f"预热线程启动失败: {e}")
+
+    # ===== ★ 2026-09-19 #769 定时汇总三件套（梦境周/记账月/成长月）守护线程 =====
+    try:
+        from src.core.panel_summary import ensure_summary_loop
+        ensure_summary_loop()
+    except Exception as e:
+        logger.warning(f"定时汇总线程启动失败: {e}")
+
+    # ===== ★ 2026-09-19 #771 照片自动打标签守护线程（minicpm-v，每30分钟一批） =====
+    try:
+        from src.core.photo_center import ensure_tag_loop
+        ensure_tag_loop()
+    except Exception as e:
+        logger.warning(f"照片打标签线程启动失败: {e}")
+
+    # ===== ★ #916 统一图库后台补标线程（2026-09-27，images_index 没标签的图） =====
+    try:
+        from src.core.img_store import ensure_auto_tag_loop
+        ensure_auto_tag_loop()
+    except Exception as e:
+        logger.warning(f"图库补标线程启动失败: {e}")
+
 
     # ===== ★ 2026-08-08: 记账API =====
     @app.route('/api/accounting/records', methods=['GET'])
@@ -7897,12 +11118,17 @@ AI自动生成的Skill。
             index_path = os.path.join(panel_dir, 'index.html')
             if not os.path.isfile(index_path):
                 return "面板不存在", 404
-            return send_from_directory(panel_dir, 'index.html')
+            # ★ 2026-09-16 面板文件禁缓存：面板升级换版后浏览器必须立刻拿新页，不许吃旧 DOM
+            resp = send_from_directory(panel_dir, 'index.html')
+            resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+            return resp
 
         @app.route('/panel/<panel_id>/<path:filename>')
         def serve_panel_assets(panel_id, filename):
             panel_dir = os.path.join(PANELS_DIR, panel_id)
-            return send_from_directory(panel_dir, filename)
+            resp = send_from_directory(panel_dir, filename)
+            resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+            return resp
 
         logger.info("[Startup] 面板静态文件路由已注册")
     except Exception as _e:
@@ -7914,5 +11140,79 @@ AI自动生成的Skill。
         start_scheduler()
     except Exception as e:
         logger.warning(f"[Startup] 定时调度器启动失败: {e}")
+
+    # ★ 2026-09-20 (#803/#804): 云端通道 + 设备配对
+    # enabled=true 时哈文主动外连 HarvenHub 长连接；默认关，设置页可开
+    try:
+        from src.core.cloud_link import register_cloud_link_routes, start_cloud_link
+        register_cloud_link_routes(app)
+        start_cloud_link()
+    except Exception as e:
+        logger.warning(f"[Startup] 云端通道启动失败: {e}")
+
+    # ★ #1257（2026-10-28）HarvenEye 合并托管：桌面单一图标，点一次全有了。
+    # 后台拉起不阻塞启动；Eye 起不来只降级视觉功能（eye_supervisor 内置守护）
+    try:
+        # ★ #1280 节点⑥（2026-10-29）v1.3 融合退役：视觉子系统已并入哈文进程内
+        #   （src/vision + vision_link），7001 独立进程/supervisor 托管/心跳全部作废。
+        #   不再拉起旧 Eye；eye_catalog.db 索引库已迁移 data/vision/ 真家。
+        import threading as _th
+        logger.info("[Startup] HarvenEye 融合版（进程内）就绪——旧 7001 独立进程已退役")
+
+        # ★ #1257 批4：存量照片重跑归位（延迟 90s；只动未分类，幂等可重复）
+        def _reauto_bg():
+            time.sleep(90)
+            try:
+                # ★ #1320 对话优先闸门：开发者手快重启后 1 分钟就提问（10-30 实锤），对话活跃则等
+                from src.core import dialog_gate as _dg
+                _waited = 0
+                while _dg.is_busy() and _waited < 180:
+                    time.sleep(10)
+                    _waited += 10
+                from src.core.img_store import reauto_place_all
+                reauto_place_all()
+            except Exception as _re:
+                logger.warning(f"[Startup] 存量归位重跑失败（不影响使用）: {_re}")
+        threading.Thread(target=_reauto_bg, daemon=True).start()
+
+        # ★ #1322 选择即换血：启动热身——把用户当前选的本地模型预载进显存（20s 错峰，
+        #   让硬件检测/路由先跑完；外脑选择/未选/解析不出则诚实跳过）
+        def _warm_bg():
+            time.sleep(20)
+            try:
+                from src.core.multi_model_manager import get_multi_model_manager
+                _cur = str(get_multi_model_manager().current_model or '').strip()
+                if _cur in ('', 'ollama'):
+                    # ollama 阵营：具体模型名取用户配置的 default_model
+                    from src.utils.config import get_config as _gcfg
+                    _target = str((_gcfg() or {}).get('default_model', '') or '').strip()
+                elif _cur == 'harveneye':
+                    _target = 'harveneye'
+                else:
+                    _target = ''        # 用户选的外脑，走 API 无需预载
+                if _target:
+                    from src.core import local_model_swap
+                    local_model_swap.swap_in_async(_target, reason='startup_warmup')
+            except Exception as _we:
+                logger.debug(f"[Startup] 启动模型热身跳过（不影响使用）: {_we}")
+        threading.Thread(target=_warm_bg, daemon=True).start()
+
+        # ★ #1279 节点⑨：拍照深识队列循环（30s 一轮，无理解通道时静默等待）
+        try:
+            from src.vision import tasks as _vt
+            _vt.ensure_loop()
+        except Exception as _te:
+            logger.warning(f"[Startup] 深识队列启动失败（不影响使用）: {_te}")
+    except Exception as e:
+        logger.warning(f"[Startup] 视觉子系统初始化告警（不阻塞）: {e}")
+
+    # ★ #1362（2026-11-02）: 默认密码提示改为条件打印——原先是 bat 固定横幅，
+    # 已改密用户每次启动还看到"Default password: harven2026"属误导死文案
+    try:
+        from src.core.security_guard import get_admin_password
+        if get_admin_password() == 'harven2026':
+            print('\nDefault password: harven2026 - please change it after first login.\n')
+    except Exception:
+        pass
 
     app.run(host='0.0.0.0', port=port, debug=False, threaded=True)

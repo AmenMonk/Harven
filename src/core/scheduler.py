@@ -30,6 +30,40 @@ def _get_conn():
     conn.execute("PRAGMA synchronous=NORMAL")
     return conn
 
+
+def _dedup_window_seconds(schedule_type: str, schedule_config_json: str) -> Optional[float]:
+    """
+    ★ 2026-09-12: 防重窗口计算 — 多进程并存兜底
+    背景：旧进程未杀干净 + 新进程同时运行时，两个 APScheduler 都会在整点触发同一任务
+    （实测 2026-06-30 跑了 72 次、07-01 跑了 83 次，正常应为 24 次/天）。
+    返回值：同一任务两次触发之间的最小安全间隔（秒）。None 表示不防重（once 任务）。
+    """
+    try:
+        cfg = json.loads(schedule_config_json or '{}')
+    except Exception:
+        cfg = {}
+    try:
+        if schedule_type == 'interval':
+            total = float(cfg.get('minutes', 60)) * 60 + float(cfg.get('hours', 0)) * 3600
+            return max(60.0, total * 0.9)
+        if schedule_type == 'cron':
+            hour = cfg.get('hour', '*')
+            minute = cfg.get('minute', 0)
+            if hour == '*' or hour == '*/1':
+                # 分钟级循环
+                if isinstance(minute, int):
+                    return 54 * 60  # 每小时一次 → 54 分钟窗口
+                m = str(minute)
+                if m.startswith('*/'):
+                    step = float(m[2:]) * 60
+                    return max(60.0, step * 0.9)
+                return 54 * 60
+            # 每天固定时刻（含 day_of_week 限定）→ 20 小时窗口
+            return 20 * 3600
+        return None  # once 及其他：不防重
+    except Exception:
+        return None
+
 # ─── 检测 APScheduler ───
 def _check_apscheduler():
     try:
@@ -235,13 +269,38 @@ class TaskScheduler:
         run_id = None
         conn = _get_conn()
         try:
-            # 获取任务名称
+            # 获取任务名称 + 调度配置（用于防重窗口计算）
             task_name = ""
             row = conn.execute(
-                "SELECT name FROM scheduled_tasks WHERE task_id=?", (task_id,)
+                "SELECT name, schedule_type, schedule_config FROM scheduled_tasks WHERE task_id=?", (task_id,)
             ).fetchone()
             if row:
                 task_name = row[0]
+
+            # ★ 2026-09-12: 原子占位防重 — 同一时间窗内只允许一个进程触发
+            #   UPDATE 带 last_run 条件是原子操作：多进程同时触发时只有一个 rowcount=1，其余跳过
+            _window = _dedup_window_seconds(row[1], row[2]) if row else None
+            if _window is not None:
+                from datetime import timedelta
+                _cutoff = (datetime.now() - timedelta(seconds=_window)).isoformat()
+                _cur = conn.execute(
+                    "UPDATE scheduled_tasks SET last_run=? "
+                    "WHERE task_id=? AND (last_run IS NULL OR last_run < ?)",
+                    (started_at, task_id, _cutoff)
+                )
+                conn.commit()
+                if _cur.rowcount == 0:
+                    logger.warning(
+                        f"[Scheduler] 任务 {task_id} 在防重窗口（{_window/60:.0f}分钟）内已被触发，本次跳过"
+                    )
+                    return
+            else:
+                # 更新最后执行时间（once 任务或无防重）
+                conn.execute(
+                    "UPDATE scheduled_tasks SET last_run=? WHERE task_id=?",
+                    (started_at, task_id)
+                )
+                conn.commit()
 
             # 插入执行记录
             conn.execute(
@@ -251,13 +310,6 @@ class TaskScheduler:
             )
             conn.commit()
             run_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-
-            # 更新最后执行时间
-            conn.execute(
-                "UPDATE scheduled_tasks SET last_run=? WHERE task_id=?",
-                (started_at, task_id)
-            )
-            conn.commit()
         finally:
             conn.close()
 

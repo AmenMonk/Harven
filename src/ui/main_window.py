@@ -541,7 +541,7 @@ class ImageStreamWorker(QThread):
     def run(self):
         try:
             from src.core.image_processor import analyze_image
-            from src.core.morality import SYSTEM_PROMPT
+            from src.core.identity import SYSTEM_PROMPT
             from src.models.database import save_message
 
             save_message(self.conversation_id, "user", self.text or "[图片]")
@@ -585,7 +585,7 @@ class VideoStreamWorker(QThread):
     def run(self):
         try:
             from src.core.video_processor import analyze_video, get_video_info
-            from src.core.morality import SYSTEM_PROMPT
+            from src.core.identity import SYSTEM_PROMPT
             from src.models.database import save_message
 
             # 显示视频信息

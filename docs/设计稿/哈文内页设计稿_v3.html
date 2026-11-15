@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="0GsHFnJl7WWGOvulxxvvgH">
+<head data-page-node-id="gYAeYgGoOEmQMhhVPtUw9Z">
+<meta charset="UTF-8" data-page-node-id="34ILqrAqjK6mCgHZoxfdeG">
+<meta name="viewport" content="width=device-width, initial-scale=1" data-page-node-id="GMjQ6sl66hwE8uqNPJa74I">
+<title>哈文 · 内页设计稿 v3（面板/知识库/技能库/设置/运行状态）</title>
+<style>
+  :root{
+    --bg:#F4F6F9; --panel:#FFFFFF; --line:#E3E7EE; --ink:#1F2733; --sub:#6B7686;
+    --blue:#2F6FED; --blue-soft:#EAF1FE; --amber:#E8960C; --amber-soft:#FDF3E2;
+    --green:#0F8A5F; --green-soft:#E4F5EE; --red:#C24040; --red-soft:#FBEAEA;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:"Microsoft YaHei","PingFang SC",system-ui,sans-serif;background:var(--bg);color:var(--ink);padding:28px 20px 60px}
+  .page{max-width:1460px;margin:0 auto}
+  h1{font-size:24px;margin-bottom:6px;display:flex;align-items:center;gap:8px}
+  h1 img{height:28px;border-radius:6px}
+  .desc{color:var(--sub);font-size:14px;margin-bottom:18px;line-height:1.7}
+  .desc b{color:var(--ink)}
+  .ic{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+  .ic14{width:15px;height:15px;stroke-width:2}
+  .ic18{width:18px;height:18px}
+  .ic26{width:26px;height:26px;stroke-width:1.6}
+  .ic34{width:34px;height:34px;stroke-width:1.5}
+  .switcher{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+  .switcher button{padding:9px 18px;border:1px solid var(--line);background:#fff;border-radius:999px;font-size:14px;cursor:pointer;color:var(--sub)}
+  .switcher button.on{background:var(--blue);border-color:var(--blue);color:#fff;font-weight:600}
+  .state{display:none}
+  .state.on{display:block}
+  .frame{background:#fff;border:1px solid var(--line);border-radius:20px;padding:14px;box-shadow:0 10px 40px rgba(31,39,51,.08)}
+  .frame-title{font-size:13px;color:var(--sub);margin:0 4px 10px}
+  .win{height:680px;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--panel);display:flex;flex-direction:column}
+  .wtop{display:flex;align-items:center;gap:10px;padding:11px 16px;border-bottom:1px solid var(--line);background:#fff;flex:none}
+  .wtop .title{font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .wtop .title .ic{color:var(--blue)}
+  .wtop .back{margin-left:auto;font-size:13px;color:var(--blue);cursor:pointer;white-space:nowrap}
+  .pill{font-size:12px;padding:4px 12px;border-radius:999px;border:1px solid var(--line);color:var(--sub);white-space:nowrap}
+  .pill.blue{color:var(--blue);border-color:#C6D6F5;background:var(--blue-soft)}
+  /* 面板选择器 */
+  .sel-body{flex:1;overflow:auto;padding:20px 24px}
+  .sec-t{font-size:14px;font-weight:700;margin:14px 0 10px;display:flex;align-items:center;gap:7px}
+  .sec-t:first-child{margin-top:0}
+  .sec-t .hint{font-weight:400;font-size:12px;color:var(--sub)}
+  .cat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .cat{border:1.5px solid var(--line);border-radius:14px;padding:14px;background:#FBFCFE}
+  .cat.dash{border-style:dashed;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:var(--sub);cursor:pointer}
+  .cat .ch{display:flex;align-items:center;gap:9px;font-size:15px;font-weight:700}
+  .cat .ch .ic{color:var(--blue)}
+  .cat .cs{font-size:12px;color:var(--sub);margin:6px 0 10px;line-height:1.6}
+  .inst{display:flex;flex-wrap:wrap;gap:6px}
+  .itag{font-size:11.5px;background:var(--blue-soft);color:var(--blue);border-radius:99px;padding:3px 10px}
+  .cat .ops{display:flex;gap:6px;margin-top:11px}
+  .op{flex:1;font-size:11.5px;padding:6px 0;text-align:center;border:1px solid var(--line);border-radius:8px;background:#fff;color:#3A4453;cursor:pointer;white-space:nowrap}
+  .op.hot{border-color:var(--blue);color:var(--blue);font-weight:600}
+  .mod-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:10px}
+  .mod{border:1px solid var(--line);border-radius:12px;padding:12px 6px;text-align:center;font-size:12.5px;background:#fff;cursor:grab;display:flex;flex-direction:column;align-items:center;gap:6px}
+  .mod .ic{color:#5B87D8}
+  .mod small{color:#A7B0BE;font-size:10.5px}
+  .dragbar{margin-top:10px;font-size:12px;color:var(--sub);background:var(--blue-soft);border:1px dashed #C6D6F5;border-radius:10px;padding:9px 14px;line-height:1.7}
+  /* 知识库/技能库 */
+  .kb{display:grid;grid-template-columns:220px 1fr;flex:1;min-height:0}
+  .kb-side{border-right:1px solid var(--line);background:#FBFCFE;padding:14px 10px;overflow:auto}
+  .kb-side .t{font-size:12px;color:var(--sub);margin:8px 6px 4px}
+  .knode{padding:8px 10px;border-radius:9px;font-size:13.5px;display:flex;align-items:center;gap:8px;color:#3A4453;cursor:pointer}
+  .knode .ic{color:#98A2B3}
+  .knode.on{background:var(--blue-soft);color:var(--blue);font-weight:600}
+  .knode.on .ic{color:var(--blue)}
+  .knode .n{margin-left:auto;font-size:11px;color:#A7B0BE}
+  .kb-main{display:flex;flex-direction:column;min-width:0}
+  .kb-tools{display:flex;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line);align-items:center}
+  .ksearch{flex:1;border:1px solid var(--line);border-radius:11px;padding:10px 14px;font-size:13.5px;color:#9AA3B0;display:flex;gap:8px;align-items:center}
+  .btn-add{background:var(--blue);color:#fff;border:none;border-radius:11px;padding:10px 18px;font-size:13.5px;cursor:pointer;white-space:nowrap}
+  .doc-grid{flex:1;overflow:auto;padding:16px 18px;display:grid;grid-template-columns:repeat(3,1fr);gap:12px;align-content:start}
+  .doc{border:1px solid var(--line);border-radius:12px;padding:13px;background:#fff;cursor:pointer}
+  .doc .di{width:38px;height:38px;border-radius:9px;display:flex;align-items:center;justify-content:center;margin-bottom:8px}
+  .doc .dn{font-size:13.5px;font-weight:600;line-height:1.4}
+  .doc .dm{font-size:11.5px;color:var(--sub);margin-top:5px;line-height:1.6}
+  .st{display:inline-block;font-size:10.5px;border-radius:99px;padding:2px 8px;margin-top:7px}
+  .st.ok{background:var(--green-soft);color:var(--green)}
+  .st.doing{background:var(--amber-soft);color:var(--amber)}
+  .st.fail{background:var(--red-soft);color:var(--red)}
+  .skill-layout{display:grid;grid-template-columns:1fr 320px;flex:1;min-height:0}
+  .skill-grid{flex:1;overflow:auto;padding:16px 18px;display:grid;grid-template-columns:repeat(2,1fr);gap:12px;align-content:start}
+  .sk{border:1.5px solid var(--line);border-radius:13px;padding:14px;background:#fff;cursor:pointer}
+  .sk.on{border-color:var(--blue);background:var(--blue-soft)}
+  .sk .sh{display:flex;gap:10px;align-items:center}
+  .sk .sn{font-size:14px;font-weight:700}
+  .sk .sd{font-size:12px;color:var(--sub);margin-top:7px;line-height:1.6}
+  .sk .sm{font-size:11px;color:#A7B0BE;margin-top:6px}
+  .sk-detail{border-left:1px solid var(--line);background:#FBFCFE;padding:16px;overflow:auto}
+  .sk-detail h4{font-size:15px;display:flex;align-items:center;gap:8px;margin-bottom:6px}
+  .sk-detail .desc2{font-size:12.5px;color:var(--sub);line-height:1.7;margin-bottom:12px}
+  .fld{margin-bottom:10px}
+  .fld label{font-size:12px;color:var(--sub);display:block;margin-bottom:4px}
+  .fld .in{border:1px solid var(--line);border-radius:9px;padding:9px 11px;font-size:13px;background:#fff;color:#9AA3B0}
+  .btn-run{width:100%;background:var(--blue);color:#fff;border:none;border-radius:10px;padding:11px 0;font-size:14px;font-weight:600;cursor:pointer;margin-top:6px}
+  .hist{margin-top:14px;border-top:1px dashed var(--line);padding-top:10px}
+  .hist .ht{font-size:12px;color:var(--sub);margin-bottom:6px}
+  .hist .hi{font-size:12px;color:#3A4453;padding:5px 0;border-bottom:1px dashed var(--line);line-height:1.5}
+  /* 设置单页 */
+  .set{display:grid;grid-template-columns:190px 1fr;flex:1;min-height:0}
+  .set-nav{border-right:1px solid var(--line);background:#FBFCFE;padding:14px 10px}
+  .set-nav .ni{padding:10px 12px;border-radius:10px;font-size:13.5px;display:flex;gap:9px;align-items:center;cursor:pointer;color:#3A4453;margin-bottom:2px}
+  .set-nav .ni .ic{color:#98A2B3}
+  .set-nav .ni.on{background:var(--blue-soft);color:var(--blue);font-weight:600}
+  .set-nav .ni.on .ic{color:var(--blue)}
+  .set-body{flex:1;overflow:auto;padding:18px 24px}
+  .s-sec{margin-bottom:22px}
+  .s-sec h3{font-size:14.5px;margin-bottom:4px;display:flex;align-items:center;gap:8px}
+  .s-sec .sh2{font-size:12px;color:var(--sub);margin-bottom:12px}
+  .mgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .mcard{border:1.5px solid var(--line);border-radius:12px;padding:12px;background:#fff;position:relative}
+  .mcard.def{border-color:var(--blue)}
+  .mcard .mh{display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:700}
+  .mcard .md{font-size:11.5px;color:var(--sub);margin:6px 0 9px;line-height:1.55}
+  .mcard .ops2{display:flex;gap:6px}
+  .mcard .o2{font-size:11px;padding:4px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;color:#3A4453}
+  .star{position:absolute;top:10px;right:10px;color:var(--blue);font-size:11.5px;font-weight:700}
+  .vram{height:6px;background:#EEF1F6;border-radius:99px;overflow:hidden;margin-top:8px}
+  .vram i{display:block;height:100%;background:var(--green);border-radius:99px}
+  .row{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px dashed var(--line);font-size:13.5px}
+  .row:last-child{border-bottom:none}
+  .row .rl{font-weight:600}
+  .row .rs{color:var(--sub);font-size:12px;margin-top:2px;line-height:1.5}
+  .row .rr{margin-left:auto;display:flex;align-items:center;gap:8px;flex:none}
+  .switch{width:40px;height:22px;border-radius:99px;background:#D6DBE4;position:relative;flex:none}
+  .switch.on{background:var(--green)}
+  .switch i{position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+  .switch.on i{left:auto;right:2px}
+  .tag{font-size:11px;padding:2px 9px;border-radius:99px;background:#F1F3F7;color:var(--sub)}
+  .tag.blue{background:var(--blue-soft);color:var(--blue)}
+  .devbox{border:1.5px dashed var(--amber);border-radius:13px;padding:14px;background:var(--amber-soft)}
+  .devbox .dt{font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px}
+  .devbox .dw{font-size:11.5px;color:#8A6116;margin:6px 0 10px;line-height:1.6}
+  .devgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .devi{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 6px;text-align:center;font-size:12px;display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer}
+  .devi .ic{color:var(--amber)}
+  .devwarn{margin-top:10px;font-size:11.5px;color:var(--red);font-weight:600}
+  /* 运行状态 */
+  .mon-grid{flex:1;overflow:auto;padding:20px 24px;display:grid;grid-template-columns:repeat(3,1fr);gap:14px;align-content:start}
+  .mbox{border:1px solid var(--line);border-radius:13px;padding:14px;background:#fff}
+  .mbox .mt2{font-size:13px;font-weight:700;display:flex;align-items:center;gap:7px;margin-bottom:10px}
+  .mbox .mt2 .ic{color:var(--blue)}
+  .gauge{display:flex;gap:12px;align-items:flex-end}
+  .gcol{text-align:center;flex:1}
+  .gbar{height:64px;background:#EEF1F6;border-radius:9px;display:flex;align-items:flex-end;overflow:hidden}
+  .gbar i{display:block;width:100%;border-radius:9px 9px 0 0}
+  .gcol b{display:block;font-size:10.5px;color:var(--sub);margin-top:5px;font-weight:400}
+  .kv{display:flex;justify-content:space-between;font-size:12.5px;padding:6px 0;border-bottom:1px dashed var(--line)}
+  .kv:last-child{border-bottom:none}
+  .kv .k2{color:var(--sub)}
+  .kv .v2{font-weight:600}
+  .v2.ok{color:var(--green)}
+  /* 表格与说明 */
+  table{width:100%;border-collapse:collapse;background:#fff;border-radius:14px;overflow:hidden;font-size:13.5px;margin-top:10px}
+  th{background:#EEF2F8;text-align:left;padding:10px 14px;font-size:13px;color:#41506B}
+  td{padding:9px 14px;border-top:1px solid var(--line);line-height:1.6}
+  .note-sec{background:#fff;border:1px solid var(--line);border-radius:16px;padding:20px 22px;margin-top:26px}
+  .note-sec h2{font-size:17px;margin-bottom:10px}
+  .note-sec li,.note-sec p{font-size:13.5px;color:#3A4453;line-height:1.9}
+  .note-sec ul{padding-left:20px}
+</style>
+</head>
+<body data-page-node-id="jfGzMcpBQjOaFOy4FxMNX1">
+<svg width="0" height="0" style="position:absolute" data-page-node-id="fv2XIbW6sHU0GywsYdF9Lg">
+  <symbol id="i-book" viewBox="0 0 24 24" data-page-node-id="RXIVgEz6CG6AYjHHgXV70r"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z" data-page-node-id="DqMEvEADzKeznWxehckZ9A"/><path d="M4 19a2 2 0 0 1 2-2h13" data-page-node-id="RLNCbGlZcQG3CGXv1nnJXu"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 24 24" data-page-node-id="AkJhGvECyVF6RQJ8lAA5ok"><path d="M13 2 4.5 14H11l-1 8 8.5-12H12z" data-page-node-id="NQr6It6F2te36Y0FkFR3Cd"/></symbol>
+  <symbol id="i-mail" viewBox="0 0 24 24" data-page-node-id="My11YB19sPZCKEeoFCo1te"><rect x="3" y="5" width="18" height="14" rx="3" data-page-node-id="8mMqgOEjI0d6sjNTByK6oz"/><path d="m3.5 8 8.5 5.5L20.5 8" data-page-node-id="55kytVDngQ8OaqEwC5DJE6"/></symbol>
+  <symbol id="i-pulse" viewBox="0 0 24 24" data-page-node-id="Tz1f0BLebV3KNQDHdUDBtZ"><path d="M3 12h4l2.5-6.5 4.5 13 2.5-6.5H21" data-page-node-id="QFmhjTA5WXZdedJuchizNb"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24" data-page-node-id="T23WFVvEVZ0sKfzLLEQCBi"><circle cx="12" cy="12" r="3.2" data-page-node-id="utfFFjZTw4ehVfmehdrOEB"/><path d="M12 2.8v3M12 18.2v3M2.8 12h3M18.2 12h3M5.5 5.5l2.1 2.1M16.4 16.4l2.1 2.1M18.5 5.5l-2.1 2.1M7.6 16.4l-2.1 2.1" data-page-node-id="nQJgX1YOBD1N9lqLorglGW"/></symbol>
+  <symbol id="i-bot" viewBox="0 0 24 24" data-page-node-id="QbFAr5PTogfGNPFEBO1GDP"><rect x="4" y="8.5" width="16" height="11.5" rx="3" data-page-node-id="bbeUz3kPdtxCTz9ZG8M2vY"/><circle cx="9" cy="14.2" r="1.1" fill="currentColor" stroke="none" data-page-node-id="oNElZ3aPohOUywCzH6xPcQ"/><circle cx="15" cy="14.2" r="1.1" fill="currentColor" stroke="none" data-page-node-id="xbAAWzXl4zNC854OPT9MQu"/><path d="M12 8.5V5M9.5 5h5" data-page-node-id="rzyoszuPdBqfbI8cB0I5Ew"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24" data-page-node-id="8nLe0XR4EVJlpZdcfaxdpG"><path d="m4 11 8-7.5L20 11" data-page-node-id="E2Z3QEsp5A8gt2dHNNIDax"/><path d="M6 9.5V20h12V9.5" data-page-node-id="YuxQ216TIioONJre4q3v9Z"/><path d="M10 20v-6h4v6" data-page-node-id="D7eQvHAvCU5NFuF4i2sEJ6"/></symbol>
+  <symbol id="i-panel" viewBox="0 0 24 24" data-page-node-id="ifxsyC9AVLIl4cNzCueKid"><rect x="4" y="4" width="7" height="7" rx="1.5" data-page-node-id="6bPG188gblDFEezvrPdKn1"/><rect x="13" y="4" width="7" height="7" rx="1.5" data-page-node-id="mDmlstJsanUapSHebufN9P"/><rect x="4" y="13" width="7" height="7" rx="1.5" data-page-node-id="PI8QmQXGC5RVY2wVgB6Hkx"/><rect x="13" y="13" width="7" height="7" rx="1.5" data-page-node-id="zIVyVNE421Zn2Awm2nIohy"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24" data-page-node-id="uXuNA5cEmJoOSPtTihKqOg"><circle cx="11" cy="11" r="6.5" data-page-node-id="8PVuP8DHQwZbr9PD54ETJX"/><path d="m16 16 4.5 4.5" data-page-node-id="zbNx9FCuCmC9JurODH8fNg"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24" data-page-node-id="Mdf7gXkAbqNEpRlVf9frjv"><path d="M12 2.8 5 5.6v5.9c0 4.6 3 7.7 7 9.7 4-2 7-5.1 7-9.7V5.6z" data-page-node-id="ro5QHqo5XAa93uR75ULYel"/><path d="m9 11.8 2.2 2.2 4-4.2" data-page-node-id="Cn1CfaiNSHhFjfSlpXA0IY"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24" data-page-node-id="0lMSXKeDrMTVmogyEsWCJm"><circle cx="8" cy="14" r="4.5" data-page-node-id="WdHOfiApCESt7loeq4go0U"/><path d="m11.5 10.5 8-8M16 6l3 3M13 9l2.5 2.5" data-page-node-id="HL4YSiaPFwBuDFLIK00w9A"/></symbol>
+  <symbol id="i-code" viewBox="0 0 24 24" data-page-node-id="0QEPmNgIjqLJUW7B3irQZ7"><path d="m8.5 8-4.5 4 4.5 4" data-page-node-id="j2kYKuL2G1s32iCgJ58X3x"/><path d="m15.5 8 4.5 4-4.5 4" data-page-node-id="YyR6HyEzfLXqgdnhLj45kN"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24" data-page-node-id="5mczAqsH1PlzrKQd25mDWQ"><path d="M4 4v16h16" data-page-node-id="LxvJFQVF2SDENnc3WsheUZ"/><rect x="7.5" y="11" width="3" height="5.5" data-page-node-id="VtIRLFhby2vArhMKWxCRKq"/><rect x="12.5" y="7" width="3" height="9.5" data-page-node-id="DIg4XXaBiPLTT9cI6QikP4"/><rect x="17" y="13" width="3" height="3.5" data-page-node-id="xKlQg8nyIWCktGoiD0RO70"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24" data-page-node-id="qNo1tw3s9P8AlVImACnMk9"><path d="M12 20.5S4.4 15.6 3 11.2A4.4 4.4 0 0 1 12 7a4.4 4.4 0 0 1 9 4.2c-1.4 4.4-9 9.3-9 9.3z" data-page-node-id="HFKEJAPxsCU6MRKcF2JqXw"/></symbol>
+  <symbol id="i-music" viewBox="0 0 24 24" data-page-node-id="vhnOrKBRgf7kU1a7sLIBtL"><path d="M9 18V6l10-2.5V15" data-page-node-id="LsLGlYYZhxLnpGjdw3FwBd"/><circle cx="6.8" cy="18" r="2.3" data-page-node-id="gQZTckQKgXDVa2we3kQFHp"/><circle cx="16.8" cy="15" r="2.3" data-page-node-id="2JZ83MPBFV7rE1kHq45kLW"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24" data-page-node-id="OwMrYz0LP4SdSkYl6P3YaB"><rect x="3.5" y="5" width="17" height="14" rx="3" data-page-node-id="Goh8cbEUG5lQH7Y4CX6Y9m"/><circle cx="9" cy="10" r="1.6" data-page-node-id="73IL4rrlC78bCWOs8InEU3"/><path d="m6 18.5 5.5-6 4 4 2-2 3 3.5" data-page-node-id="OO7fYLb4qbRu4s9VFv8tCG"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24" data-page-node-id="n34KebhJ1EdJf2sNHTRUgf"><rect x="9.3" y="3" width="5.4" height="10" rx="2.7" data-page-node-id="Rcj6sYBBFgHccp24EmxT8j"/><path d="M6 11.5a6 6 0 0 0 12 0" data-page-node-id="C0TyyRmxtyuqSm5Swo8WwG"/><path d="M12 17.5V21" data-page-node-id="ld1qmFqDtxncigBierF2qz"/></symbol>
+  <symbol id="i-camera" viewBox="0 0 24 24" data-page-node-id="Ked69tTKYedwt40YxYuqWy"><rect x="3.5" y="7" width="17" height="13" rx="3" data-page-node-id="aOBCv19XF3dUBBgkNvjtCC"/><path d="m9 7 1.5-2.5h3L15 7" data-page-node-id="pg5AfJ5r9XiNoiJXmVEXKs"/><circle cx="12" cy="13.2" r="3.4" data-page-node-id="ZE3WN3rFiVffFxNWruU1dM"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24" data-page-node-id="K4eIcrujCtUTUDAxJoPeu2"><path d="M3.5 7a2 2 0 0 1 2-2h4.2l2 2.5h6.8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" data-page-node-id="SmyqGbZeMeeum3SJ3IAhwA"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24" data-page-node-id="KPqMNxvH7hTN5yVnIlmGmS"><path d="M10 14a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" data-page-node-id="ivihau7rMtVNC76Bj673JZ"/><path d="M14 10a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" data-page-node-id="ES8ttt7UXVnpl6j7CyY1mv"/></symbol>
+  <symbol id="i-task" viewBox="0 0 24 24" data-page-node-id="n59RwwVIqCtjO07u7QzHyS"><rect x="4" y="4" width="16" height="16" rx="3" data-page-node-id="CGcxX9bhznzX1SAPQ2f43e"/><path d="m8.5 12 2.5 2.5 4.8-5.3" data-page-node-id="aDVdxDlBekrp3BTJ2XXITe"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24" data-page-node-id="M9piMxFZ5wGhZB57QB3tg7"><circle cx="12" cy="8" r="4" data-page-node-id="Hwfhep8rl02fLDQAGnDXKU"/><path d="M4.5 20.5a7.5 7.5 0 0 1 15 0" data-page-node-id="AMetB0fkrXe4r7tPvFCYuK"/></symbol>
+  <symbol id="i-sprout" viewBox="0 0 24 24" data-page-node-id="Am7DMFD6GEGnrD21NO5HFA"><path d="M12 21.5V12" data-page-node-id="hwctRyFDLAK8yCggTOQpDm"/><path d="M12 12.5C12 8 8.8 6 4.5 6c0 4.5 3.2 6.5 7.5 6.5z" data-page-node-id="8amP5RTLeTWHNHOyExoxfQ"/><path d="M12 10.5c0-3.6 2.6-5.3 6.5-5.3 0 3.6-2.6 5.3-6.5 5.3z" data-page-node-id="GwATkVUDVx6TCwOrunwaVC"/></symbol>
+  <symbol id="i-dots" viewBox="0 0 24 24" data-page-node-id="vhxqjhyh9YoSHD19NDtb14"><circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none" data-page-node-id="YnSVpCgivyG2zXDDkUbHEy"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" data-page-node-id="awatmiB0D3XNFNfSqUkVUD"/><circle cx="19" cy="12" r="1.5" fill="currentColor" stroke="none" data-page-node-id="UZ1wFAkVAMhu8Bo6EqFb9y"/></symbol>
+  <symbol id="i-db" viewBox="0 0 24 24" data-page-node-id="y1aSFsd6QoD75axBARAhy2"><ellipse cx="12" cy="5.5" rx="7" ry="2.6" data-page-node-id="JKYW0gwFcLKJa09j7n3e0j"/><path d="M5 5.5V18.5c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6V5.5" data-page-node-id="dUVYbSm4ZEAurErrPUfrbn"/><path d="M5 12c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6" data-page-node-id="X5RQO4TtaGFhFvTkWJUC28"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24" data-page-node-id="w8A5GtnWWRw40QwsASQ0hd"><path d="M6 3h8l4 4v14H6z" data-page-node-id="sXE7NG1yXsrrF3r01ES6Es"/><path d="M14 3v4h4" data-page-node-id="PuA7QSExoUCBmkfjm0bRoK"/></symbol>
+  <symbol id="i-max" viewBox="0 0 24 24" data-page-node-id="ltAHMmTlnMyP71ManU7pKU"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5" data-page-node-id="BXxaWHtN6u1HbUExiTpdEg"/></symbol>
+</svg>
+
+<div class="page" data-page-node-id="BSobjp8IwmEYhJFgHlNaQD">
+  <h1 data-page-node-id="h7fj4LPCA9G0Zq6ocHPxb1"><img src="data:image/png;base64,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" alt="哈文" data-page-node-id="FMJ4hFwuaq6xajZSYA45DT"> 哈文 · 内页设计稿 v3</h1>
+  <p class="desc" data-page-node-id="go1NIuusSolo1jyvmJDYvj">v3 拍板落地：<b data-page-node-id="ezFjcTxdEZDP8gJQuHCwfJ">①面板=大分类+模块库拖拽多实例（停靠/浮窗/全屏三形态）②知识库/技能库具体页面 ③设置 8 Tab→1 单页 + 开发者模式 ④「监控」改名「运行状态」（含 token 消耗，呼应 Token 经济设计）</b>。全部沿用 v2 规范：统一线性图标 + 官方鸭子。</p>
+
+  <div class="switcher" data-page-node-id="QQ0K4dnEoHb1MLy3QCpU1B">
+    <button class="on" data-s="s1" data-page-node-id="66phVoMjACEtIWpfsk2uCN">① 面板选择器（分类+模块库+三形态）</button>
+    <button data-s="s2" data-page-node-id="jTg4mn3zSzkoVYMbvZkCZz">② 知识库页</button>
+    <button data-s="s3" data-page-node-id="yd8ja7Z37UMd3GAKYdZ7xw">③ 技能库页</button>
+    <button data-s="s4" data-page-node-id="vTkr59ykDxT1HaXnuegRmT">④ 设置单页（含开发者模式）</button>
+    <button data-s="s5" data-page-node-id="vDmWwdriAoq8ewRpx0qLDg">⑤ 运行状态（原「监控」）</button>
+  </div>
+
+  <!-- ① 面板选择器 -->
+  <div class="state on" id="s1" data-page-node-id="GjhXomYWuBKVhXkXwMu7rI">
+    <p class="frame-title" data-page-node-id="bmqmATTZh1zS0TDOj7E8Ky">点顶部「面板」按钮打开：上=我的大分类（每个分类独立数据），下=模块库（拖进去就装）</p>
+    <div class="frame" data-page-node-id="zjiVqzuEXAyol7rmSpUDEv"><div class="win" data-page-node-id="7N9XiPq44Tcyuzdi2xxLpK">
+      <div class="wtop" data-page-node-id="RKhBZ4akHrNYNHMNhdt04x"><div class="title" data-page-node-id="oLtANGjL9dGymqmdc06BKd"><svg class="ic ic18" data-page-node-id="QYZyydA9MrPybGeaXqfbub"><use href="#i-panel" data-page-node-id="fnbEvBk6hE5R3YaLKRcJeJ"/></svg>面板选择器</div><span class="pill blue" data-page-node-id="FZq7YjRahtbXLQ1CC3KUHZ">拖拽模块到分类即可安装</span><span class="back" data-page-node-id="ZIKeMJ2h9vz9B5IW6ZkREp">关闭</span></div>
+      <div class="sel-body" data-page-node-id="hxz0o0OTU3C1HDgQBXtd1i">
+        <div class="sec-t" data-page-node-id="76D0rZFecYvR8JKGfxiThR">我的分类 <span class="hint" data-page-node-id="xpJmgQfdTs1pNgn6807j4N">每个分类里的模块各有独立数据，互不混账</span></div>
+        <div class="cat-grid" data-page-node-id="GV9FTlGIr4c1xIN78V7Hz6">
+          <div class="cat" data-page-node-id="6qBrC1zhmLou74ZOrgklxb">
+            <div class="ch" data-page-node-id="oksbSbM9psgKhM5IBDDL8u"><svg class="ic" data-page-node-id="wFIFpiRO4IREIGN6LA3fqp"><use href="#i-home" data-page-node-id="D3xGEBzo85FHKd4h7rurQ3"/></svg>家庭</div>
+            <div class="cs" data-page-node-id="TDXbDUn8yzmJQhCJdCaBW3">已装 6 个模块 · 数据：我家</div>
+            <div class="inst" data-page-node-id="taPL7arxaefpn3rp6UJAkh"><span class="itag" data-page-node-id="rGOT7iniZwBIGRzpf337p4">记账</span><span class="itag" data-page-node-id="5wVLOgnsNAQIQ2ucpNBAlO">宠物</span><span class="itag" data-page-node-id="33tCSA0XbTUPR71B8A9bsg">智能家居</span><span class="itag" data-page-node-id="90bXzU3JQ3pBpJFcQvPAMW">家庭物资</span><span class="itag" data-page-node-id="ALZiJyJJaUtX1apqi1D0cg">健康</span><span class="itag" data-page-node-id="90yNQMm0xLF9kJLU5fZZ8K">孩子教育</span></div>
+            <div class="ops" data-page-node-id="zjYcwFt3QLHZZjmsd4gcFa"><div class="op hot" data-page-node-id="3zKoZqzXwJNeLdHzD4sv1v">停靠右侧</div><div class="op" data-page-node-id="eYDitGXpyHi9YlEeaj0OtC">弹出浮窗</div><div class="op" data-page-node-id="zq5poL5XkkYV3ldQnkf8RG">全屏</div></div>
+          </div>
+          <div class="cat" data-page-node-id="H0Ggwixp21fCZFCG3xFlT5">
+            <div class="ch" data-page-node-id="UyvkycfC7wSJrw5vdry3K1"><svg class="ic" data-page-node-id="tBJfry50FQWab7R1xBysLW"><use href="#i-bolt" data-page-node-id="jUBvEfNNxfn0Vw49ENjIkB"/></svg>公司</div>
+            <div class="cs" data-page-node-id="9RE1BmqqMeRhv7Fek3h2wO">已装 3 个模块 · 数据：A 公司</div>
+            <div class="inst" data-page-node-id="vzyILToVyI8YCHz42bEkpY"><span class="itag" data-page-node-id="mBt8L9O2LDqzRXBGnC1VPt">记账</span><span class="itag" data-page-node-id="tjqHuDl93iNppyD7i5Al9V">文档处理</span><span class="itag" data-page-node-id="k1YLYanrDiDcxkMngn4U3c">客户管理</span></div>
+            <div class="ops" data-page-node-id="5eHNqb0oTNFLJdqCz6fUnC"><div class="op hot" data-page-node-id="EvRv8ivvCg1YKTu92ZhTpS">停靠右侧</div><div class="op" data-page-node-id="BWHLM5b2t9o4qEJ6p1buyb">弹出浮窗</div><div class="op" data-page-node-id="qSQLD7Qxf7hMB79RJ5bOza">全屏</div></div>
+          </div>
+          <div class="cat" data-page-node-id="0qr1AdIdPhsUahk6AlFaiJ">
+            <div class="ch" data-page-node-id="x1ToHwI87i0dSyJalPJdDV"><svg class="ic" data-page-node-id="scK7DH72iEqSDANS51EcMH"><use href="#i-user" data-page-node-id="G2WO2amO4FSRPBBH6Ast8j"/></svg>个人</div>
+            <div class="cs" data-page-node-id="Q29aH4afaaZFpkaSsKpHsM">已装 2 个模块 · 只有主人能看</div>
+            <div class="inst" data-page-node-id="DOoGEhoI8KjsosngB8LVG2"><span class="itag" data-page-node-id="MV7yk7KdQkgMnAmjZvezqp">健身目标</span><span class="itag" data-page-node-id="a0SA7uwyUTEJbRN4YIBpzS">私人笔记</span></div>
+            <div class="ops" data-page-node-id="nUbwEerByZK9A2gaPBahHN"><div class="op hot" data-page-node-id="v7Rb2mN118JcqT0qfG5x8V">停靠右侧</div><div class="op" data-page-node-id="1AAtuie3Gp1v5ub20zurTA">弹出浮窗</div><div class="op" data-page-node-id="EGjCC1dE7UKAIxmZvKEdoi">全屏</div></div>
+          </div>
+          <div class="cat dash" data-page-node-id="yDEALdz41jA0J2p5MMGhj5"><svg class="ic ic34" data-page-node-id="2TmZXI7e365fS6WDMRNXfK"><use href="#i-dots" data-page-node-id="E5YZGJ8TUxcJ2HRzleSi2p"/></svg>＋ 新建分类<br data-page-node-id="LUqvSEURJKVKIJTzGu6VKA"><span style="font-size:11px" data-page-node-id="KK3WPrBVGZa0iowuBk9ttU">比如「爸妈家」「车库」「仓库」</span></div>
+        </div>
+        <div class="sec-t" data-page-node-id="bXuhDr6EeO1olAtGLnxRwK">模块库 <span class="hint" data-page-node-id="1USldMTDbZsjBZ9bkFTNnr">待选项目——拖进上方分类即安装一个实例；同一模块可在多个分类各装一份</span></div>
+        <div class="mod-grid" data-page-node-id="D08v6SvM6pEeDRrzsjgAUY">
+          <div class="mod" data-page-node-id="UegCN7Nm7ArOht8rPJNCra"><svg class="ic ic26" data-page-node-id="iEp5o8OFXzZT7V8xne3fku"><use href="#i-chart" data-page-node-id="o3qocLW4XXH3oAeSFStRKY"/></svg>记账<small data-page-node-id="iMXVGrNd99IVyTtQ3MSnxT">账本·预算</small></div>
+          <div class="mod" data-page-node-id="UEhTElgh5i6x5oStoWftg7"><svg class="ic ic26" data-page-node-id="FFYg7CJtCKvl9kPmXrd6wH"><use href="#i-heart" data-page-node-id="Yh2mMCy0IIsAnc0own8t2x"/></svg>宠物<small data-page-node-id="oNgJHy1qLycHyHUj0yj1iI">喂养·疫苗</small></div>
+          <div class="mod" data-page-node-id="ht7Kz3YJGcFtNmuD5B3Sb4"><svg class="ic ic26" data-page-node-id="IAq8p0lfPWxtw47teEpyOA"><use href="#i-home" data-page-node-id="W3JuW0lhDbSvUYssHhP21r"/></svg>智能家居<small data-page-node-id="byCGIghHEJ3FrJhdDHVTpV">HA 设备</small></div>
+          <div class="mod" data-page-node-id="1S053S46dR2pQHfuPgCUIA"><svg class="ic ic26" data-page-node-id="7LqSZakkJfjsPL7U1t7mem"><use href="#i-db" data-page-node-id="ZEFFty0fagAUQ0cjBV04ZY"/></svg>家庭物资<small data-page-node-id="5MAQnXASFSgTLCjgC5Kh0s">食物·仓储</small></div>
+          <div class="mod" data-page-node-id="otyc8hyJILUp4AEJE3WmmO"><svg class="ic ic26" data-page-node-id="Z3vB3dCUaRJBv9HJH5Ci94"><use href="#i-pulse" data-page-node-id="v8HTG7TdISzM7kNpEfUQAK"/></svg>健康<small data-page-node-id="Kq506O5zGb6SANVEXRWHF8">档案·看护</small></div>
+          <div class="mod" data-page-node-id="kDqM1LXJkZ1J1Lc7PSl0w2"><svg class="ic ic26" data-page-node-id="X6T22vW01eAgX2lNENVnD2"><use href="#i-book" data-page-node-id="A4O4iXH4l7f4AMThCao9CY"/></svg>孩子教育<small data-page-node-id="JDttIz6QfOhARUzFcqWPc5">建档·排程</small></div>
+          <div class="mod" data-page-node-id="u6mpPaGkuzxyay52K2vXkz"><svg class="ic ic26" data-page-node-id="YyGUmaFJoQj35QSRschtu2"><use href="#i-panel" data-page-node-id="ZDZtqJ5yxYORDUDRHQBMsU"/></svg>车辆<small data-page-node-id="Y9Sq6q7XAs97FzWo98Fpl0">保养·油耗</small></div>
+          <div class="mod" data-page-node-id="GkjIsZWVubm6ZfGWh2tMWL"><svg class="ic ic26" data-page-node-id="ZsCXBVtoqisadFXlGpuDFC"><use href="#i-shield" data-page-node-id="JfNjreFKx9GVrKmeoysZOI"/></svg>保险<small data-page-node-id="SnZjSfH9KdzfkksyUgPmhe">保单·续保</small></div>
+          <div class="mod" data-page-node-id="wLccjn9kgkCy1ZnuXpmHUt"><svg class="ic ic26" data-page-node-id="4TbyZ6k6uU4dmI71XT8Bc1"><use href="#i-sprout" data-page-node-id="EqXJU5m4Xpr7yqYvrzHItr"/></svg>绿植<small data-page-node-id="UDFL9a52hPtQI1ShbblQuB">浇水日历</small></div>
+          <div class="mod" data-page-node-id="j2GlhUGEbq2qYX3eittW7t"><svg class="ic ic26" data-page-node-id="AEHGr6F3Zh7ZcXrBRUkdT6"><use href="#i-task" data-page-node-id="4X6om7N30qJCvnhIH3H0RH"/></svg>家务缴费<small data-page-node-id="Ur5GJSlGPnWVPSo6LplEWP">排班·账单</small></div>
+          <div class="mod" data-page-node-id="GgxBtvWhiETIEjBzN0MYKO"><svg class="ic ic26" data-page-node-id="d1808tsoJe7t1zOAr4h75u"><use href="#i-file" data-page-node-id="UG7E2Hgj1qYvqLWgfTsTtk"/></svg>文档处理<small data-page-node-id="HX9mJwq1jv1HQFIvL8WRfK">合同·审计</small></div>
+          <div class="mod" style="border-style:dashed;color:var(--sub)" data-page-node-id="wirGOCWoCwaKhTvuuHdNTC"><svg class="ic ic26" data-page-node-id="Eg68qzGCuxERVRkWVKaswh"><use href="#i-dots" data-page-node-id="7z60cg8SzCOadxmY48lJP1"/></svg>更多<small data-page-node-id="ZmvqrbTquKe6BAfl16DZtz">Hub 市场装</small></div>
+        </div>
+        <div class="dragbar" data-page-node-id="O4gHliuvOBgS71ZwKn8Ys7">💡 拖拽规则：模块从库拖进分类 = 安装实例；实例在分类之间也能拖动挪窝；卸载 = 拖回模块库（数据保留 30 天可恢复）。</div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- ② 知识库 -->
+  <div class="state" id="s2" data-page-node-id="BEemVMvVAp0jYvPgAA8jAn">
+    <p class="frame-title" data-page-node-id="XFCpvqPZBxG9eqIA7LKuA9">知识库页：左=分类树，中=文档卡片墙，顶=自然语言搜索；文件拖进来就能进</p>
+    <div class="frame" data-page-node-id="UCYaArP8E0llVBU0KlS6lm"><div class="win" data-page-node-id="QDBCCFO9nNIfdiGUbatXpe">
+      <div class="wtop" data-page-node-id="fr0dEAgF9XQbHQIgmx2M4N"><div class="title" data-page-node-id="E2tcCEkphweFVyitTzNwd8"><svg class="ic ic18" data-page-node-id="wvKqFgDB59x49twhuE2ZpM"><use href="#i-book" data-page-node-id="SUTMJqRhFHr1JhfhjfQ1Zx"/></svg>知识库</div><span class="pill" data-page-node-id="F2XuXkh7cIY5WEzOANi8Oj">混合检索：向量 + 即搜 + Wiki 沉淀</span><span class="back" data-page-node-id="iLKW2BPpUWFMmvikSUBbzZ">← 返回</span></div>
+      <div class="kb" data-page-node-id="en5LMJCwVQ8oonZzBRQ1Zm">
+        <div class="kb-side" data-page-node-id="IFLzDCLABD60oKeDvYCJSA">
+          <div class="knode on" data-page-node-id="R58PRLD1ywQ1QKgRNLyBFM"><svg class="ic ic14" data-page-node-id="ohjgdfo65cfK6bXPqT4EPE"><use href="#i-book" data-page-node-id="kbNVxj474vQHUVICjRUpMG"/></svg>全部文档<span class="n" data-page-node-id="gh4tHBUmCVA9hE4GXA2l9M">23</span></div>
+          <div class="kb-side" data-page-node-id="UA8U2CyCuzOhBFtugrI5bX">
+            <div class="t" data-page-node-id="6HEGeE4hsTrMydKXRZj1jj">家庭</div>
+            <div class="knode" data-page-node-id="dpn2vNlBCp8LCvS0pmPlZX"><svg class="ic ic14" data-page-node-id="PcErZ2fOJ43VRHGvnTOKZd"><use href="#i-folder" data-page-node-id="QHXAClRdxck2VUNPFVB2rl"/></svg>装修资料<span class="n" data-page-node-id="LoY6TdrkcO2Di89iUPG4VZ">8</span></div>
+            <div class="knode" data-page-node-id="dEH4IeeoriKvzrRnhORqcn"><svg class="ic ic14" data-page-node-id="AA8VabxUlY2NeglOVNhPvZ"><use href="#i-folder" data-page-node-id="8zoVaBdhWTHegxoY5HzuSo"/></svg>证件档案<span class="n" data-page-node-id="dVFHx9EvikskvIyEykycMp">5</span></div>
+            <div class="t" data-page-node-id="aU5FuAVPqKHe4cFQHDF1Pf">工作</div>
+            <div class="knode" data-page-node-id="B1XkGHFDH45WOQP21rLcjw"><svg class="ic ic14" data-page-node-id="VXEOgLM5zExuJIudYC4uzK"><use href="#i-folder" data-page-node-id="AS4HDk5LojBTascqit3K0w"/></svg>合同文本<span class="n" data-page-node-id="1MhfXDzm50x5D6VCxeLznt">6</span></div>
+            <div class="t" data-page-node-id="W2MDfXvGkUtcgKNc7MdEG9">自动收集</div>
+            <div class="knode" data-page-node-id="tXWIpPk7bEoSKRbYIgO2uE"><svg class="ic ic14" data-page-node-id="ENrrepE5fbxhIIndewVOnP"><use href="#i-camera" data-page-node-id="xPmf2O3dpbnE6JMM6goEfb"/></svg>拍照入库<span class="n" data-page-node-id="kvxbJSEzk4hl51EDYDw38c">3</span></div>
+            <div class="knode" data-page-node-id="TlZLatqEFd8DSAzDP9O9uE"><svg class="ic ic14" data-page-node-id="CRMMPYhbFF5ZmBRzNWBzgj"><use href="#i-link" data-page-node-id="VK5a7r8SBnkTSOYNvr9pUL"/></svg>网页剪藏<span class="n" data-page-node-id="SxJdHQoUJfYZECBNZR5ocP">1</span></div>
+          </div>
+        </div>
+        <div class="kb-main" data-page-node-id="9eRLnGHBFitDFGytMcDSMx">
+          <div class="kb-tools" data-page-node-id="CpL3wXFxEivT8lUpCAIitY">
+            <div class="ksearch" data-page-node-id="qgB5qTvm7ib7wDiUHb629d"><svg class="ic ic14" data-page-node-id="QpcqAEjgLnLdgJQ7UklTvr"><use href="#i-search" data-page-node-id="QkkTn119mGRZEvrwuyAuZC"/></svg>直接问，比如「找去年装修的报价单」…</div>
+            <button class="btn-add" data-page-node-id="tH8ROF6Q3c7zASQxgBrNhh">＋ 添加</button>
+          </div>
+          <div class="doc-grid" data-page-node-id="QMjoIrkcwdSNAb3cGzy6Nh">
+            <div class="doc" data-page-node-id="bNe1DZgsXqYwx5Zoaqfrqg"><div class="di" style="background:var(--red-soft)" data-page-node-id="HE5CpPnpSVfrVkge2omHv4"><svg class="ic ic26" style="color:var(--red)" data-page-node-id="a1xGXQwvisupeBuijIdTWW"><use href="#i-file" data-page-node-id="QdJKBmeDlW5OYqctXPKIag"/></svg></div>
+              <div class="dn" data-page-node-id="u5ui8Warr5ymlBpCfwg2Kq">装修报价单-A公司.pdf</div><div class="dm" data-page-node-id="Gl63hvzFdhDJrr57LMnzUL">2.1MB · 上周导入 · 可问答</div><span class="st ok" data-page-node-id="dECwDxpMPuymGVbSYkp6fV">已索引</span></div>
+            <div class="doc" data-page-node-id="nkIDInBY27QKFbdQKxFmc7"><div class="di" style="background:var(--blue-soft)" data-page-node-id="hYMiHpVh57ETnxcKyH2Wkh"><svg class="ic ic26" style="color:var(--blue)" data-page-node-id="BqY65DBnE8QiMSbehsesRG"><use href="#i-image" data-page-node-id="1fEBIXUnCHK7UwjpmiK8Kj"/></svg></div>
+              <div class="dn" data-page-node-id="oa8llcVH6RDqIUsU474r4J">水电报价拍照.jpg</div><div class="dm" data-page-node-id="fgnEjMWDgcxeWzTm31GgFH">拍照识别 · 文字已提出</div><span class="st doing" data-page-node-id="UObun48feU0eqYSzyFcOpF">索引中 60%</span></div>
+            <div class="doc" data-page-node-id="Ex9D8UOVR9muiNawxtBqRg"><div class="di" style="background:var(--amber-soft)" data-page-node-id="tcyMQmQMYdiC5C2Zal3eKP"><svg class="ic ic26" style="color:var(--amber)" data-page-node-id="8e1PQs4DnyfXTo0pscKfFm"><use href="#i-mic" data-page-node-id="81c4jMCXwsBUpiUeKzXcNK"/></svg></div>
+              <div class="dn" data-page-node-id="If2BgzIiGzzpYUmUk1QfV7">家庭会议录音.m4a</div><div class="dm" data-page-node-id="Fatp81FnN0G4VE7Az9ct0o">已转文字 · 纪要已生成</div><span class="st ok" data-page-node-id="TuK63dXQ1zOjdZbUv8yMBB">已索引</span></div>
+            <div class="doc" data-page-node-id="7nN7tcltaYepicAkSpd7hI"><div class="di" style="background:var(--green-soft)" data-page-node-id="zkYMEcLVEQgXNo0Z84tdTr"><svg class="ic ic26" style="color:var(--green)" data-page-node-id="xWA1yybb2nu1jXHpWiknEL"><use href="#i-file" data-page-node-id="cutqZo0phHJgsdwF3VHBqb"/></svg></div>
+              <div class="dn" data-page-node-id="gdIkJ2ObmIKTjvrbkseBcl">孩子疫苗本拍照.png</div><div class="dm" data-page-node-id="EHPF6hoEt0IIT4JngErmpf">已同步到健康面板</div><span class="st ok" data-page-node-id="i80r17nuErLePNvh88oFM0">已索引</span></div>
+            <div class="doc" data-page-node-id="HZCd7XzNrgwqemH0jisUVQ"><div class="di" style="background:#F1F3F7" data-page-node-id="rhDBdn8HxXvQEVDeYRFpak"><svg class="ic ic26" style="color:var(--sub)" data-page-node-id="KPpb43H2HppvICBrroCjYt"><use href="#i-link" data-page-node-id="8sp4jwGG7kU0KJ0V7UK208"/></svg></div>
+              <div class="dn" data-page-node-id="HRlQXVUa2nMHDEUTxZfWOG">网上一篇选购攻略</div><div class="dm" data-page-node-id="l8sFYLHYVHPYHanVRTIgU0">网页剪藏 · 正文已提取</div><span class="st ok" data-page-node-id="bYsb5GZAvW8gSUIW6SWaBC">已索引</span></div>
+            <div class="doc" data-page-node-id="vUsdqnQdYFDrKDfu8QtJaL"><div class="di" style="background:var(--red-soft)" data-page-node-id="0SM09MkH8AfDGQEACeanJF"><svg class="ic ic26" style="color:var(--red)" data-page-node-id="vHqSYhcvXSdW2d4aFlHYh3"><use href="#i-file" data-page-node-id="wMd7jwXMA2lPGF0H2CGTap"/></svg></div>
+              <div class="dn" data-page-node-id="NCXUb4mgVu1uZ0tfB2fViY">扫描版说明书.pdf</div><div class="dm" data-page-node-id="a30zlKZX5mpCQGtmgHqLHA">图片型 PDF，需 OCR 重试</div><span class="st fail" data-page-node-id="K1aMU9c5JbyNPDWCvKmNGs">索引失败</span></div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- ③ 技能库 -->
+  <div class="state" id="s3" data-page-node-id="fzyLwbIUO34P6JqEQCfn1J">
+    <p class="frame-title" data-page-node-id="LFLPEeMA6lleMg8nrsa90p">技能库页：左=技能卡片墙，右=点开的详情（说明+表单+运行+历史），顶部直达 Hub 市场</p>
+    <div class="frame" data-page-node-id="222G8mUNg5NIT1MRxxgBLZ"><div class="win" data-page-node-id="2co37Ztq15Ru9PLhF7YQ8k">
+      <div class="wtop" data-page-node-id="cHlcE1oobjIy3kbHmYJrS8"><div class="title" data-page-node-id="FAcAtCBwoqyRXoEUSz1dmD"><svg class="ic ic18" data-page-node-id="rJgcNuIXUBI9h9Nga3rIjs"><use href="#i-bolt" data-page-node-id="geX8Q4E1rRFLmQqDLc0q8q"/></svg>技能库</div><span class="pill blue" data-page-node-id="NZGSmi2DZBFXcV8NlkZvOU">从 Hub 装新技能 →</span><span class="back" data-page-node-id="UXaGtcX7NjYNwof3v0bkAp">← 返回</span></div>
+      <div class="skill-layout" data-page-node-id="AJ8tD1vGY1dcv2NC3YaJUG">
+        <div class="skill-grid" data-page-node-id="xfhPCBVAT8SUUw40BzZ51U">
+          <div class="sk on" data-page-node-id="FizlZJKNbtXocLC15yLbUF"><div class="sh" data-page-node-id="KKEQbdJZ7QskRW3viEuWJB"><svg class="ic" style="color:var(--blue)" data-page-node-id="Ff0trX9Gekxa682nAzhUQz"><use href="#i-chart" data-page-node-id="smqf3jxYyPkGDbIqKdHYjL"/></svg><div class="sn" data-page-node-id="yWTy68uWQ7JRak2y6QW5v1">记账助手</div></div>
+            <div class="sd" data-page-node-id="7o3Rktp9CpjXhl9ptrpsvU">一句话记账：「午饭 35 块」，自动分类入库、查余额、出月度汇总。</div>
+            <div class="sm" data-page-node-id="CB2DYRZohMEefsGuWANmA4">已运行 128 次 · 本地执行 · 有脚本</div></div>
+          <div class="sk" data-page-node-id="Vpk09Gh8EAIX650z3gsgFW"><div class="sh" data-page-node-id="m8ynQDA3uesmgDChpVS1vG"><svg class="ic" style="color:var(--blue)" data-page-node-id="o8cVC7aAQO707mxrHuFPTE"><use href="#i-music" data-page-node-id="VtDPhQSbAxeKJz70yfdjzv"/></svg><div class="sn" data-page-node-id="Lx5jviEs9GUYoVMrjFbfxs">音乐生成</div></div>
+            <div class="sd" data-page-node-id="fRXbmov3Maj82WvS54fFdM">写歌词、编曲、生成完整歌曲，可指定风格和时长。</div>
+            <div class="sm" data-page-node-id="uS4XuIX6KUrmPny6WN6Xae">已运行 12 次 · 需垂直音乐模型</div></div>
+          <div class="sk" data-page-node-id="WyRtVX39riS68Jes3Cyngc"><div class="sh" data-page-node-id="r2NS5iZj6uEE84gYqJSZF2"><svg class="ic" style="color:var(--blue)" data-page-node-id="AZsh2AKtgSdDhqfOj7rE55"><use href="#i-image" data-page-node-id="pxunJx4X2g9QdChhqpS1Gs"/></svg><div class="sn" data-page-node-id="sAza6T0gTCMOoeWIAipBaq">截图 OCR</div></div>
+            <div class="sd" data-page-node-id="SsoAMeJE7j7BGArL2CVOHS">截图里的文字提出来，报价单/说明书拍照入知识库就靠它。</div>
+            <div class="sm" data-page-node-id="BQs5840PiQ3PwUw0Cqt6bN">已运行 43 次 · 本地执行</div></div>
+          <div class="sk" data-page-node-id="ic5hlWEG6S2W2Yc9asT2fk"><div class="sh" data-page-node-id="lmTHHSlUFJKlgZbCo3TuXJ"><svg class="ic" style="color:var(--blue)" data-page-node-id="Fn5zeykkwR0XxQDwIZQrGJ"><use href="#i-mic" data-page-node-id="kaBCJrtUDBqtGzvRISJztv"/></svg><div class="sn" data-page-node-id="FYSMRMHhc9WDuM0qSmKrgl">录音转纪要</div></div>
+            <div class="sd" data-page-node-id="ePwUoIH8PeDTPaRdwNWjsG">会议/上课录音转文字，自动整理成一页纸纪要。</div>
+            <div class="sm" data-page-node-id="dG8nBRe8FE3siruy4DDYpr">已运行 5 次 · 本地执行</div></div>
+          <div class="sk" data-page-node-id="hO3rAq1OHAtN2XyQ8ejl2C"><div class="sh" data-page-node-id="tmoWmIqPDYZE3DvLkCwYRU"><svg class="ic" style="color:var(--blue)" data-page-node-id="TErkO4R7Bex0XGlprnN9HN"><use href="#i-task" data-page-node-id="iMLFYLoRLEXYOKPSmnUsOU"/></svg><div class="sn" data-page-node-id="DAt3OdR1IpDVjvlp33S4ZD">缴费提醒</div></div>
+            <div class="sd" data-page-node-id="D30HZ6900Iqsiw1AHkcdv9">水电煤网费到期前 3 天在面板和对话里提醒。</div>
+            <div class="sm" data-page-node-id="0zHwXU9cINWo64hWlwtIaC">已运行 87 次 · 定时任务</div></div>
+          <div class="sk" data-page-node-id="uisTZmIIcrHdtGjCxrq7DN"><div class="sh" data-page-node-id="wJ4KJtCUmNspPFKJfyRlis"><svg class="ic" style="color:var(--blue)" data-page-node-id="dbZQijraKMfdpWOkJqG0ok"><use href="#i-sprout" data-page-node-id="VoAN3O2L9ApOoAFhn6Z4rz"/></svg><div class="sn" data-page-node-id="rn3GV0GzIMMHtBH7CRsSYV">绿植管家</div></div>
+            <div class="sd" data-page-node-id="LYcwsFvHT5tkGD6hcsrAtY">按植物种类生成浇水日历，结合温湿度提醒。</div>
+            <div class="sm" data-page-node-id="uBHTew77fn542ygh2AAiKV">已运行 21 次 · 定时任务</div></div>
+        </div>
+        <div class="sk-detail" data-page-node-id="7mpUnm0qL7syEIlmWXoF2s">
+          <h4 data-page-node-id="Lq021RIoivFEG8F9BdmSUo"><svg class="ic ic18" style="color:var(--blue)" data-page-node-id="3GfGYWozIYTUGASTzsiYVQ"><use href="#i-chart" data-page-node-id="Cqs0I5oR1aU3OhZJgT1FvK"/></svg>记账助手</h4>
+          <div class="desc2" data-page-node-id="YAL30LGGZYCWVZ6xXPcQ6t">一句话或填表都能记；数据存在「家庭」分类的记账面板里（也可以拖到公司再装一本账）。</div>
+          <div class="fld" data-page-node-id="BrqduJpaPiwn58C4Omt3DG"><label data-page-node-id="v6SJO4A1Q7qP0eQsaw4k5X">金额</label><div class="in" data-page-node-id="iXCPC7AYkY2TYxvKBJjBFg">例如：35</div></div>
+          <div class="fld" data-page-node-id="Sso2LanOXRpAGvNkEFKT3g"><label data-page-node-id="YJZIAlLoggqEeaCHnbAeVM">类别</label><div class="in" data-page-node-id="PyuQjs32bHgfLwqOZaIB5j">餐饮 / 交通 / 日用…</div></div>
+          <div class="fld" data-page-node-id="VxGXdogErebg6xGnDoEV7o"><label data-page-node-id="X120xVMBqdgVw8sL2O3CkS">备注</label><div class="in" data-page-node-id="bmZDdVK3UtYbnuEaMrGeDh">选填</div></div>
+          <button class="btn-run" data-page-node-id="HmG1HJCAjObSmEyZM681ub">运行</button>
+          <div class="hist" data-page-node-id="SJl83fCJA65uaIfTX6VXhn"><div class="ht" data-page-node-id="eEeGbFn1SeuvMJbkp87cWY">最近记录</div>
+            <div class="hi" data-page-node-id="wHBPvtFs6tL3k2d2HIdu31">今天 12:02 · 午饭 35 元 · 餐饮</div>
+            <div class="hi" data-page-node-id="4uNNzP0t1hmh8HwQMwAQV7">昨天 18:40 · 打车 23 元 · 交通</div>
+            <div class="hi" data-page-node-id="m9skCiWH8pQdFDX8h77R5F">9月9日 · 买菜 86 元 · 日用</div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- ④ 设置单页 -->
+  <div class="state" id="s4" data-page-node-id="slHdna6DvLEvrUCyaU5bSQ">
+    <p class="frame-title" data-page-node-id="QLWlBjIzf5EzN3QmGbpjQf">设置 8 Tab → 1 单页：左 5 锚点，右一页滚到底；高级功能全收进「开发者模式」，默认隐藏</p>
+    <div class="frame" data-page-node-id="Alb9zs6gHWm9aTO6U5NkLV"><div class="win" data-page-node-id="frV0nk1e9LizpjRGCiHAl4">
+      <div class="wtop" data-page-node-id="kAEtuguxSDcfht46GetfRC"><div class="title" data-page-node-id="87N1i9YfvlZUdJAlEW3Gf2"><svg class="ic ic18" data-page-node-id="g9IGPY5GBGn1kdKdHqbAAT"><use href="#i-gear" data-page-node-id="u0ZWkHPTzGxJU6pP5j1Vwn"/></svg>设置</div><span class="pill" data-page-node-id="DSxNLMjyj1TJpWyrsY4xW8">80% 的设置直接对哈文说就行</span><span class="back" data-page-node-id="Q7PhvHLkDyKhaZjSw0UO1r">关闭</span></div>
+      <div class="set" data-page-node-id="G3GPlb1uU8k7TfJO60odxJ">
+        <div class="set-nav" data-page-node-id="wrNzqMaRAEsFBBdwlNAFlg">
+          <div class="ni on" data-page-node-id="IFzY3hyXhcM1Thmh27s8sG"><svg class="ic ic14" data-page-node-id="zD88mTnAFTFSIfTYoNsZIg"><use href="#i-bot" data-page-node-id="vuJzQMnZCvLIuucbtj1NF9"/></svg>模型</div>
+          <div class="ni" data-page-node-id="R6fNzbMs3hTNBBPpidnQ95"><svg class="ic ic14" data-page-node-id="uvDr9U8cLbb8uJxYivDXEN"><use href="#i-shield" data-page-node-id="yEJIavVP8ebQVMDdBjBQWg"/></svg>安全隐私</div>
+          <div class="ni" data-page-node-id="7S5TD1iFRkD0B5Pk919rOY"><svg class="ic ic14" data-page-node-id="Z0w1MYwdRMhKTqX6FJCbzU"><use href="#i-gear" data-page-node-id="Lsu2xLzekUuxBZOOwNCB80"/></svg>通用</div>
+          <div class="ni" data-page-node-id="SRRVXEHIvFiIhVb0HtIHrP"><svg class="ic ic14" data-page-node-id="IVpncN3JgoFxI4l4RvWFDQ"><use href="#i-key" data-page-node-id="0hxSiZ2mpccRUTfnq5Vmiz"/></svg>钥匙串</div>
+          <div class="ni" data-page-node-id="R1S7tO263QYCStFYeThwVR"><svg class="ic ic14" data-page-node-id="pmTlvNjoHH2PPHqIQN9hsB"><use href="#i-book" data-page-node-id="V7RAkMZ1SMgHysSLxBeMUG"/></svg>关于</div>
+        </div>
+        <div class="set-body" data-page-node-id="IErAS4KynHwYENSDOO3vZI">
+          <div class="s-sec" data-page-node-id="BUdhftgLRUcEtAKtOnMlVM">
+            <h3 data-page-node-id="ZDqdfrF0b4LBjHvtOvkdIE">模型</h3><div class="sh2" data-page-node-id="uqQs53iOTu3ouAI3uYYxhY">点一张卡设为默认就行；「测一测」自动发一条测试消息验证 Key 和速度</div>
+            <div class="mgrid" data-page-node-id="CahECPMQPNuPTbJZNtcLil">
+              <div class="mcard def" data-page-node-id="2QziKqNjeuzgSttkDsF2wB"><span class="star" data-page-node-id="08QU7FQ31YsUBX5hp3n81a">★ 默认</span><div class="mh" data-page-node-id="AqYEFANbvHpYM3iqIma5jx"><svg class="ic ic18" style="color:var(--blue)" data-page-node-id="EZB5BcF8zotjMWpB3JGCw6"><use href="#i-bot" data-page-node-id="ZsgdaJ0fnMRcgSE4Y6OsBy"/></svg>GLM-5.3</div><div class="md" data-page-node-id="sAgcb86zHARLNqukb4dFlo">综合最强，日常问答默认用它</div><div class="ops2" data-page-node-id="Anzk6fTvUSbrsWV8v6B2pd"><div class="o2" data-page-node-id="t8tBdcLCdI15tjzDmDL12x">测一测</div><div class="o2" data-page-node-id="CpAnGEZBlvgIcwAHghaKfv">填 Key</div></div></div>
+              <div class="mcard" data-page-node-id="Li5ehwLVT5Q6ernq7kCsi6"><div class="mh" data-page-node-id="8BcjdL6nrUEuryCuzsKXDp"><svg class="ic ic18" style="color:var(--blue)" data-page-node-id="x53DTAy0FBIBXJbGecNzRg"><use href="#i-bot" data-page-node-id="3OvNlwup34zNaBL31Z4Dba"/></svg>DeepSeek</div><div class="md" data-page-node-id="WDx6mEzFMoObhwnG7Uy4aj">推理强、价格低，适合长任务</div><div class="ops2" data-page-node-id="cFcQcSF9OkqFpAm0yUkFQZ"><div class="o2" data-page-node-id="lvT4siXoZ0HcqWpHjkSXPu">测一测</div><div class="o2" data-page-node-id="3JZGPPEnbHZ68wllnBbEWZ">填 Key</div></div></div>
+              <div class="mcard" data-page-node-id="s0W02nsQ2HoKM1bso40E2h"><div class="mh" data-page-node-id="LP9O9YiqMw42WU0mreGlva"><svg class="ic ic18" style="color:var(--blue)" data-page-node-id="E9JisZ0wl8etmVIJblCOh3"><use href="#i-bot" data-page-node-id="V9xCxWLzrJnu3jM66Zv5h1"/></svg>豆包</div><div class="md" data-page-node-id="ZNZjJciIJdpGbAfwa0MMGv">中文语料多，协作模式默认外脑</div><div class="ops2" data-page-node-id="GxKExeFpCWggCx8fOrVYD6"><div class="o2" data-page-node-id="pzexyyCbxHgOKAA1B8SIat">测一测</div><div class="o2" data-page-node-id="mxKrk3pq0r2k7chWBaysGR">填 Key</div></div></div>
+              <div class="mcard" data-page-node-id="aqWQ8p0pUY3di2XGf2JFbu"><div class="mh" data-page-node-id="a8f7C41UYpdmgGS8Q7PTdD"><svg class="ic ic18" style="color:var(--green)" data-page-node-id="D5c5w81YiQYOenk767hBGM"><use href="#i-db" data-page-node-id="zXVMKcLVGyaQCzD5HtZDjF"/></svg>qwen2.5:14b</div><div class="md" data-page-node-id="SLUEdRpCP2a0lZVvu17R5k">本地模型 · 断网也能用</div><div class="vram" data-page-node-id="tv0c8FoPDVL87zJw1ed6dE"><i style="width:62%" data-page-node-id="rju6tzsNuyrJGz8HO9c1IG"></i></div><div class="ops2" style="margin-top:8px" data-page-node-id="zNjHcXjKz58CEXVUV47DMU"><div class="o2" data-page-node-id="Hmx4cHIKgBSiEllyiVPI92">占显存 9GB/14GB</div><div class="o2" data-page-node-id="p7U2uMGMJUZt8OGI9TqCAU">卸载</div></div></div>
+              <div class="mcard" data-page-node-id="9RxgoqtfCdNzfhbxsGrBf9"><div class="mh" data-page-node-id="ax3bQM0ssfAa0PbbCs5Xae"><svg class="ic ic18" style="color:var(--amber)" data-page-node-id="P4ucMsQ7SuRsaPPIk24adj"><use href="#i-heart" data-page-node-id="aAVm1AjUHKbFMea8ALjazD"/></svg>华佗医疗</div><div class="md" data-page-node-id="q2VTGGT0ONeGTGTAPCgMIp">垂直模型 · 只管医疗问答</div><span class="st ok" style="margin-top:6px" data-page-node-id="ZcIjErPAAKKjsfc5jOuLXr">已加载 8.1GB</span></div>
+              <div class="mcard" style="border-style:dashed;display:flex;align-items:center;justify-content:center;color:var(--sub);cursor:pointer" data-page-node-id="4K29jtoEp4mi1ap7OoB3mb">＋ 添加模型<br data-page-node-id="F1W8eOur0AVQBCb8GPwmIY">（搜索安装器）</div>
+            </div>
+          </div>
+          <div class="s-sec" data-page-node-id="mb6qjd6C5YdaeKVjJ2ynQB">
+            <h3 data-page-node-id="AiItvhz8uOSfrl1EbXSgvS">安全隐私</h3><div class="sh2" data-page-node-id="OX2rKGQgvUooINGgd8Zbkw">重启后自动回到安全模式</div>
+            <div class="row" data-page-node-id="eGYqzNR6W9rJnKtExADYs3"><div data-page-node-id="9jb2pHbHWiHytHOh5a6v4X"><div class="rl" data-page-node-id="M4tW4IdbrYcmp3UV7FLNR0">安全模式</div><div class="rs" data-page-node-id="E0GCCb2FxZE61hcHckBNGF">危险命令要确认、文件操作限工作目录</div></div><div class="rr" data-page-node-id="3zLS34qJfJNdlpqxGwoF9j"><span class="tag blue" data-page-node-id="8mK5bvblBWz2jZG7FKfndo">当前</span><div class="switch on" data-page-node-id="pSXCbOQXn8kT1t0bqtjlSW"><i data-page-node-id="0NAOlSc3NDEbw1PaPpwcBf"></i></div></div></div>
+            <div class="row" data-page-node-id="MnRh1Qr5GbyovPAN8WlYaU"><div data-page-node-id="DHB0rPMz9yoUFus7UbiJR6"><div class="rl" data-page-node-id="HNWGlMGnyy4IZqXpg4tVhG">全权模式</div><div class="rs" data-page-node-id="4ZuMNG6iHIvpACuyxQuNDX">解除大部分限制，需要密码，风险自担</div></div><div class="rr" data-page-node-id="nfcAFlO6JpGmsn6YpLA8GF"><div class="switch" data-page-node-id="M1h4vejrqRYwQUFj6xqswo"><i data-page-node-id="FcsavnQhsVpDQTGG5RqDX5"></i></div></div></div>
+            <div class="row" data-page-node-id="6Ol53Bj1TQ7cLVmXU7UPZ7"><div data-page-node-id="8h0tIK5M5q4DnI89DtITkK"><div class="rl" data-page-node-id="wIrKBiREHPkGWOGIK7N9pT">联网默认开</div><div class="rs" data-page-node-id="kWmL78A4lUFUzaDuZBOklO">新对话自动开启 🌐 联网搜索</div></div><div class="rr" data-page-node-id="oisQ3dIZeWKrKNv1ghsZeg"><div class="switch on" data-page-node-id="6AYvOqZNW0iVkTEWljAwh2"><i data-page-node-id="1WazqMZcVm6BOgFgqv1oYA"></i></div></div></div>
+          </div>
+          <div class="s-sec" data-page-node-id="iwHUxqtpALlDHlylC86XXB">
+            <h3 data-page-node-id="kMT44eNdwq7ksAArx3FQcT">通用</h3><div class="sh2" data-page-node-id="tmOretRjRVHXD9sH2DX6Jr">外观就这三选一，图标统一官方鸭子不做换肤</div>
+            <div class="row" data-page-node-id="BMO5LnzQsSTVyHV19Do2AC"><div data-page-node-id="cGwKegvR6lLBBk5OnhhAx6"><div class="rl" data-page-node-id="chOYP8mSpCZqmESUE3ivY2">开机自启</div><div class="rs" data-page-node-id="5vk48C1FUv2XTt9j5t7kFG">开机后哈文在后台就绪</div></div><div class="rr" data-page-node-id="XEEPKgiWqI71vyoxz9bR2Z"><div class="switch on" data-page-node-id="8pAbDuPdFi1ZntDSYhQ3SP"><i data-page-node-id="QC4LYJgeAI9icBjUVIGnkb"></i></div></div></div>
+            <div class="row" data-page-node-id="KOXYGC5QHOvw4XLwrnT2Gr"><div data-page-node-id="JCKxa6JhQB4SAUAaCkcJ3i"><div class="rl" data-page-node-id="N1aDWGRTEkxlnhTo5mLbPC">主题</div><div class="rs" data-page-node-id="kguF8xnXJ2cKtBVEGsnhmC">清爽蓝 / 暖鸭黄 / 墨绿</div></div><div class="rr" data-page-node-id="NtHFbuzDuvvozBK18HjQqM"><span class="tag blue" data-page-node-id="nPVyszdx3OPeo9tgov60mX">清爽蓝</span><span class="tag" data-page-node-id="vcLYJGJefPMEKaF40xiDEh">暖鸭黄</span><span class="tag" data-page-node-id="hMfs0cBHS0KemiuQgK5hiS">墨绿</span></div></div>
+            <div class="row" data-page-node-id="slEOR5QNUrHrrJZ625Cv8Y"><div data-page-node-id="0FyBf9PPR3utKQ9EcalWe6"><div class="rl" data-page-node-id="dJ2ZZPkSMCcFLDZEOIhSnb">开发者模式</div><div class="rs" data-page-node-id="FYNVJrvQ1OuGyQmL5kcd0f">给开源玩家和贡献者用的进阶功能区，普通人不需要开</div></div><div class="rr" data-page-node-id="zr21tWOjD492jM4Ws1KJbl"><div class="switch on" data-page-node-id="gIxrFVyDRWQ1wm7VnOOlAi"><i data-page-node-id="19XueuH0cHi4y0KkEQ3A5M"></i></div></div></div>
+            <div class="devbox" data-page-node-id="ELDuxnrI75N16djWT6eFP1">
+              <div class="dt" data-page-node-id="ABW7hroweBlemkO2dp0fwa"><svg class="ic ic18" data-page-node-id="h3BQHAqtmvggmiOLaXvsk8"><use href="#i-code" data-page-node-id="5KXz5QBzOwKHILkTqysRlk"/></svg>开发者模式已开启（对开源社区开放的高级区）</div>
+              <div class="dw" data-page-node-id="dLBIfzkFTpGN1aBmA9MVUO">开源 = 允许深度改造。这里给足权限做二次开发和调试，但注意：开发者模式<b data-page-node-id="ahVWGysGqu19EIhReNyngG">不解除安全底线</b>（rm -rf/format 等毁灭性命令拦截始终生效）。</div>
+              <div class="devgrid" data-page-node-id="xwrrjrILI88TQTvHxqkDWU">
+                <div class="devi" data-page-node-id="htCrAC1Zsazj1DT4mxbOQw"><svg class="ic" data-page-node-id="ahQfcUJC2C5WjZOJVmX4Px"><use href="#i-panel" data-page-node-id="vwHQMwgyxzII3pGMsp5gwj"/></svg>流程编译器<small style="color:var(--sub)" data-page-node-id="sqtbZ1YppquTffB6lSHAod">工作流编排</small></div>
+                <div class="devi" data-page-node-id="wICSZDagcmpgTItg9CLc78"><svg class="ic" data-page-node-id="8Q0gXx6YWt5PVcaizWw0To"><use href="#i-bolt" data-page-node-id="ElwfdValHhBygcW0QArqtq"/></svg>工具目录管理<small style="color:var(--sub)" data-page-node-id="guafHH3291PeZZWqEAV3c0">61 工具启停</small></div>
+                <div class="devi" data-page-node-id="VTlUk90OY5z21EKlK8tGdG"><svg class="ic" data-page-node-id="XeNRddaHHEMsYGV5QzXXXV"><use href="#i-chart" data-page-node-id="5kbmRVPsoQtH946rIpOWuw"/></svg>Token 统计<small style="color:var(--sub)" data-page-node-id="YRZ2bH3PqG6knvBeKUn9Fz">每轮用量</small></div>
+                <div class="devi" data-page-node-id="wFLOK9BVVF5BE1x6yJjtPy"><svg class="ic" data-page-node-id="2zl78lRwlHhkGHgzAWeSyX"><use href="#i-file" data-page-node-id="rOKxeeRGtDMrrOO4g81oyZ"/></svg>实时日志<small style="color:var(--sub)" data-page-node-id="XHE6o852V9jSdeg3VUJGJR">FC/拦截记录</small></div>
+                <div class="devi" data-page-node-id="ByJfNh54gOeCUY7i8bGR3v"><svg class="ic" data-page-node-id="tFzcgKBA4cOrsesaZ7205U"><use href="#i-sprout" data-page-node-id="jOQXttn4f7QibvNoGlRiym"/></svg>进化提案工坊<small style="color:var(--sub)" data-page-node-id="qc4mLDxsHsUnFWLKeXHHzf">AI 提案测试</small></div>
+                <div class="devi" data-page-node-id="BIF61NEZQLumU0D76dZwnR"><svg class="ic" data-page-node-id="FgRGB95eZWea7ziGKfhkks"><use href="#i-link" data-page-node-id="qFW8ssiw1EP3MfUssLa6md"/></svg>API / MCP<small style="color:var(--sub)" data-page-node-id="ZEz75oFwjqyo2GqLOGybSB">本地接口调试</small></div>
+                <div class="devi" data-page-node-id="yaouqe7Wss732G98Q6wpUF"><svg class="ic" data-page-node-id="dhUgNlTnE955vdlG3ijnsQ"><use href="#i-db" data-page-node-id="HAadjbTiAPedfCXT4mol1v"/></svg>数据库查看器<small style="color:var(--sub)" data-page-node-id="z5ddbdWZhWMCYpCM3F1H2I">SQLite 只读</small></div>
+                <div class="devi" data-page-node-id="cbez5q4NGkCO5o4SJt4rJZ"><svg class="ic" data-page-node-id="1KvY8gbf46gFFaRhoZwne8"><use href="#i-gear" data-page-node-id="4fLySp4n844h5RCfwstFsy"/></svg>模型高级参数<small style="color:var(--sub)" data-page-node-id="qQIeh259Qs8gJOTzAW7YtH">温度/上下文</small></div>
+                <div class="devi" data-page-node-id="CG7ZmE13xUzTtHVePoPg5y"><svg class="ic" data-page-node-id="lKoskQCmcIkNEVFGM3dWUt"><use href="#i-bolt" data-page-node-id="ABtfE7bepRWvZF6jtf6s0h"/></svg>实验性功能<small style="color:var(--sub)" data-page-node-id="OXD1My7FNNN9KqoeJmT8vL">新特性尝鲜</small></div>
+              </div>
+              <div class="devwarn" data-page-node-id="KsC7GyXb6kjZEmDDFrAOVP">⚠️ 这里的改动可能导致功能异常，出问题恢复默认即可；社区贡献指南见 GitHub。</div>
+            </div>
+          </div>
+          <div class="s-sec" data-page-node-id="UMN2cbEQaYQLFbOaDX9rax">
+            <h3 data-page-node-id="3b3dq2sxLPAxNY9xiHtqqA">钥匙串</h3><div class="sh2" data-page-node-id="hmcQicqnNqe6DBZdNXtGAv">所有密码和令牌统一放这，只显示尾号</div>
+            <div class="row" data-page-node-id="1GXBTNmRBudxSFGZSpnds2"><div data-page-node-id="W6aen91y3yR1FTmBqQcisS"><div class="rl" data-page-node-id="KC1QlyHfh11HJJBmSBuemL">GLM API Key</div><div class="rs" data-page-node-id="b77vt3cQ9I20o476KlQHBj">sk-****…****3f9a</div></div><div class="rr" data-page-node-id="OqxOZ8qaMsVLfbOn3YcWVj"><span class="tag" data-page-node-id="8tFCNk3TdroiSYeXERUGHL">修改</span></div></div>
+            <div class="row" data-page-node-id="TsDq34Wyayv16n9wjrtwYg"><div data-page-node-id="hfCBI1ZxdULWOHMnN0jZBV"><div class="rl" data-page-node-id="GO0O9sSvx7if5kmCCZPa1B">Home Assistant 令牌</div><div class="rs" data-page-node-id="kDOIxp2XiDAoH91qyrFfJ8">已连接 · 192.168.1.13:8123</div></div><div class="rr" data-page-node-id="AymsIg4bGee6M6aYrnXiCa"><span class="tag blue" data-page-node-id="bCDdNrB8FqrNPHANiyKEJC">已连接</span><span class="tag" data-page-node-id="3PM2uURAhMrSjF5boFkLck">更换</span></div></div>
+            <div class="row" data-page-node-id="M5Hp2GMbG1daLX7Bqlemfb"><div data-page-node-id="iXtTf9Gf0eqG8VwFyarCSH"><div class="rl" data-page-node-id="SMJJc6aZKJjBZR605janwu">邮箱授权码</div><div class="rs" data-page-node-id="wFV4C7tR4SINvuTg6XhzT5">QQ 邮箱 · 已配置</div></div><div class="rr" data-page-node-id="DrDTPRVPU7UI5XlSCOcqT6"><span class="tag" data-page-node-id="vzCeXDWWyoqqeGX5g5Wcgf">修改</span></div></div>
+          </div>
+          <div class="s-sec" data-page-node-id="lvfQa9cpt7fuEMTlqGKOrw">
+            <h3 data-page-node-id="HpBEGzoDLhQlSZNMeCu0ry">关于</h3><div class="sh2" data-page-node-id="RtUijvgnGWCNpqUDJE3BME">版本与更新</div>
+            <div class="row" data-page-node-id="G2HuF9qjfSWTlmYncseaDV"><div data-page-node-id="Jm5agfcpDvPORSDLVCrKqO"><div class="rl" data-page-node-id="Q9DnJHTQZaeGh0PvgxWIY8">当前版本</div><div class="rs" data-page-node-id="FnbriQQpTF4TNuHv5H038K">HarvenAI v0.3.1 · Apache 2.0 开源</div></div><div class="rr" data-page-node-id="XmMyksEIvXePIDfAVcZXhC"><span class="tag blue" data-page-node-id="0bOBHPpcfYHgc2ZJmJbAgI">检查更新</span></div></div>
+            <div class="row" data-page-node-id="RF3PbPx4NUqRDuqBaZGVjR"><div data-page-node-id="OfmHgSZaUMhluNjdqT6Vjf"><div class="rl" data-page-node-id="xw5gm0T8ka4jzgOGZWEdRP">帮助中心</div><div class="rs" data-page-node-id="3idRZlqG2BR4FuxSLLE2zA">大白话教程，不出现技术术语</div></div><div class="rr" data-page-node-id="Tn0A2goGnrKBTl8cNvQrM2"><span class="tag" data-page-node-id="EDaswLdCWGv08C8C5PAexs">打开</span></div></div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- ⑤ 运行状态 -->
+  <div class="state" id="s5" data-page-node-id="T9X7rvNmWHDLIfEAUkJiHX">
+    <p class="frame-title" data-page-node-id="9y6krbhJ8krAYAGhSjXzgH">「监控」改名「运行状态」——哈文的体检表+token 账本（呼应 Token 经济设计）</p>
+    <div class="frame" data-page-node-id="nqvmzsY6SAzjxwwNKaJeKP"><div class="win" data-page-node-id="xOuhAnOLNnNuCmbjWz4Its">
+      <div class="wtop" data-page-node-id="8B8EOaKWleOJeVhZG31WT9"><div class="title" data-page-node-id="zcAPZqeBFixfFXXRr0ZqQs"><svg class="ic ic18" data-page-node-id="Zvgrmg3fVXtzrQusZkFjKm"><use href="#i-pulse" data-page-node-id="0mzvREGwL1V9e0XOF0Zhav"/></svg>运行状态</div><span class="pill blue" data-page-node-id="ub4iclz1YxbcXe6wPgc8jj">一切正常</span><span class="back" data-page-node-id="MCTJ7IFdDqsWZsUQ0FkVMu">关闭</span></div>
+      <div class="mon-grid" data-page-node-id="6QADBAkCNIoQCTpwGtasF4">
+        <div class="mbox" data-page-node-id="PTcorVIG3DNOO8qqP7go3P"><div class="mt2" data-page-node-id="Z9z5NQHaxtGY2dmBxF1s2M"><svg class="ic ic18" data-page-node-id="0DGrqwaNkiGMVae8aHdYrS"><use href="#i-pulse" data-page-node-id="K5zyGy00ntjbMllnTv4ZNR"/></svg>电脑资源</div>
+          <div class="gauge" data-page-node-id="9D1QH6kXV7FKXxMordG1Or">
+            <div class="gcol" data-page-node-id="JDZ8FsBZwasDloMagC8yBo"><div class="gbar" data-page-node-id="9wfdRR9Ei1F5RsnarYAZkM"><i style="width:42%;background:var(--blue)" data-page-node-id="w7zyqGiLqjYqTD4cw5cFJw"></i></div><b data-page-node-id="eOjAVxqh3HlGADMM03cgMt">CPU 42%</b></div>
+            <div class="gcol" data-page-node-id="gJyEfmppjmoBXXNp8zsvgu"><div class="gbar" data-page-node-id="NhcyzhiOgBF4uHBTNdeShe"><i style="width:71%;background:var(--amber)" data-page-node-id="v1pxjb8vpQtsr7BWY75BF4"></i></div><b data-page-node-id="9nglYxHVBWuSoATIMMp53j">显存 71%</b></div>
+            <div class="gcol" data-page-node-id="WqoGuZYbMCpuybSss6rXrj"><div class="gbar" data-page-node-id="onYXVob2xc1I1DHJfFsNpr"><i style="width:55%;background:var(--green)" data-page-node-id="MbfgHRsDkW3gT7mAct4Siz"></i></div><b data-page-node-id="qgiWfizfPEhQvuKuY7PrGK">内存 55%</b></div>
+          </div>
+        </div>
+        <div class="mbox" data-page-node-id="bb4NMJfarRF4k0LbMvrMG4"><div class="mt2" data-page-node-id="K5bYN4SL4rHOyuLoFozZ3D"><svg class="ic ic18" data-page-node-id="8bfTMi2zT6nK9QptOxRYqy"><use href="#i-db" data-page-node-id="9ASX6qDm2oa2vEy62zo05u"/></svg>模型加载</div>
+          <div class="kv" data-page-node-id="X51GifORQLUTJPGj6jYmbR"><span class="k2" data-page-node-id="l4nvBb6pah2uAkK8QW6r7B">qwen2.5:14b（本地主力）</span><span class="v2 ok" data-page-node-id="QDb8JfjpkvzNyP8pafKKOe">运行中</span></div>
+          <div class="kv" data-page-node-id="pFHro4Gnv9dE3b9Co4GLPf"><span class="k2" data-page-node-id="srYQDp4gNTaHKCqL5sOise">华佗医疗（垂直）</span><span class="v2 ok" data-page-node-id="kHnn8ti7pqVEHOvutNlf62">已加载 8.1GB</span></div>
+          <div class="kv" data-page-node-id="Cc0jGd0B5sXCHlK68rTZic"><span class="k2" data-page-node-id="BuCirWaVhUw3uHyJXzHf0n">minicpm-v（看图）</span><span class="v2" data-page-node-id="Ry0QVeCGNOoYfHwoWJrLhD">未加载</span></div>
+          <div class="kv" data-page-node-id="8MMxGgG5Tw3yR0ILkbuYjJ"><span class="k2" data-page-node-id="a0DDml7jKk7UXE1aCfnV7W">外脑 GLM-5.3</span><span class="v2 ok" data-page-node-id="7oBHFbdHEoGBxQHQkq78mB">API 正常</span></div>
+        </div>
+        <div class="mbox" data-page-node-id="dRrEUkIezWrFoP9ouVQNN9"><div class="mt2" data-page-node-id="j0AcCtRJTRdeXAyOeq4feV"><svg class="ic ic18" data-page-node-id="BRGPoZAK3s4M2ot8cTgECb"><use href="#i-chart" data-page-node-id="UBug8RNBqfnFHjOR1qn2BA"/></svg>今日对话</div>
+          <div class="kv" data-page-node-id="E3cv8hzJQvidhmQWexIaLw"><span class="k2" data-page-node-id="i8ql4Owp6TuzGQtMQCwLEv">对话轮数</span><span class="v2" data-page-node-id="HfyPObAyhMTLlWMGtwemC0">37 轮</span></div>
+          <div class="kv" data-page-node-id="liVXlKgRhYThZoIYnzZb1q"><span class="k2" data-page-node-id="ROJDgUOduAcB0cBXglLqag">B 方案直执行（零 token）</span><span class="v2 ok" data-page-node-id="as7joeCeRc6dNNfPvhNo9X">19 次</span></div>
+          <div class="kv" data-page-node-id="scNcDkzjcerbSBmyTGXCIL"><span class="k2" data-page-node-id="hpkwBN4rLfuTF7bZcpVnwM">本地模型 token</span><span class="v2" data-page-node-id="kTjCdyCazSdZimEOicvrWv">42,300</span></div>
+          <div class="kv" data-page-node-id="iCnxfDQX3FIxLXUqc5Cl3L"><span class="k2" data-page-node-id="8EXTArouhiuSz5yFC4GjIt">外脑 token</span><span class="v2" data-page-node-id="cQlRFHXyllOMQvqHOrEmLE">11,800（≈0.08 元）</span></div>
+          <div class="kv" data-page-node-id="yxRS3ERkzy8itjKGCMCHDV"><span class="k2" data-page-node-id="1XaBDPSxCIpZ3I470oSyyI">FC 工具调用</span><span class="v2" data-page-node-id="tfNE2i48KmBUL0z4JfI4Ot">23 次 · 平均 1.8 轮</span></div>
+        </div>
+        <div class="mbox" data-page-node-id="4vVTHOofu7yf4qRXGepstW"><div class="mt2" data-page-node-id="RmAI98gRDsqrN8UdRMGQR9"><svg class="ic ic18" data-page-node-id="1GoDT9J25AnBvCTVaScpmb"><use href="#i-shield" data-page-node-id="cszyzOcWmkGbwIJGhjnz3a"/></svg>安全</div>
+          <div class="kv" data-page-node-id="DTOT0Q8FA7vGKhACMSzGjS"><span class="k2" data-page-node-id="BBkGIYucOSTKLPbsUitBKq">拦截危险命令</span><span class="v2" data-page-node-id="hZJzrvuxUnOzGkjsPQktAn">今日 0 次</span></div>
+          <div class="kv" data-page-node-id="5i7kYLSZCJFyhnlCjntFVT"><span class="k2" data-page-node-id="EEqj077uoeYjgv1sYHZIUv">权限模式</span><span class="v2" data-page-node-id="avSSzQkFurdxDEFex0tV9M">安全模式</span></div>
+          <div class="kv" data-page-node-id="JoeQ35RkWSHjEdMzHpcLlC"><span class="k2" data-page-node-id="YdmVeX5HHdccyrDaxEzrve">数据出站</span><span class="v2 ok" data-page-node-id="jMIqWyYKIqEEqYw1q07QFS">仅外脑问答</span></div>
+        </div>
+        <div class="mbox" data-page-node-id="fr5w5YHiAyCfun1wXyNfYu"><div class="mt2" data-page-node-id="trfv4F9WteSAfzqJYVPtZK"><svg class="ic ic18" data-page-node-id="lA8H6lCgdzZcT3joEoCJlT"><use href="#i-task" data-page-node-id="A3Zrt40B8EoV3q1TEg1gWK"/></svg>定时任务</div>
+          <div class="kv" data-page-node-id="7F8RhvEU5SxXTg21d4DIcV"><span class="k2" data-page-node-id="SJBImKZ9Gg0q13jZZx0FFg">缴费提醒</span><span class="v2 ok" data-page-node-id="ntuuDcHFGw9EkINZPA0qTG">正常 · 下次 9/14</span></div>
+          <div class="kv" data-page-node-id="8HITY9f00WEFqLzn7Tgwdo"><span class="k2" data-page-node-id="Ql6FLhy1ii3mbVTGork4R7">绿植浇水</span><span class="v2 ok" data-page-node-id="A86FuznFspMg3aJwYTmKyD">正常 · 明早 8:00</span></div>
+          <div class="kv" data-page-node-id="4rkz0S7tCDGKEMT9Bk00xU"><span class="k2" data-page-node-id="mZ1Belwho2pAIJQxtKniFG">龙虾后台任务</span><span class="v2" data-page-node-id="O9XqyOzFd8RART2lmbTGBp">0 个运行中</span></div>
+        </div>
+        <div class="mbox" data-page-node-id="LOn9Y0vpu4SqaL0de6EVLD"><div class="mt2" data-page-node-id="0T5SRNHBZ2VBpfIkCwc2OU"><svg class="ic ic18" data-page-node-id="HMbQxaIoEu6Bn83LY7IU9s"><use href="#i-file" data-page-node-id="YGE9dGrBJ9NU4zHoSkq3Mq"/></svg>健康报告</div>
+          <div class="kv" data-page-node-id="zqBNXwYKcEUVgMFthqLqLC"><span class="k2" data-page-node-id="HJcIL7qLCLFCHKeWi2Idv1">错误日志</span><span class="v2 ok" data-page-node-id="JM23osjofef66CnakRQj1H">0 条</span></div>
+          <div class="kv" data-page-node-id="RKvX3ti7AkGzl9AyhZ4WZc"><span class="k2" data-page-node-id="lSJpgBExmY9YOGMKByuH3b">数据库大小</span><span class="v2" data-page-node-id="qwswz24PqflOvNFRxhXQX8">312MB</span></div>
+          <div class="kv" data-page-node-id="of6qqCgJX4LUz5ZsPvb5cB"><span class="k2" data-page-node-id="HHHiesE9Sp5OdwrHlhUzF0">知识库条目</span><span class="v2" data-page-node-id="bZcK4owXV8V1ZKSsnXEDJk">1,204 条</span></div>
+          <div class="kv" data-page-node-id="NmXwJ4BgPmmEY3anXSQfOM"><span class="k2" data-page-node-id="fOZqhvi7Dy0fFdNkwnmchx">上次备份</span><span class="v2" data-page-node-id="pXIFyAoFXxUD4IEHV2hAG3">昨天 23:00</span></div>
+        </div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- 说明 -->
+  <div class="note-sec" data-page-node-id="wX2A9aG8FsOEXmC8VnKToX">
+    <h2 data-page-node-id="RJ8VKHkrhEuxBwLdV8j70i">📐 v3 规则与定义（将写入《分项规范》底座）</h2>
+    <ul data-page-node-id="qJRXf5p8o01khbje5Od4iH">
+      <li data-page-node-id="uurpaqdVO64Wky7U7OyjES"><b data-page-node-id="8jTkwxPsZentxqBhm62y9I">面板三形态</b>：停靠右栏（默认）/ 独立浮窗（可拖动、可缩放、可多开）/ 全屏——同一个页面的三种摆放，均完整可操作。</li>
+      <li data-page-node-id="NWNovlsbf6erMxeGxB7Iuu"><b data-page-node-id="bwIx7BxOzQSlSU5hzxnfyj">大分类 = 生活空间</b>：预置家庭 / 公司 / 个人，可自建（爸妈家、车库、仓库…）；分项是「模块库」待选项，拖进分类=安装实例，<b data-page-node-id="RaZWvfNLqmhWmveAERWHKg">同一模块可多实例、数据互相隔离</b>（A 公司账 ≠ B 公司账）；卸载数据保留 30 天。</li>
+      <li data-page-node-id="Os6kI3ItqH0RP5cB6T9zGg"><b data-page-node-id="szx0zFePpCrsE4j6dPubPB">上传支持</b>：图片（识别）、文档（pdf/word/excel/ppt）、音频 mp3/wav（转文字）、视频 mp4/mov（抽帧识别/素材）、压缩包 zip（技能安装走安全检查）、代码文件——本地先处理，外脑模式下经隐私三档管控。</li>
+      <li data-page-node-id="wkKuMiEigAegkHCSHpXpPk"><b data-page-node-id="YJFvVWgBnhNmMgEYQ2QtA2">「监控」→「运行状态」</b>：电脑资源 / 模型加载 / 今日对话与 token 账本 / 安全 / 定时任务 / 健康报告六卡；token 账本直接体现三级火箭效果（B 方案次数单列）。</li>
+      <li data-page-node-id="tMBrMCpw2gzRChzYqyYFGc"><b data-page-node-id="tvOHUCZNPz0839CSYAu4gB">设置 8→1 单页</b>：模型（卡片化+测一测）/ 安全隐私 / 通用（外观压缩为 3 主题）/ 钥匙串（全部密钥统一）/ 关于；个人画像移「更多」抽屉、插件管理移「更多」抽屉。</li>
+      <li data-page-node-id="ur5K0DVvghu2NaYLm8Ogqy"><b data-page-node-id="AI3Hur5t8jIJ9c6CFsWKKl">开发者模式定义</b>（面向开源社区）：流程编译器 / 工具目录管理（FC 工具启停+token 统计）/ Token 统计 / 实时日志 / 进化提案工坊 / API·MCP 调试 / 数据库只读查看 / 模型高级参数 / 实验性功能。<b data-page-node-id="yLbVcfAEd376GKTxTCHlI5">红线：不解除毁灭性命令拦截等安全底线。</b></li>
+    </ul>
+  </div>
+</div>
+<script>
+function sw(id){
+  document.querySelectorAll('.state').forEach(s=>s.classList.remove('on'));
+  document.getElementById(id).classList.add('on');
+  document.querySelectorAll('.switcher button').forEach(b=>b.classList.toggle('on',b.dataset.s===id));
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+document.querySelectorAll('.switcher button').forEach(b=>b.onclick=()=>sw(b.dataset.s));
+</script>
+</body>
+</html>

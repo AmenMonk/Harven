@@ -515,11 +515,16 @@ def _run_injection_review(content: str, max_chars: int = 8000) -> Tuple[bool, st
         try:
             # 从配置读取 Ollama 地址，避免硬编码
             _ollama_url = _get_ollama_base_url()
+            _review_model = _get_injection_review_model()
+            if not _review_model:
+                # ★ 2026-09-26 审计：用户没选模型 → 不偷用任何模型，直接 fail-open
+                logger.info("[Independence] 未配置本地模型，跳过 LLM 注入审查（默认放行）")
+                return True, "未配置本地模型，LLM 审查跳过"
             logger.info(f"[Independence] 注入审查使用 Ollama: {_ollama_url}")
             resp = requests.post(
                 f"{_ollama_url}/api/generate",
                 json={
-                    "model": _get_injection_review_model(),
+                    "model": _review_model,
                     "prompt": prompt,
                     "stream": False,
                     "options": {"temperature": 0.1, "num_predict": 10},
@@ -558,7 +563,8 @@ def _get_injection_review_model() -> str:
     优先级：
     1. config.yaml → independence.injection_review_model
     2. config.yaml → ollama.default_model
-    3. 回退默认值 qwen2.5:7b
+    3. 都没有 → 返回空（★ 2026-09-26 审计：删除内定 qwen2.5:7b 死配置；
+       模型必须用户自选，没选就跳过 LLM 审查走 fail-open，不偷用任何模型）
     """
     try:
         import yaml
@@ -575,8 +581,8 @@ def _get_injection_review_model() -> str:
                 return model
     except Exception as _e: logger.debug(f"[independence] 忽略: {_e}")
 
-    # 3. 回退默认值
-    return "qwen2.5:7b"
+    # 3. ★ 2026-09-26 审计：删除内定模型兜底（原 qwen2.5:7b 死配置）——没选就是没选
+    return ""
 
 
 def _get_ollama_base_url() -> str:
@@ -725,7 +731,7 @@ def enforce_device_binding() -> Tuple[bool, str]:
 def get_system_prompt_text() -> str:
     """从 morality 模块获取当前系统提示词"""
     try:
-        from src.core.morality import SYSTEM_PROMPT
+        from src.core.identity import SYSTEM_PROMPT
         return SYSTEM_PROMPT
     except ImportError:
         return ""

@@ -1,0 +1,5 @@
+﻿id=67 item=今日社保 amt=9000.0 cat=其他 date=2026-09-16 kind= dir= src=
+id=66 item=晚餐 amt=61.1 cat=餐饮 date=2026-09-15 kind=flow dir=支出 src=
+id=64 item=早餐 amt=16.05 cat=买菜 date=2026-09-16 kind=flow dir=支出 src=
+id=63 item=买菜 amt=30.3 cat=买菜 date=2026-09-16 kind=flow dir=支出 src=
+id=19 item=老数据早市买菜 amt=32.0 cat=买菜 date=2026-09-01 kind= dir= src=

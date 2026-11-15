@@ -18,6 +18,12 @@ _NONCHAT_KEYWORDS = [
     'whisper',
 ]
 
+# ★ #1238（2026-10-26）HarvenEye 本地混合模型引擎 id。
+#   定位（定版拍板）：HarvenEye = 混合模型引擎（视觉 + 通用对话双能力），
+#   进本地模型选项（不是垂直区）、用户自由选不定默认顶替、
+#   模型未装不可出现（门禁 eye_client.models_ready）、失败回退 Ollama 本地。
+EYE_MODEL_ID = 'harveneye'
+
 
 def check_ollama(base_url="http://localhost:11434"):
     """
@@ -56,12 +62,31 @@ class ModelManager:
     未来可扩展：vLLM / MLX / TensorRT-LLM
     """
 
-    def __init__(self, base_url="http://localhost:11434", model="qwen2.5:14b"):
+    def __init__(self, base_url="http://localhost:11434", model=""):
         self.base_url = base_url
+        # ★ 2026-08-25: 类型守护——防止 list/dict 混入导致 .lower() 崩溃
+        # ★ 2026-09-26 审计（开发者死命令：模型必须用户自选）：删除内定 qwen2.5:14b 兜底——
+        #   非法类型 → 落「用户已装列表第一个通用模型」（用户机器上真实存在的）；
+        #   空 → 保留空（诚实表示"未选择模型"，调用时报错引导，不偷用任何模型）
+        if not isinstance(model, str) or not model.strip():
+            if isinstance(model, str):
+                logger.warning("[ModelManager] 未配置本地模型（default_model 为空）——用户尚未选择模型，不内定兜底")
+                model = ""
+            else:
+                logger.warning(f"[ModelManager] 模型名类型异常({type(model).__name__})，改用已装列表第一个通用模型")
+                _av = [m for m in get_available_models(base_url)
+                       if 'embed' not in m.lower() and 'bge' not in m.lower() and 'minicpm' not in m.lower()]
+                model = _av[0] if _av else ""
         self.model = model
-        self._engine_type = None  # 'ollama' | 'llama_cpp' | None
+        self._engine_type = None  # 'ollama' | 'llama_cpp' | 'harveneye' | None
         self._llama_engine = None
         self._using_gguf = False
+
+        # ★ #1238: HarvenEye 混合模型引擎（走 eye_client HTTP，进程内不碰其引擎代码）
+        if model.strip() == EYE_MODEL_ID:
+            self._engine_type = 'harveneye'
+            logger.info("[ModelManager] 引擎已选定: HarvenEye 混合模型引擎（对话走 Eye /chat，失败回退 Ollama）")
+            return
 
         # 尝试连接引擎（Ollama 优先，GGUF 回退）
         ok, _ = check_ollama(base_url)
@@ -77,12 +102,23 @@ class ModelManager:
             # Ollama 不可用，尝试加载 GGUF 模型
             logger.info("[ModelManager] Ollama 引擎不可用，尝试 GGUF 直跑...")
             self._try_gguf_fallback(model)
-    
+
     def set_model(self, model_name):
         """切换模型"""
+        # ★ 2026-08-25: 类型守护
+        if not isinstance(model_name, str) or not model_name.strip():
+            logger.warning(f"[ModelManager] set_model 拒绝非法模型名({type(model_name).__name__}): {str(model_name)[:60]}")
+            return False
         self.model = model_name
+        # ★ #1322 选择即换血：用户选了本地模型，当场预载进显存（不写死模型名，通用机制）
+        try:
+            from src.core import local_model_swap
+            local_model_swap.swap_in_async(model_name, reason='set_model')
+        except Exception as _e:
+            logger.debug(f"[ModelManager] 模型预载触发失败（不影响切换）: {_e}")
         if self._using_gguf:
             self._try_gguf_fallback(model_name)
+        return True
 
     def _try_gguf_fallback(self, model_name=None):
         """尝试加载 GGUF 模型（魔搭下载的）"""
@@ -136,6 +172,20 @@ class ModelManager:
         模型预热：发送一条极短消息加载模型到 GPU
         避免首次对话时的冷启动延迟（通常 8-15 秒）
         """
+        # ★ #1238: HarvenEye 无需哈文侧预热（Eye 服务自己管模型加载），只探门禁
+        if self._engine_type == 'harveneye':
+            def _eye_check():
+                try:
+                    from src.core import eye_client
+                    r = eye_client.models_ready()
+                    if r.get('ready'):
+                        logger.info(f"[ModelManager] HarvenEye 门禁就绪: {r.get('model')}")
+                    else:
+                        logger.warning(f"[ModelManager] HarvenEye 门禁未就绪: {r.get('error') or r.get('missing')}")
+                except Exception as e:
+                    logger.debug(f"[ModelManager] HarvenEye 探测失败: {e}")
+            threading.Thread(target=_eye_check, daemon=True).start()
+            return
         import threading
         def _do_warmup():
             try:
@@ -164,6 +214,11 @@ class ModelManager:
                 "请切换到语言模型（如 qwen2.5:14b）或使用外脑模式。"
             )
 
+        # ★ #1238: HarvenEye 路径（失败内部回退 Ollama，不外抛——engine 回退链会去
+        #   找 llama-cpp/GGUF 反而绕远；定版拍板：Eye 失败回退 Ollama 本地）
+        if self._engine_type == 'harveneye':
+            return self._chat_eye(messages, stream, temperature)
+
         # GGUF 引擎路径
         if self._engine_type == 'llama_cpp' and self._llama_engine and self._llama_engine.is_loaded:
             return self._chat_gguf(messages, stream, temperature, max_tokens)
@@ -190,6 +245,88 @@ class ModelManager:
             logger.error(f"[ModelManager] 模型调用失败: {e}")
             raise RuntimeError(f"模型调用失败: {e}") from e
     
+    def _eye_fallback_notice(self, reason: str) -> str:
+        """Eye 失败回退 Ollama 时的诚实标注（回答开头一行，不冒充 Eye 在答）。"""
+        fb = self._pick_ollama_fallback_model()
+        return f"（⚠️ HarvenEye 暂不可用：{reason}；已回退本地模型 {fb} 回答）\n\n"
+
+    def _pick_ollama_fallback_model(self) -> str:
+        """回退用 Ollama 模型：ollama.default_model 优先，否则已装列表第一个通用模型。"""
+        name = ''
+        try:
+            from src.utils.config import get_config
+            name = (get_config() or {}).get('ollama', {}).get('default_model', '') or ''
+        except Exception:
+            pass
+        if not name or name == EYE_MODEL_ID:
+            avail = [m for m in get_available_models(self.base_url)
+                     if 'embed' not in m.lower() and 'bge' not in m.lower()
+                     and 'minicpm' not in m.lower()]
+            name = avail[0] if avail else ''
+        return name
+
+    def _ensure_ollama_fallback(self) -> bool:
+        """把当前实例从 harveneye 切到 Ollama 引擎（回退用，实例级一次性切换）。"""
+        ok, _ = check_ollama(self.base_url)
+        if not ok:
+            return False
+        fb = self._pick_ollama_fallback_model()
+        if not fb:
+            return False
+        self._engine_type = 'ollama'
+        self.model = fb
+        self.client = OpenAI(base_url=f"{self.base_url}/v1", api_key='ollama', timeout=120.0)
+        logger.warning(f"[ModelManager] HarvenEye 不可用 → 已回退 Ollama 模型: {fb}")
+        return True
+
+    def _chat_eye(self, messages, stream, temperature):
+        """HarvenEye 对话：/chat 非流式或 SSE 流式；失败自动回退 Ollama（带诚实标注）。"""
+        from src.core import eye_client
+        msgs = [{'role': m.get('role', 'user'), 'content': m.get('content', '')}
+                for m in messages if isinstance(m, dict) and m.get('content')]
+        if not msgs:
+            raise RuntimeError('HarvenEye 对话消息为空')
+        notice_yielded = False
+        try:
+            if not stream:
+                ok, content = eye_client.chat(msgs, timeout=150.0)
+                if not ok:
+                    # 非流式回退：切 Ollama 引擎后重发（同步返回，标注前置）
+                    if not self._ensure_ollama_fallback():
+                        raise RuntimeError(f'HarvenEye 不可用且 Ollama 回退也失败: {content}')
+                    retry_msgs = [{'role': 'system', 'content': '你是一个有帮助的AI助手。'}] + msgs[-8:]
+                    fb_text = self.chat(retry_msgs, stream=False, temperature=temperature)
+                    return self._eye_fallback_notice(str(content)[:80]) + (fb_text or '')
+                return content
+
+            def _gen():
+                nonlocal notice_yielded
+                try:
+                    for piece in eye_client.chat_stream(msgs):
+                        if not notice_yielded:
+                            # 首包即成功，无回退——纯答案，不插标注
+                            notice_yielded = True
+                        yield piece
+                    if not notice_yielded:
+                        raise RuntimeError('HarvenEye 返回空流')
+                except RuntimeError as e:
+                    if notice_yielded:
+                        # 已吐过答案再断——诚实标注断点
+                        yield f"\n\n（⚠️ HarvenEye 传输中断：{e}）"
+                        return
+                    if not self._ensure_ollama_fallback():
+                        raise RuntimeError(f'HarvenEye 不可用且 Ollama 回退也失败: {e}') from e
+                    yield self._eye_fallback_notice(str(e)[:80])
+                    notice_yielded = True
+                    retry_msgs = [{'role': 'system', 'content': '你是一个有帮助的AI助手。'}] + msgs[-8:]
+                    yield from self.chat(retry_msgs, stream=True, temperature=temperature)
+
+            return _gen()
+        except RuntimeError:
+            raise
+        except Exception as e:
+            raise RuntimeError(f'HarvenEye 对话失败: {e}') from e
+
     def _stream_response(self, response):
         """处理流式响应，兼容普通模型和 thinking 模型（qwen3/deepseek-r1）
         
@@ -249,3 +386,22 @@ class ModelManager:
         messages.append({"role": "user", "content": user_message})
         
         return self.chat(messages, stream=stream, temperature=temperature)
+
+
+def create_from_config():
+    """★ 2026-10-04 P1 修复：裸 ModelManager() 不读 config 默认模型 → 本地调用
+    create(model='') 被 Ollama 拒绝 400「model is required」（手机远程 __system__
+    单例 / 定时任务 / 看图分支三处实锤，22:00/22:04 日志）。
+    统一从这里建实例：读 config.yaml 的 ollama.base_url / ollama.default_model，
+    与 web_app.get_mm() 同源——设置页选过模型，这里就带得上。
+    用户尚未选择模型时仍为空（诚实报错引导，不内定兜底——09-26 审计原则不变）。"""
+    try:
+        from src.utils.config import get_config
+        cfg = get_config() or {}
+        _ollama = cfg.get('ollama', {}) or {}
+        base_url = _ollama.get('base_url', 'http://localhost:11434') or 'http://localhost:11434'
+        model_name = _ollama.get('default_model', '') or ''
+    except Exception as _e:
+        logger.warning(f"[ModelManager] create_from_config 读配置失败（按缺省建）: {_e}")
+        base_url, model_name = 'http://localhost:11434', ''
+    return ModelManager(base_url, model_name)

@@ -1,0 +1,15 @@
+﻿nslookup : 非权威应答:
+所在位置 行:445 字符: 77
++ ... ns1.txt -Encoding utf8; nslookup harvenhub.com 223.5.5.5 2>&1 | Out-F ...
++                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (非权威应答::String) [], RemoteExceptio 
+   n
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+服务器:  public1.alidns.com
+Address:  223.5.5.5
+
+名称:    harvenhub.com
+Address:  82.157.182.80
+

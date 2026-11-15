@@ -19,7 +19,39 @@ logger = logging.getLogger(__name__)
 
 # ── 语义路由配置 ────────────────────────────────────────────────────────────
 
-_EMBED_MODEL = "nomic-embed-text"
+# ★ 2026-09-26 审计（开发者死命令：模型必须用户自选）：不再内定 nomic-embed-text。
+# 改为动态解析用户 Ollama 已装列表里的嵌入模型（含 embed/bge 字样），
+# 一个都没有 → 语义路由自动禁用，退关键词分类（不下载、不内定任何模型）
+_EMBED_MODEL = ""
+_EMBED_MODEL_RESOLVED = False
+_EMBED_MODEL_LOCK = threading.Lock()
+
+
+def _resolve_embed_model() -> str:
+    """从用户已装模型里找嵌入模型（懒加载+缓存）。返回 '' 表示没有，语义分类禁用。"""
+    global _EMBED_MODEL, _EMBED_MODEL_RESOLVED
+    if _EMBED_MODEL_RESOLVED:
+        return _EMBED_MODEL
+    with _EMBED_MODEL_LOCK:
+        if _EMBED_MODEL_RESOLVED:
+            return _EMBED_MODEL
+        try:
+            import requests as _r
+            resp = _r.get(f"{_OLLAMA_BASE}/api/tags", timeout=3)
+            for m in resp.json().get("models", []):
+                low = m.get("name", "").lower()
+                if "embed" in low or low.startswith("bge"):
+                    _EMBED_MODEL = m.get("name", "")
+                    break
+        except Exception as e:
+            logger.debug(f"[db_router] 解析嵌入模型失败: {e}")
+        _EMBED_MODEL_RESOLVED = True
+        if _EMBED_MODEL:
+            logger.info(f"[db_router] 语义路由使用用户已装嵌入模型: {_EMBED_MODEL}")
+        else:
+            logger.info("[db_router] 用户未装嵌入模型，语义路由禁用（走关键词分类，不内定模型）")
+        return _EMBED_MODEL
+
 _OLLAMA_BASE = "http://localhost:11434"
 
 # 三类锚点文本（每类多条，取平均向量作为类别中心）
@@ -83,11 +115,15 @@ _SIMILARITY_THRESHOLD = 0.25
 _SEMANTIC_MIN_LENGTH = 15
 
 
-def _get_embedding(text: str, model: str = _EMBED_MODEL) -> Optional[List[float]]:
+def _get_embedding(text: str, model: str = None) -> Optional[List[float]]:
     """
     调用 Ollama Embeddings API 获取文本向量。
-    需要 Ollama 已安装 nomic-embed-text 模型。
+    ★ 2026-09-26 审计：model 为空时动态解析用户已装嵌入模型；解析不到返回 None（分类退关键词）。
     """
+    if model is None:
+        model = _resolve_embed_model()
+    if not model:
+        return None
     try:
         import requests as _r
         resp = _r.post(
@@ -113,11 +149,16 @@ def _cosine_similarity(a: List[float], b: List[float]) -> float:
     return dot / (norm_a * norm_b) if (norm_a * norm_b) > 0 else 0.0
 
 
-def _ensure_anchor_embeddings(model: str = _EMBED_MODEL) -> bool:
+def _ensure_anchor_embeddings(model: str = None) -> bool:
     """
     懒加载：计算并缓存三个类别的锚点向量。
     返回 True 表示锚点已就绪，可以执行语义分类。
+    ★ 2026-09-26 审计：model 为空时动态解析用户已装嵌入模型；解析不到返回 False（禁用语义分类）。
     """
+    if model is None:
+        model = _resolve_embed_model()
+    if not model:
+        return False
     global _ANCHOR_EMBEDDINGS
     with _ANCHOR_LOCK:
         if _ANCHOR_EMBEDDINGS:

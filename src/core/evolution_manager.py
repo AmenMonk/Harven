@@ -611,7 +611,8 @@ class EvolutionManager:
         ALLOWED_CONFIG_KEYS = {
             'system_prompt', 'response_language', 'max_memory_items',
             'web_search_enabled', 'knowledge_base_enabled', 'rate_limit',
-            'ollama.default_model', 'morality.enabled', 'morality.level',
+            'ollama.default_model',
+            # ★ 2026-11-15: 清掉 morality.enabled/morality.level 死键（功德/道德模块已彻底移除，配置键不存在）
             'auto_learn',
         }
         

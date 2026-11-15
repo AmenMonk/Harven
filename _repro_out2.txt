@@ -1,0 +1,79 @@
+﻿python.exe : [2026-09-16 23:32:23] INFO src.core.independence - [Independence] 
+姝ｅ父妯″紡: 榛樿涓嶆嫤鎴紝璁板綍鍑虹珯鏃ュ織
+所在位置 行:445 字符: 27
++ ... :\HarvenAI; & .\.venv\Scripts\python.exe _repro.py *> _repro_out.txt; ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([2026-09-16 23:...涓嶆嫤鎴紝璁板綍鍑虹珯鏃ュ織 
+   :String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+[2026-09-16 23:32:23] INFO src.core.independence - [Independence] requests 鍑虹珯鐧
+藉悕鍗曡ˉ涓佸凡搴旂敤
+[2026-09-16 23:32:23] INFO web_app - [Startup] 鐙珛鎬ч槻寰★細鍑虹珯鐧藉悕鍗曞凡婵€娲?
+[2026-09-16 23:32:24] INFO multi_model_api - [MultiModel] Routes registered suc
+cessfully
+[2026-09-16 23:32:24] INFO web_app - [MultiModel] Multi-model routes registered
+ successfully
+[2026-09-16 23:32:24] INFO src.core.drivers.http_driver - [HttpDriver] HTTP 椹卞姩
+宸叉敞鍐?
+[2026-09-16 23:32:24] INFO src.core.drivers.websocket_driver - [WsDriver] WebSo
+cket 椹卞姩宸叉敞鍐?
+[2026-09-16 23:32:24] INFO src.core.drivers.mock_driver - [MockDriver] 宸叉敞鍐屽埌 D
+riverRegistry
+[2026-09-16 23:32:24] INFO src.core.drivers - [drivers] 椹卞姩鍖呭垵濮嬪寲瀹屾垚
+[2026-09-16 23:32:24] INFO device_api - [DeviceAPI] MQTT 椹卞姩娉ㄥ唽鎴愬姛
+[2026-09-16 23:32:24] INFO device_api - [DeviceAPI] HTTP 椹卞姩娉ㄥ唽鎴愬姛
+[2026-09-16 23:32:24] INFO device_api - [DeviceAPI] WebSocket 椹卞姩娉ㄥ唽鎴愬姛
+[2026-09-16 23:32:24] INFO device_api - [DeviceAPI] Mock 椹卞姩娉ㄥ唽鎴愬姛锛堟祴璇曠敤锛?
+[2026-09-16 23:32:24] INFO device_api - [DeviceAPI] 璁惧 API 璺敱娉ㄥ唽鎴愬姛锛堝惈妯℃嫙璁惧娴
+嬭瘯绔偣锛?
+[2026-09-16 23:32:24] INFO web_app - [DeviceAPI] Device management routes regis
+tered successfully
+[2026-09-16 23:32:24] INFO web_app - [PluginMgmt] Plugin management routes regi
+stered (Blueprint)
+[2026-09-16 23:32:24] INFO new_features_api - [NewFeatures] All new feature rou
+tes registered successfully
+[2026-09-16 23:32:24] INFO web_app - [Vault] Data vault routes registered (Blue
+print)
+[2026-09-16 23:32:24] INFO web_app - [Collab] Collaboration routes registered (
+Blueprint)
+[2026-09-16 23:32:24] INFO src.core.vertical_api - [Vertical] 绯荤粺鍒濆鍖栧畬鎴? 0 涓姩
+鎬侀€傞厤鍣? 0 涓姩鎬佺敾鏉挎ā鏉?
+[2026-09-16 23:32:24] INFO web_app - [Vertical] 鍨傜洿妯″瀷 API 璺敱宸叉敞鍐岋紝鍔ㄦ€侀€傞厤鍣ㄧ郴缁
+熷凡鍒濆鍖?
+[2026-09-16 23:32:24] INFO src.core.security_guard - [Security] 浠庢枃浠跺姞杞芥ā寮? saf
+e
+[2026-09-16 23:32:24] INFO web_app - [Security] 瀹夊叏闃叉姢璺敱宸叉敞鍐?
+[2026-09-16 23:32:24] INFO web_app - [TokenLedger] Token璐︽湰璺敱宸叉敞鍐岋紙GET /api/to
+ken/ledger锛?
+[2026-09-16 23:32:24] INFO web_app - [Evolution] 鍙楁帶杩涘寲璺敱宸叉敞鍐?
+[2026-09-16 23:32:24] INFO web_app - [Extraction] 鐭ヨ瘑钀冨彇璺敱宸叉敞鍐岋紙瀛樻牴锛?
+[2026-09-16 23:32:24] INFO apscheduler.scheduler - Scheduler started
+[2026-09-16 23:32:24] INFO src.core.scheduler - [Scheduler] APScheduler 宸插惎鍔?
+[2026-09-16 23:32:24] INFO apscheduler.scheduler - Added job "TaskScheduler._ru
+n_task" to job store "default"
+[2026-09-16 23:32:24] INFO apscheduler.scheduler - Added job "TaskScheduler._ru
+n_task" to job store "default"
+[2026-09-16 23:32:24] INFO apscheduler.scheduler - Added job "TaskScheduler._ru
+n_task" to job store "default"
+[2026-09-16 23:32:24] INFO apscheduler.scheduler - Removed job dream_light
+[2026-09-16 23:32:24] INFO apscheduler.scheduler - Added job "TaskScheduler._ru
+n_task" to job store "default"
+[2026-09-16 23:32:25] INFO apscheduler.scheduler - Removed job dream_deep
+[2026-09-16 23:32:25] INFO apscheduler.scheduler - Added job "TaskScheduler._ru
+n_task" to job store "default"
+[2026-09-16 23:32:25] INFO apscheduler.scheduler - Removed job dream_rem
+[2026-09-16 23:32:25] INFO apscheduler.scheduler - Added job "TaskScheduler._ru
+n_task" to job store "default"
+[2026-09-16 23:32:25] INFO src.core.memory_dreaming - [Dreaming] 宸叉敞鍐屾ⅵ澧冨畾鏃朵换鍔?
+[2026-09-16 23:32:25] INFO web_app - [Scheduler] 璁板繂姊﹀浠诲姟宸叉敞鍐?
+[2026-09-16 23:32:25] INFO web_app - [Scheduler] 瀹氭椂浠诲姟璋冨害鍣ㄥ凡灏辩华
+[2026-09-16 23:32:26] INFO web_app - [DeviceBinding] OK: device binding verifie
+d
+[Harven] 宸茶嚜鍔ㄨ缃?OLLAMA_HF_MIRROR=https://modelscope.cn (妯″瀷涓嬭浇鍔犻€?-10鍊?
+[Harven] BUILD_ID = f2f744df502a
+Traceback (most recent call last):
+  File "H:\HarvenAI\_repro.py", line 8, in <module>
+    from src.core.panel_assist_routes import bpa
+ImportError: cannot import name 'bpa' from 'src.core.panel_assist_routes' (H:\H
+arvenAI\src\core\panel_assist_routes.py)

@@ -1,0 +1,17 @@
+{
+  "name": "哈文 · Harven AI",
+  "short_name": "哈文",
+  "description": "哈文本地 AI 助手 — 本地优先，数据在你自己电脑上",
+  "lang": "zh-CN",
+  "start_url": "/static/spa/index.html",
+  "scope": "/static/spa/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#FBFCFE",
+  "theme_color": "#FBFCFE",
+  "icons": [
+    { "src": "/static/icons/duck_192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/static/icons/duck_512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/static/icons/duck_512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

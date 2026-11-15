@@ -18,7 +18,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# 项目根目录 = H:\HarvenAI
+# 项目根目录（由脚本位置自动定位，任意电脑通用）
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 # 安全限制
@@ -486,104 +486,141 @@ class ToolExecutor:
             'output': ''
         }
 
-    def run_musicgen(self, model_id: str, prompt: str, duration: int = 15) -> dict:
-        """MusicGen 音乐生成（本地推理，2026-07-03 实现）
+    # ── 本地大模型推理（subprocess 隔离模式，2026-11-14）──
+    # ★ 设计：ACE-Step/Z-Image/Wan2.2 依赖重（librosa/diffusers hooks 等），推理独占 GPU 8-10GB，
+    #   一律走 subprocess 调 H:\AI_Models\*_gen.py 独立脚本，跑完进程退出自动释放显存，
+    #   不污染哈文主进程内存。生成前先卸载 Ollama 驻留模型（keep_alive=0）腾显存。
+    _GEN_SCRIPTS = {
+        'run_ace_step': r'H:\AI_Models\acestep_gen.py',
+        'run_zimage': r'H:\AI_Models\zimage_gen.py',
+        'run_wan22': r'H:\AI_Models\wan22_gen.py',
+    }
+    _GEN_TIMEOUTS = {'run_ace_step': 900, 'run_zimage': 600, 'run_wan22': 3600}
 
-        使用 Meta audiocraft 加载 facebook/musicgen-small 模型。
-        首次调用会下载约 1.5GB 模型（缓存在 ~/.cache/huggingface/）。
-        CPU 推理 15 秒音频约需 2-5 分钟；GPU 约 10-20 秒。
-
-        Returns: {'success': bool, 'file': str, 'output': str, 'error': str}
-                 file 为相对于项目的路径，如 data/media/musicgen_xxx.wav
-        """
-        import time
-        import uuid
+    def _run_gen_subprocess(self, method: str, payload: dict) -> dict:
+        """通用大模型推理 subprocess 执行器"""
+        import sys as _sys
+        import json as _json
+        import time as _time
+        script = self._GEN_SCRIPTS.get(method)
+        if not script or not os.path.exists(script):
+            return {'success': False, 'error': f'推理脚本缺失: {script}', 'output': ''}
+        # 腾显存：卸载 Ollama 全部已加载模型（不只 huatuo——qwen3-vl 驻留 8GB 会挤爆生成进程）
         try:
-            # ★ 模型懒加载 + 缓存
-            if not hasattr(self, '_musicgen_model') or self._musicgen_model is None:
-                logger.info("[MusicGen] 首次加载模型 (facebook/musicgen-small)...")
-                t0 = time.time()
-                import os
-                # ★ 2026-07-04: 离线模式 — 模型已缓存，不需要联网检查
-                #   修复 "Cannot send a request, as the client has been closed" 错误
-                #   HuggingFace Hub 用 httpx 请求，independence.py 只 patch 了 requests
-                os.environ['HF_HUB_OFFLINE'] = '1'
-                os.environ['TRANSFORMERS_OFFLINE'] = '1'
-                os.environ.setdefault('HF_ENDPOINT', 'https://hf-mirror.com')
-                from audiocraft.models import MusicGen
-                self._musicgen_model = MusicGen.get_pretrained('small')
-                logger.info(f"[MusicGen] 模型加载完成 ({time.time()-t0:.1f}s)")
-
-            model = self._musicgen_model
-
-            # ★ 参数设置
-            duration = max(5, min(int(duration), 30))  # 限制 5-30 秒
-            model.set_generation_params(duration=duration, use_sampling=True,
-                                         top_k=250, top_p=0.0, temperature=1.0)
-
-            # ★ 2026-07-03 修复 WinError 1000:
-            #   1. generate 前清理 GPU 缓存（避免与 Ollama 显存冲突）
-            #   2. generate 失败时回退到 CPU
-            import torch
-
-            # ★ 生成（带 GPU→CPU 回退）
-            logger.info(f"[MusicGen] 生成 '{prompt[:50]}' ({duration}s)...")
-            t1 = time.time()
+            import urllib.request
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            req = urllib.request.Request('http://127.0.0.1:11434/api/ps')
+            loaded = _json.loads(opener.open(req, timeout=3).read()).get('models', [])
+            for m in loaded:
+                try:
+                    req2 = urllib.request.Request(
+                        'http://127.0.0.1:11434/api/generate',
+                        data=_json.dumps({'model': m['name'], 'prompt': '', 'keep_alive': 0}).encode(),
+                        headers={'Content-Type': 'application/json'})
+                    opener.open(req2, timeout=3).read()
+                except Exception:
+                    pass
+            if loaded:
+                _time.sleep(2)  # 等显存真正释放
+        except Exception:
+            pass
+        # ★ 2026-11-14: 生成失败自动重试 1 次（哈文打标签线程会周期性拉起视觉模型抢显存，
+        #   首跑 OOM 时第二跑通常已错峰）
+        for attempt in (1, 2):
             try:
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()  # 释放碎片化显存
-                wav = model.generate([prompt], progress=False)
-            except Exception as gpu_err:
-                logger.warning(f"[MusicGen] GPU 生成失败 ({gpu_err})，回退到 CPU...")
-                # 回退到 CPU
-                if hasattr(model, 'device'):
-                    old_device = model.device
+                proc = subprocess.run(
+                    [_sys.executable, script, '--json', _json.dumps(payload, ensure_ascii=False)],
+                    capture_output=True, text=True, encoding='utf-8', errors='replace',
+                    timeout=self._GEN_TIMEOUTS.get(method, 900))
+            except subprocess.TimeoutExpired:
+                return {'success': False, 'error': '生成超时（任务过大，请缩短时长/步数）', 'output': ''}
+            except Exception as e:
+                logger.error(f"[{method}] 生成失败: {e}", exc_info=True)
+                return {'success': False, 'error': f'生成失败: {e}', 'output': ''}
+            # 解析脚本最后一行 JSON 结果
+            result = None
+            for line in reversed((proc.stdout or '').strip().splitlines()):
+                line = line.strip()
+                if line.startswith('{'):
                     try:
-                        model.to('cpu')
-                        torch.cuda.empty_cache()
-                        wav = model.generate([prompt], progress=False)
-                        logger.info("[MusicGen] CPU 回退生成成功")
-                    except Exception as cpu_err:
-                        logger.error(f"[MusicGen] CPU 回退也失败: {cpu_err}")
-                        raise cpu_err
-                else:
-                    raise gpu_err
-            gen_time = time.time() - t1
-            logger.info(f"[MusicGen] 生成完成 ({gen_time:.1f}s)")
-
-            # ★ 保存文件
+                        result = _json.loads(line)
+                        break
+                    except Exception:
+                        continue
+            # 脚本输出 JSON success 为准（退出码异常但结果成功也接受）
+            ok = bool(result and result.get('success'))
+            if ok:
+                break
+            if attempt == 1:
+                logger.warning(f"[{method}] 第 1 次失败（exit={proc.returncode}），5 秒后重试…")
+                _time.sleep(5)
+        else:
+            err_tail = ((proc.stderr or '')[-400:] or (result or {}).get('error') or '推理脚本无有效输出')
+            return {'success': False, 'error': f'生成失败(重试后仍失败, exit={proc.returncode}): {err_tail}', 'output': ''}
+        rel_file = result['file']
+        secs = result.get('seconds', '?')
+        # ★ 2026-11-14: 产物统一拷进 data/media/（前端走 /data/media/ 相对路径，与 MusicGen 时代一致；
+        #   绝对路径 H:/... 会被转成 /H:/... 前端读不到）
+        try:
+            import shutil as _shutil
+            src = os.path.abspath(rel_file)
             media_dir = PROJECT_ROOT / 'data' / 'media'
             media_dir.mkdir(parents=True, exist_ok=True)
-            file_id = f"musicgen_{time.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
-            wav_path = media_dir / f"{file_id}.wav"
-
-            import scipy.io.wavfile as wavfile
-            # ★ 2026-07-03 修复 WinError 1000: .clone().detach() 避免内存映射冲突
-            sample_rate = model.sample_rate
-            audio_data = wav[0, 0].clone().detach().cpu().numpy()
-            wavfile.write(str(wav_path), sample_rate, audio_data)
-
-            # 生成完成后释放显存
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-
-            rel_path = f"data/media/{file_id}.wav"
-            logger.info(f"[MusicGen] 音频已保存: {rel_path}")
-
-            return {
-                'success': True,
-                'file': rel_path,
-                'output': f'音乐生成成功 ({duration}s, 生成耗时 {gen_time:.1f}s)\n文件: {rel_path}',
-                'error': ''
-            }
-
+            dst = media_dir / os.path.basename(src)
+            if src != str(dst) and os.path.exists(src):
+                _shutil.copy2(src, dst)
+                rel_file = f"data/media/{dst.name}"
         except Exception as e:
-            logger.error(f"[MusicGen] 生成失败: {e}", exc_info=True)
-            return {
-                'success': False,
-                'error': f'音乐生成失败: {e}',
-                'output': ''
-            }
+            logger.warning(f"[{method}] 产物拷贝 data/media 失败（保留原路径）: {e}")
+        # ★ 2026-11-15 (#1521 老谭拍板 A+B): wav 自动转 mp3（体积约 1/10，内嵌播放/下载都快）
+        #   仅对 .wav 生效（zimage=png / wan22=mp4 天然不进此分支）；转码失败降级保留 wav 不报错
+        mp3_rel = ''
+        if rel_file.lower().endswith('.wav'):
+            try:
+                wav_abs = os.path.abspath(rel_file)
+                mp3_abs = os.path.splitext(wav_abs)[0] + '.mp3'
+                _ff = ''
+                try:
+                    import imageio_ffmpeg as _iif
+                    _ff = _iif.get_ffmpeg_exe()  # 优先用 venv 内置 ffmpeg（装机用户免装系统 ffmpeg）
+                except Exception:
+                    pass
+                _cmd = [_ff or 'ffmpeg', '-y', '-loglevel', 'error', '-i', wav_abs,
+                        '-codec:a', 'libmp3lame', '-q:a', '4', mp3_abs]
+                _proc = subprocess.run(_cmd, capture_output=True, text=True, timeout=600)
+                if _proc.returncode == 0 and os.path.exists(mp3_abs):
+                    mp3_rel = f"data/media/{os.path.basename(mp3_abs)}"
+                    logger.info(f"[{method}] wav→mp3 完成: {mp3_rel} "
+                                f"({os.path.getsize(wav_abs)//1024}KB → {os.path.getsize(mp3_abs)//1024}KB)")
+                else:
+                    logger.warning(f"[{method}] wav→mp3 失败（保留 wav）: {(_proc.stderr or '')[-200:]}")
+            except Exception as e:
+                logger.warning(f"[{method}] wav→mp3 异常（保留 wav）: {e}")
+        out_line = f'生成成功（耗时 {secs}s，seed={result.get("seed")}）\n文件: {rel_file}'
+        if mp3_rel:
+            out_line += f'\nMP3: {mp3_rel}'
+        return {'success': True, 'file': rel_file, 'mp3': mp3_rel,
+                'output': out_line, 'error': ''}
+
+    def run_ace_step(self, model_id: str, prompt: str, lyrics: str = '[inst]',
+                     duration: int = 30, steps: int = 27, seed: str = '-1') -> dict:
+        """ACE-Step 音乐生成（3.5B 本地，支持人声歌曲）"""
+        return self._run_gen_subprocess('run_ace_step', {
+            'prompt': prompt, 'lyrics': lyrics or '[inst]',
+            'duration': duration, 'steps': steps, 'seed': seed})
+
+    def run_zimage(self, model_id: str, prompt: str, width: int = 1024,
+                   height: int = 1024, steps: int = 8, seed: str = '-1') -> dict:
+        """Z-Image-Turbo 图片生成（6B 本地，8 步极速）"""
+        return self._run_gen_subprocess('run_zimage', {
+            'prompt': prompt, 'width': width, 'height': height,
+            'steps': steps, 'seed': seed})
+
+    def run_wan22(self, model_id: str, prompt: str, seconds: int = 5,
+                  steps: int = 30, seed: str = '-1') -> dict:
+        """Wan2.2 T2V 视频生成（14B GGUF 双专家，较慢）"""
+        return self._run_gen_subprocess('run_wan22', {
+            'prompt': prompt, 'seconds': seconds, 'steps': steps, 'seed': seed})
 
     def run_bark(self, model_id: str, text: str, voice_preset: str = 'v2/zh_speaker_0') -> dict:
         """Bark TTS 语音合成（需本地模型）"""

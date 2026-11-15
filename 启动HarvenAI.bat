@@ -1,59 +1,56 @@
 @echo off
-chcp 65001 >nul
-title 🦆 Harven AI 哈文
+title Harven AI
+rem Set console window icon to the official duck
+if exist "%~dp0static\icons\duck.ico" powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\set_duck_icon.ps1" "%~dp0static\icons\duck.ico" >nul 2>&1
 
-:: ★ 2026-08-14: 自动请求管理员权限（删文件/装软件需要）
+rem Auto request admin permission (needed for file and software operations)
 net session >nul 2>&1
 if %errorlevel% neq 0 (
-    echo  需要管理员权限来操作文件和软件
-    echo  正在请求管理员权限...
+    echo  Admin permission is needed to manage files and software.
+    echo  Requesting administrator permission...
     powershell -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+    timeout /t 3 /nobreak >nul
     exit /b
 )
 
 cd /d "%~dp0"
 
-:: 检查有没有 .venv
+rem Check if Harven AI is installed
 if not exist ".venv\Scripts\python.exe" (
     echo.
-    echo  ❌ 哈文未安装！
-    echo.
-    echo  请双击 "安装哈文.bat" 完成安装
+    echo  [X] Harven AI is not installed yet.
+    echo  Please double-click the install bat file in this folder first.
     echo.
     pause
     exit /b 1
 )
 
-:: 检查端口，避免重复启动
+rem Check port to avoid double start
 netstat -ano 2>nul | findstr ":7000.*LISTENING" >nul
 if not errorlevel 1 (
-    echo  🦆 哈文已在运行，正在打开浏览器...
-    start http://localhost:7000
+    echo  Harven AI is already running. Opening browser... window closes in 3s.
+    start http://localhost:7000/spa
+    timeout /t 3 /nobreak >nul
     exit /b 0
 )
 
-:: 启动
-echo  ═══════════════════════════════════════════
-echo  🦆 Harven AI 哈文正在启动...
-echo  ═══════════════════════════════════════════
-echo.
-echo  🔐 初始密码：harven2026（首次登录后建议修改）
+echo  ==========================================
+echo   Harven AI is starting...
+echo  ==========================================
 echo.
 
-:: 后台启动Flask + 等待3秒 + 自动打开浏览器
-start /b .venv\Scripts\python.exe web_app.py
+rem Start Flask in background, wait, then open browser
+start /b "" .venv\Scripts\python.exe web_app.py
 
-:: 等待Flask启动
 timeout /t 5 /nobreak >nul
 
-:: 自动打开浏览器
-start http://localhost:7000
+start http://localhost:7000/spa
 
-echo  ✅ 哈文已启动！
-echo  🌐 浏览器已自动打开 http://localhost:7000
+echo  Harven AI started!
+echo  Browser opened at http://localhost:7000/spa
 echo.
-echo  💡 关闭此窗口不会停止哈文
-echo    要停止：任务管理器 → 结束 python.exe
+echo  Tip: closing this window will NOT stop Harven AI.
+echo  To stop Harven AI: end the python process in Task Manager.
 echo.
-echo  按任意键关闭此窗口（哈文继续运行）...
+echo  Press any key to close this window - Harven AI keeps running...
 pause >nul

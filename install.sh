@@ -6,7 +6,7 @@ set -e
 cd "$(dirname "$0")"
 
 echo "════════════════════════════════════════════"
-echo "  🦆 Harven AI 哈文 — 一键安装"
+echo "  Harven AI 哈文 — 一键安装"
 echo "════════════════════════════════════════════"
 
 # ── 确定 Python 目录 ──
@@ -78,7 +78,7 @@ pip install -r requirements.txt
 # ── 创建配置 ──
 if [ ! -f "config.yaml" ]; then
     echo "📝 创建默认配置..."
-    cp config.yaml.example config.yaml 2>/dev/null || true
+    cp config.example.yaml config.yaml 2>/dev/null || cp config.yaml.example config.yaml 2>/dev/null || true
 fi
 
 # ── 创建数据目录 ──

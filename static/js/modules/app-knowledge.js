@@ -407,7 +407,10 @@ async function doInlineTest(modelId) {
     try {
         const body = { model_id: modelId, api_key: apiKey };
         if (baseUrl) body.base_url = baseUrl;
-        const resp = await fetch('/api/models/test-connect', {
+        // ★ #1516（2026-11-14）：改调 /api/models/test —— 原先调的 test-connect 根本不读
+        //   body，用户输入的新 key 没被测、测的是已保存的旧 key（接错端点实锤）。
+        //   test 端点语义吻合：单模型测试 + 测过自动启用
+        const resp = await fetch('/api/models/test', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body)

@@ -108,46 +108,71 @@ class KnowledgeBase:
         except Exception:
             return "http://localhost:11434"
 
+    def _get_config_embedding_model(self):
+        """嵌入模型名（config.yaml knowledge.embedding_model 可覆盖）"""
+        try:
+            import yaml
+            config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "config.yaml")
+            with open(config_path, "r", encoding="utf-8") as f:
+                cfg = yaml.safe_load(f) or {}
+            return cfg.get("knowledge", {}).get("embedding_model", "BAAI/bge-small-zh-v1.5")
+        except Exception:
+            return "BAAI/bge-small-zh-v1.5"
+
     def _get_embedding_model(self):
-        """延迟加载 embedding 模型 — 优先用 Ollama 本地 API"""
+        """★ 2026-09-19 (#795) 嵌入本地化 — 三层优先级：
+        ① sentence-transformers 本地模型（bge-small-zh，免 Ollama，新用户开箱即用）
+        ② Ollama 已装 embed 模型时兜底（老用户，已有 Ollama 索引）
+        ③ 返回 None → search 内置关键词兜底
+        """
         if self._embedding_model is not None:
             return self._embedding_model
 
-        # 方式1：Ollama embedding API（推荐，纯本地，无需下载）
+        # ── 方式1：sentence-transformers 本地推理（默认首选，解除 Ollama 硬依赖）──
+        try:
+            # 国内网络用 hf-mirror 镜像下载模型（已设置则不覆盖）
+            os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+            # ★ (#795) 实测：系统代理会劫持 hf-mirror 返回 502，模型下载必须绕开代理
+            for _pk in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY", "all_proxy"):
+                os.environ.pop(_pk, None)
+            os.environ.setdefault("NO_PROXY", "*")
+            os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+            from sentence_transformers import SentenceTransformer
+            # ★ (#795) 优先用本地模型目录（离线可用/安装包可内置），其次 config 指定名（走缓存或下载）
+            local_dir = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                "data", "models", "embedding", "bge-small-zh-v1.5")
+            model_name = local_dir if os.path.exists(os.path.join(local_dir, "config.json")) \
+                else self._get_config_embedding_model()
+            logger.info(f"[KnowledgeBase] 加载本地嵌入模型: {model_name}")
+            self._embedding_model = SentenceTransformer(model_name, device="cpu")
+            # 新版 sentence-transformers 改名 get_embedding_dimension，旧版回退
+            _get_dim = getattr(self._embedding_model, "get_embedding_dimension", None) \
+                or self._embedding_model.get_sentence_embedding_dimension
+            self._dimension = _get_dim()
+            logger.info(f"[KnowledgeBase] 本地嵌入就绪, 模型: {model_name}, 维度: {self._dimension}")
+            return self._embedding_model
+        except Exception as e:
+            logger.warning(f"[KnowledgeBase] 本地嵌入模型不可用: {e}")
+
+        # ── 方式2：Ollama embedding 兜底（保留老用户路径；不再自动下载模型）──
         try:
             import requests
             base_url = self._get_ollama_base_url()
-            resp = requests.get(f"{base_url}/api/tags", timeout=5)
+            resp = requests.get(f"{base_url}/api/tags", timeout=3)
             if resp.status_code == 200:
-                # 检查是否有 embedding 模型（nomic-embed-text 或 bge-m3）
                 models = [m["name"] for m in resp.json().get("models", [])]
                 embed_models = [m for m in models if "embed" in m or "bge" in m]
                 if embed_models:
                     self._embedding_model = ("ollama", base_url, embed_models[0])
                     # Ollama embedding 维度取决于模型，默认 768
                     self._dimension = 768
-                    logger.debug(f"[KnowledgeBase] 使用 Ollama embedding: {embed_models[0]}")
+                    logger.info(f"[KnowledgeBase] 使用 Ollama embedding 兜底: {embed_models[0]}")
                     return self._embedding_model
-                # Ollama 在线但没有 embed 模型，尝试直接调用（Ollama 会自动下载默认的）
-                self._embedding_model = ("ollama", base_url, "nomic-embed-text")
-                self._dimension = 768
-                logger.debug(f"[KnowledgeBase] 使用 Ollama embedding (自动下载 nomic-embed-text)")
-                return self._embedding_model
         except Exception as e:
             logger.debug(f"[KnowledgeBase] Ollama embedding 不可用: {e}")
 
-        # 方式2：sentence-transformers 本地缓存（离线回退）
-        try:
-            from sentence_transformers import SentenceTransformer
-            model_name = "paraphrase-multilingual-MiniLM-L12-v2"
-            logger.info(f"[KnowledgeBase] 尝试离线加载 embedding 模型: {model_name}")
-            self._embedding_model = SentenceTransformer(model_name)
-            self._dimension = self._embedding_model.get_sentence_embedding_dimension()
-            logger.info(f"[KnowledgeBase] 模型加载完成, 维度: {self._dimension}")
-            return self._embedding_model
-        except Exception as e:
-            logger.error(f"[KnowledgeBase] sentence-transformers 也失败: {e}")
-
+        logger.warning("[KnowledgeBase] 无可用嵌入后端，检索将走关键词兜底")
         return None
 
     def _embed_texts(self, texts):
@@ -1020,6 +1045,53 @@ class KnowledgeBase:
         except Exception as e:
             logger.error(f"[KnowledgeBase] 保存 FAISS 索引失败: {e}")
 
+    def _keyword_search(self, query, top_k=5):
+        """★ 2026-09-19 (#795) 第三层兜底：纯关键词检索（嵌入完全不可用时）
+        中文按字 bigram 切分 + 英文按词，词面匹配打分，保证检索功能永不空转。
+        """
+        try:
+            import re as _re
+
+            def _tokenize(s):
+                tokens = []
+                for seg in _re.findall(r"[\u4e00-\u9fff]+|[a-zA-Z0-9]+", s):
+                    if _re.match(r"[\u4e00-\u9fff]", seg[0]):
+                        # 中文：单字直接用，多字切 bigram（无分词依赖）
+                        tokens.append(seg) if len(seg) == 1 else \
+                            tokens.extend(seg[i:i + 2] for i in range(len(seg) - 1))
+                    else:
+                        tokens.append(seg)
+                return tokens
+
+            tokens = _tokenize(query)
+            if not tokens or not self.documents:
+                return []
+            min_hits = max(1, int(len(tokens) * 0.2))  # 至少命中 20% 的片段
+            scored = []
+            for d in self.documents:
+                text = d.get("text", "")
+                if not text:
+                    continue
+                hits = sum(1 for t in tokens if t in text)
+                if hits >= min_hits:
+                    scored.append((hits / len(tokens), d))
+            scored.sort(key=lambda x: -x[0])
+            results = [
+                {
+                    "text": d.get("text", ""),
+                    "source": d.get("source", ""),
+                    "score": round(s * 0.5, 4),  # 压到向量阈值区间以下，标注为弱匹配
+                    "metadata": dict(d.get("metadata", {}), keyword_fallback=True),
+                }
+                for s, d in scored[:top_k]
+            ]
+            if results:
+                logger.info(f"[KnowledgeBase] 关键词兜底命中 {len(results)} 条")
+            return results
+        except Exception as e:
+            logger.error(f"[KnowledgeBase] 关键词兜底检索失败: {e}")
+            return []
+
     def search(self, query, top_k=5, threshold=0.3, rerank=True):
         """
         语义搜索知识库（支持混合 Rerank 重排序）
@@ -1038,7 +1110,17 @@ class KnowledgeBase:
 
         query_embedding = self._embed_texts([query])
         if query_embedding is None:
-            return []
+            # ★ (#795) 第三层兜底：嵌入完全不可用时走纯关键词检索
+            return self._keyword_search(query, top_k)
+
+        # ★ (#795) 嵌入后端切换导致维度不匹配 → 自动重建索引（一次性，之后维度一致不再触发）
+        if self.index is not None and query_embedding.shape[1] != self.index.d:
+            logger.warning(
+                f"[KnowledgeBase] 检测到嵌入维度变化 {self.index.d} → {query_embedding.shape[1]}，自动重建索引"
+            )
+            self._rebuild_index()
+            if self.index is None or query_embedding.shape[1] != self.index.d:
+                return self._keyword_search(query, top_k)
 
         # 归一化查询向量
         faiss_mod = __import__("faiss")
@@ -1076,6 +1158,12 @@ class KnowledgeBase:
             bm25_score = self._bm25_score(query_tokens, doc_text)
             # 向量相似度 60% + BM25 40%
             r["score"] = round(r["score"] * 0.6 + bm25_score * 0.4, 4)
+            # ★ 2026-09-19 (#797) 蒸馏层优先：提炼过的知识加成 0.12 并排前
+            meta = self.documents[idx].get("metadata") or {}
+            if meta.get("layer") == "distilled":
+                r["score"] = round(r["score"] + 0.12, 4)
+                r["distilled"] = True
+                r["origin"] = meta.get("origin", "")
 
         results.sort(key=lambda x: x["score"], reverse=True)
         for r in results[:top_k]:

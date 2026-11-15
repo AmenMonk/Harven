@@ -1,4 +1,4 @@
-﻿# 🦆 Harven AI — Personal AI Brain
+# 🦆 Harven AI — Personal AI Brain
 
 **Not another chat UI. Multi-model collaboration: local brain thinks, external brain analyzes, vertical models execute. 5-layer memory never forgets. AI builds your UI panels.**
 
@@ -11,17 +11,18 @@
 
 ---
 
-## 📥 Downloads
+## 📥 Downloads (v0.3.2 r51)
 
-| Platform | Size | Python | Launch |
-|----------|------|--------|--------|
-| **[Windows](https://github.com/AmenMonk/Harven/releases/latest)** | 16.1 MB | Built-in 3.13 | Double-click `.bat` |
-| **[Linux](https://github.com/AmenMonk/Harven/releases/latest)** | 37.4 MB | Built-in 3.13.15 | Double-click `.desktop` |
-| **[macOS](https://github.com/AmenMonk/Harven/releases/latest)** | 52.1 MB | Built-in 3.13.15 (Universal) | Double-click `.command` |
+| Package | Size | Includes | Best for |
+|---------|------|----------|----------|
+| **[Windows 标准版](https://github.com/AmenMonk/Harven/releases/latest)** | ~709 MB | Python 3.13 + YoloX + chinese-clip | Most users (album auto-classify works out-of-box) |
+| **[Windows 轻量版](https://github.com/AmenMonk/Harven/releases/latest)** | ~50 MB | Python 3.13 + YoloX | Minimal footprint (vision models download on demand) |
+| **[Windows 完全体](https://github.com/AmenMonk/Harven/releases/latest)** | ~3.9 GB (3 split parts) | + Qwen3-VL-4B vision brain + llama-cpp | Fully offline, zero-download experience |
+| Linux / macOS | coming soon | — | Code is cross-platform; packages on the way |
 
-> 📖 [Documentation Center](https://github.com/AmenMonk/Harven/releases/latest) (guide + technical docs)
+**No Python installation required** — built-in Python 3.13 runtime. Extract → double-click `安装哈文.bat` → done. One click, no wizards.
 
-**No Python installation required** — all platforms ship with built-in Python 3.13.
+> 📦 磁盘镜像：[HarvenHub](https://harvenhub.com) 同步提供全部安装包下载。
 
 ---
 
@@ -69,20 +70,21 @@ User: "帮我加一个天气查询功能"
 
 *vs ChatGPT: forgets everything when chat ends. vs OpenClaw: file-based MEMORY.md.*
 
-### 3. 🤝 Collaboration Mode (多模型分工)
-| Mode | Flow | Use Case |
-|------|------|----------|
-| ☁️ Cloud-Local | External brain analyzes → tune params → **local vertical model executes** | Privacy + capability |
-| 🏠 Local-Dual | Local general model schedules → tune params → vertical model executes | Fully offline |
+### 3. 🤝 Collaboration Pipeline (多模型接力流水线)
+| Capability | Description |
+|-----------|-------------|
+| **自由编排** | Chain any participants: external brains / local models / HarvenEye / generation stations — in any order |
+| **分段命令** | Type `歌词创作 / 音乐生成 / 品评` — slashes become pipeline stages |
+| **HarvenEye 站** | The vision brain (YOLO + CLIP + VLM) works as a pipeline station too |
 
 *Single-model chatbots can't do this. Harven orchestrates multiple models like a team.*
 
 ### 4. 🎨 Vertical Model Orchestration (专业执行)
 | Model | Capability |
 |-------|-----------|
-| MusicGen | Generate music from text |
+| ACE-Step | Full-song generation (lyrics + style → WAV/MP3, auto-transcoded, in-chat player) |
 | Stable Diffusion | Image generation |
-| Bark | Voice synthesis |
+| HarvenEye | YOLO detection + CLIP semantics + VLM understanding |
 | MiniCPM-V | Image understanding |
 | HuaTuo | Medical Q&A |
 
@@ -96,7 +98,9 @@ User: "帮我加一个天气查询功能"
 - 🏠 **Local Mode** — Local model + knowledge base + skills + persona
 - 🤖 **External Brain** — GPT/DeepSeek/GLM/Doubao + knowledge base + skills
 - 🎨 **Vertical Mode** — Music/image/voice/medical specialized execution
-- 🤝 **Collaboration Mode** — Multi-model teamwork (cloud-local / local-dual)
+- ⛓️ **Collaboration Pipeline** — Multi-model relay with drag-and-drop staging, save = live
+- 👁️ **HarvenEye** — Vision brain: object detection, album classify, photo Q&A, face recognition
+- 🏠 **Butler Agenda** — 0-token declarative rule engine, 30s heartbeat watch over your life data
 - 🌐 **Web Search** — Bing built-in + SearXNG enhancement
 - 🎙️ **Voice Input** — faster-whisper STT, language follows UI
 
@@ -109,7 +113,8 @@ User: "帮我加一个天气查询功能"
 ### 🔧 Tools & Automation
 - ⚡ **Skill System** — Executable scripts orchestrating multi-model tasks
 - 🤖 **Agent (专项培养)** — Role-based personas with trigger-word routing
-- 📊 **UI Panel System** — AI builds accounting/fitness/todo panels (iframe sandbox)
+- 📊 **UI Panel System** — 29 life panels (accounting / fridge / vehicle / health / kids growth) + AI-built custom panels (iframe sandbox)
+- 🖼️ **Photo Engine** — Auto album classification, auto tag, bill-photo analysis pipeline
 - 🔄 **Workflow Editor** — Visual flow orchestration
 - ⏰ **Scheduled Tasks** — apscheduler-based automation
 - 📡 **Monitor Center** — Auto-track topic updates
@@ -140,34 +145,27 @@ User: "帮我加一个天气查询功能"
 
 ## 🚀 Quick Start
 
-### Windows
+### Windows (v0.3.2)
 ```bash
-# 1. Download HarvenAI_v0.3.1_Windows.zip
+# 1. Download HarvenAI_v0.3.2_standard_Windows_r51.zip  (~709 MB)
 # 2. Extract
-# 3. Double-click 安装哈文.bat
+# 3. Double-click 安装哈文.bat   ← one click, fully automatic
 # 4. Browser opens http://localhost:7000
-# 5. Password: harven2026
+# 5. Default password: harven2026 (forced change on first login)
 ```
 
-### Linux
+### Linux / macOS
+Packages coming soon. Meanwhile, run from source:
 ```bash
-# 1. Download HarvenAI_v0.3.1_Linux.zip
-unzip HarvenAI_v0.3.1_Linux.zip -d HarvenAI
-cd HarvenAI
-bash install.sh    # Installs dependencies + creates desktop shortcut
-# Double-click Harven AI icon on desktop
+git clone https://github.com/AmenMonk/Harven.git
+cd Harven
+python -m venv venv && source venv/bin/activate   # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+cp config.yaml.example config.yaml
+python web_app.py
 ```
 
-### macOS
-```bash
-# 1. Download HarvenAI_v0.3.1_macOS.zip
-unzip HarvenAI_v0.3.1_macOS.zip -d HarvenAI
-cd HarvenAI
-bash install.sh    # Installs dependencies + creates desktop shortcut
-# Double-click HarvenAI.command on desktop
-```
-
-**No Python installation needed** — built-in Python 3.13 on all platforms.
+**No Python installation needed** for the Windows package — Python 3.13 runtime is built in.
 
 ---
 

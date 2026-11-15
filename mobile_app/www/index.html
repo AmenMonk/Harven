@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>哈文</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, "Microsoft YaHei", sans-serif;
+      background: #FBFCFE; color: #2b2f36;
+      display: flex; align-items: center; justify-content: center;
+      min-height: 100vh; padding: 24px;
+    }
+    .card {
+      width: 100%; max-width: 380px; text-align: center;
+      background: #fff; border: 1px solid #e8ebf0; border-radius: 18px;
+      padding: 32px 24px; box-shadow: 0 8px 30px rgba(30,40,60,.06);
+    }
+    .logo { width: 84px; height: 84px; border-radius: 20px; }
+    h1 { font-size: 22px; margin: 14px 0 6px; }
+    .sub { color: #7a8291; font-size: 13px; margin-bottom: 22px; }
+    input {
+      width: 100%; padding: 12px 14px; font-size: 15px;
+      border: 1px solid #d8dde5; border-radius: 12px; outline: none;
+      margin-bottom: 12px;
+    }
+    input:focus { border-color: #3b82f6; }
+    button {
+      width: 100%; padding: 12px; font-size: 16px; font-weight: 600;
+      color: #fff; background: #3b82f6; border: 0; border-radius: 12px;
+    }
+    button:active { opacity: .85; }
+    .tip { color: #9aa2b1; font-size: 12px; margin-top: 16px; line-height: 1.6; }
+    .err { color: #e5484d; font-size: 13px; min-height: 18px; margin-bottom: 8px; }
+    /* ★ D1 2026-09-23 自动切换：探测中的状态行 */
+    .probe { color: #3b82f6; font-size: 13px; min-height: 18px; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <img class="logo" id="logo" src="icon-duck.png" alt="哈文" />
+    <h1>哈文 · 手机版</h1>
+    <p class="sub">连上你电脑上的哈文，手机就是遥控器</p>
+    <div class="probe" id="probe"></div>
+    <div class="err" id="err"></div>
+    <input id="addr" placeholder="电脑上显示的连接地址" autocapitalize="off" autocorrect="off" />
+    <button id="go">进入哈文</button>
+    <p class="tip">地址在哪看？打开电脑上的哈文 → 设置 →「手机连接」扫码或抄地址。<br />
+    在家自动直连家里哈文；出门自动走云端中转。<br />
+    <b>第一次出门用：云端页要输一次 6 位配对码</b>（电脑哈文 → 设置 →「手机与云端」里看）。<br />
+    <b>页面卡住/报错？用手机的返回手势回到本页，会自动重新连线</b>（不用重装）。<br />
+    长按上面鸭子图标 3 秒可重新填写地址。</p>
+  </div>
+  <script>
+    // ═══ ★ D1 2026-09-23 自动切换（家里直连 / 出门走云端） ═══
+    // 在家：APP 直连 http://家里地址/spa/（完整版）
+    // 出门：直连探不通 → 自动落 https://harvenhub.com/phone?code=配对码（云端中转）
+    // ★ v0.4 2026-09-23 修 404：实测实锤——手机把云端页地址存成「家里地址」后，
+    //   探活见 harvenhub.com/health 通就误判家里在线，把云端页拼成 /spa/ → Hub 404。
+    //   规则：地址含 harvenhub.com 一律按云端通道走，绝不拼 /spa/。
+    var KEY = 'harven_server_addr'
+    var KEYCODE = 'harven_pair_code'
+    var CLOUD = 'https://harvenhub.com/phone'
+    function isHubAddr(u) { return /harvenhub\.com/i.test(u || '') }
+    var params = new URLSearchParams(location.search)
+    var fromServer = params.get('server') || ''
+    var fromCode = params.get('code') || ''
+    var saved = localStorage.getItem(KEY) || ''
+    var savedCode = localStorage.getItem(KEYCODE) || ''
+
+    function norm(u) {
+      u = (u || '').trim()
+      if (!u) return ''
+      if (!/^https?:\/\//i.test(u)) u = 'http://' + u
+      u = u.replace(/^(http):\/\//i, 'http://')   // 协议头归一小写
+      /* ★ v0.5 2026-09-29 实锤修复：开发者抄完整地址 http://ip:7000/spa/ → 旧版又拼一次成 /spa/spa/
+         （在家靠 Flask 兜底路由碰巧能开，潜伏；出门暴露）。先把结尾所有 /spa 剥干净再统一拼一个 */
+      u = u.replace(/\/+$/, '').replace(/(\/spa)+$/i, '')
+      return u + '/spa/'
+    }
+    function originOf(u) { try { return new URL(u).origin } catch (e) { return '' } }
+
+    // 扫码直填（?server= 优先）→ 记住并直接进
+    // ★ v0.3 2026-09-23：全部改 location.assign（原 replace 不留历史 → 安卓返回手势失效，卡死页只能重装）
+    if (fromServer) {
+      localStorage.setItem(KEY, norm(fromServer))
+      if (fromCode) localStorage.setItem(KEYCODE, fromCode)
+      /* ★ v0.5 2026-09-29 实锤修复：扫码/带参进来原先是直接 location.assign 跳家里地址——
+         出门时（流量）这里会一头撞死在家里 IP 上。现在同样走探测选路 */
+      autoRoute(norm(fromServer), fromCode || savedCode || '')
+    } else if (saved) {
+      // 上次连过 → 先探测家里在不在，自动选路（出错时用户可长按鸭子重设）
+      autoRoute(saved, savedCode)
+    } else {
+      document.getElementById('addr').value = ''
+    }
+
+    function setStatus(t) { document.getElementById('probe').textContent = t }
+    function setErr(t) { document.getElementById('err').textContent = t }
+
+    function autoRoute(u, code) {
+      // ★ v0.4：存的若是云端地址 → 不探测不拼 /spa/，直接按云端通道走
+      if (isHubAddr(u)) { toCloud(code || savedCode || ''); return }
+      var origin = originOf(u)
+      setStatus('正在找家里的哈文…')
+      if (!origin) { go(u); return }
+      // 2.5 秒探测：能连上 = 在家，直连完整版；连不上 = 出门，走云端
+      var done = false
+      var timer = setTimeout(function () { if (!done) { done = true; toCloud(code) } }, 2500)
+      fetch(origin + '/health', { mode: 'no-cors', cache: 'no-store' })
+        .then(function () { if (!done) { done = true; clearTimeout(timer); go(u) } })
+        .catch(function () { if (!done) { done = true; clearTimeout(timer); toCloud(code) } })
+    }
+    function toCloud(code) {
+      /* ★ v0.5 2026-09-29 实锤修复：无配对码时原先是「显示错误+把家里地址填回输入框」，
+         开发者顺手点「进入哈文」就一头撞死在家里 IP（ERR_CONNECTION_TIMED_OUT 错误页实锤）。
+         现在无码也直接跳云端页——手机页自带 6 位配对码手输框，输一次即可绑定 */
+      setStatus('家里不在线（可能出门了），走云端中转…')
+      location.assign(CLOUD + (code ? '?code=' + encodeURIComponent(code) : ''))
+    }
+
+    function go(u) {
+      u = norm(u || document.getElementById('addr').value)
+      if (!u) { setErr('先填电脑上的连接地址'); return }
+      // ★ v0.4：手动填的若是云端地址 → 记住原始输入但按云端通道走
+      if (isHubAddr(u)) {
+        localStorage.setItem(KEY, u)
+        location.assign(CLOUD + (savedCode ? '?code=' + encodeURIComponent(savedCode) : ''))
+        return
+      }
+      localStorage.setItem(KEY, u)
+      location.assign(u)
+    }
+    document.getElementById('go').addEventListener('click', function () { setErr(''); go() })
+    document.getElementById('addr').addEventListener('keyup', function (e) {
+      if (e.key === 'Enter') { setErr(''); go() }
+    })
+    // 长按鸭子 3 秒 → 清地址回本页
+    var pressTimer = null
+    var logo = document.getElementById('logo')
+    function startPress() { pressTimer = setTimeout(function () { localStorage.removeItem(KEY); localStorage.removeItem(KEYCODE); location.reload() }, 3000) }
+    function endPress() { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null } }
+    logo.addEventListener('touchstart', startPress)
+    logo.addEventListener('touchend', endPress)
+    logo.addEventListener('mousedown', startPress)
+    logo.addEventListener('mouseup', endPress)
+  </script>
+</body>
+</html>

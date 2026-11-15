@@ -13,9 +13,10 @@ model_keys:
   step: ""            # 阶跃星辰API Key (https://platform.stepfun.com)
 
 # === 本地模型 ===
+# ★ 2026-09-27 审计：出厂不内定任何模型。空 = 首次启动硬件检测引导用户自选/自下
 ollama:
   host: "http://localhost:11434"
-  default_model: "qwen2.5:14b"
+  default_model: ""
 
 # === 协作模式 ===
 # off: 纯对话模式
@@ -31,6 +32,10 @@ query_mode: "kb_only"
 # === 安全 ===
 admin_password: "harven2026"  # ⚠️ 初始密码！首次登录后强制修改
 security_mode: "safe"  # safe | full
+security:
+  # ★ v10（2026-10-04）配对保护：手机连接自家哈文时须输管理员密码（防配对码被旁人偷看兑换）。
+  # 密码连错 3 次配对码作废。改 false 可关闭（兼容不带密码框的旧 APP）
+  pair_require_password: true
 
 # === 服务端口 ===
 port: 7000
@@ -68,3 +73,14 @@ independence:
     # pip安装
     - "pypi.org"
     - "files.pythonhosted.org"
+
+# ★ #1509 自定义口令（可选）：你的口头禅 → 哈文即时动作（0 token，不经过大模型）
+#   也可以在 设置→通用→⚡自定义口令 页面里添加，保存后立即生效，不用改这个文件。
+#   只追加不改内置行为；疑问句（带 吗/怎么/？）不会误触发。
+# custom_keywords:
+#   - trigger: 记一笔            # 你说的话里包含这个词就命中
+#     reply: 好，请说出要记的内容～   # 命中后直接回复这句话
+#   - trigger: 工作文件
+#     open: 'D:/工作'            # 命中后直接打开这个文件夹/文件
+#   - trigger: 提醒我            # 追加为提醒触发词（说「提醒我XX」同款识别）
+#     remind: true

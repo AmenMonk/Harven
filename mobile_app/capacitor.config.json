@@ -1,0 +1,11 @@
+{
+  "appId": "com.harvenai.app",
+  "appName": "哈文",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": true
+  },
+  "server": {
+    "allowNavigation": ["*"]
+  }
+}

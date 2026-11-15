@@ -308,10 +308,18 @@ function writeString(view, offset, str) {
     for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
 }
 
-function toggleVoiceRecord() {
+async function toggleVoiceRecord() {
     if (voiceProcessor || (voiceCtx && voiceCtx.state === 'running')) {
         stopVoiceRecord();
     } else {
+        // ★ 2026-08-20: 录音前预检语音组件（精简安装包未内置，需按需装）
+        try {
+            const st = await fetch('/api/voice/status').then(r => r.json());
+            if (st && st.available === false) {
+                toast('🎤 ' + (st.error || '语音组件未安装'));
+                return;
+            }
+        } catch (e) { /* 预检失败不阻断，交给后端报错 */ }
         startVoiceRecord();
     }
 }

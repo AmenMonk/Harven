@@ -12,7 +12,9 @@ DEFAULT_CONFIG = {
         "local": {
             "engine": "ollama",
             "base_url": "http://localhost:11434",
-            "default_model": "qwen2.5:7b",
+            # ★ 2026-09-26 审计（开发者死命令：模型必须用户自选）：出厂不再内定 qwen2.5:14b。
+            # 空 = 首次启动走硬件检测引导，用户自己选/下模型。已装用户 yaml 权威覆盖不受影响
+            "default_model": "",
         },
         "llama_cpp": {
             "enabled": False,
@@ -22,10 +24,10 @@ DEFAULT_CONFIG = {
     # 兼容旧代码读取 ollama: 字段（从 backends.local 同步）
     "ollama": {
         "base_url": "http://localhost:11434",
-        "default_model": "qwen2.5:7b",
+        "default_model": "",  # ★ 2026-09-26 审计：出厂不内定，空 = 硬件检测引导用户自选
     },
-    "advanced_model": "qwen2.5:14b",
-    "normal_model": "qwen2.5:7b",
+    "advanced_model": "",
+    "normal_model": "",  # ★ 2026-09-26 审计：出厂不内定
     "language": {
         "main_language": "zh-CN",
         "other_language_mode": "translate",
@@ -73,13 +75,23 @@ class Config(dict):
         # 合并默认配置
         self._deep_update(self, DEFAULT_CONFIG)
         self._deep_update(self, data)
-        # Phase 2: 同步 backends.local -> ollama（兼容旧代码）
-        _local = self.get("backends.local", {})
-        if _local:
-            if "base_url" in _local:
-                self.setdefault("ollama", {})["base_url"] = _local["base_url"]
-            if "default_model" in _local:
-                self.setdefault("ollama", {})["default_model"] = _local["default_model"]
+        # ★ 2026-09-24 反杀修复（实测实锤：选了 deepseek 重启变回 qwen）：
+        #   旧逻辑 backends.local -> ollama，旧镜像 qwen 死值每次启动反杀 ollama 字段。
+        #   现反转：以【用户 yaml 明确写的 ollama.default_model】为权威（set-current/模型中心写的就是它），
+        #   反向同步到旧镜像；用户 yaml 没写 ollama 但写了 backends.local 时，旧镜像补进权威字段。
+        _user_oll = (data or {}).get("ollama", {}) or {}
+        _user_local = ((data or {}).get("backends", {}) or {}).get("local", {}) or {}
+        if _user_oll.get("default_model"):
+            # 权威字段存在（绝大多数场景）：反写旧镜像，两处永远一致
+            self.setdefault("backends", {}).setdefault("local", {})
+            if self.get("ollama", {}).get("base_url"):
+                self["backends"]["local"]["base_url"] = self["ollama"]["base_url"]
+            self["backends"]["local"]["default_model"] = self["ollama"]["default_model"]
+        elif _user_local.get("default_model"):
+            # 全新装机兜底：用户只写了旧镜像 → 补进权威字段
+            self.setdefault("ollama", {})["default_model"] = _user_local["default_model"]
+            if _user_local.get("base_url"):
+                self["ollama"]["base_url"] = _user_local["base_url"]
     
     def _deep_update(self, target, source):
         for k, v in source.items():

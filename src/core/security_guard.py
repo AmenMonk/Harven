@@ -83,22 +83,20 @@ def _save_mode():
 
 
 def _load_mode():
-    """从文件加载模式"""
+    """★ 2026-11-15 定版（老谭拍板）：重启一律回归 safe（安全默认）——
+    旧版「持久化 full 重启不丢」作废；限时 full 未到期也在重启时回落
+    （重启=人工动作，需要全权时重新输密码，成本极低）。"""
     global _permission_mode, _full_access_until
     try:
         if os.path.exists(MODE_FILE):
             with open(MODE_FILE, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-                saved_mode = data.get('mode', 'safe')
-                saved_until = data.get('full_access_until', 0)
-                # 检查是否过期
-                if saved_mode == 'full' and saved_until > 0:
-                    if time.time() > saved_until:
-                        saved_mode = 'safe'
-                        saved_until = 0
-                _permission_mode = saved_mode
-                _full_access_until = saved_until
-                logger.info(f"[Security] 从文件加载模式: {saved_mode}")
+            if data.get('mode') == 'full':
+                logger.info('[Security] 上次为全权模式，按安全默认回归 safe（重启即回归）')
+        _permission_mode = 'safe'
+        _full_access_until = 0
+        _save_mode()
+        logger.info('[Security] 从文件加载模式: safe（重启回归安全默认）')
     except Exception as e:
         logger.warning(f"[Security] 加载模式失败: {e}")
 
@@ -126,6 +124,81 @@ def _set_mode(mode):
     _save_mode()  # ★ 持久化
 
 
+def verify_admin_password(password):
+    """★ 2026-11-15: 管理员密码校验（受保护动作密码门用，同源 get_admin_password）
+    空密码一律 False"""
+    return bool(password) and password == get_admin_password()
+
+
+# 受保护动作默认清单：进化审批/回滚/应用类操作需管理员密码
+DEFAULT_PROTECTED_ACTIONS = ['evolution']
+
+
+def get_protected_actions():
+    """★ 2026-11-15: 读取受保护动作清单（security.password_protected_actions）。
+    未配置/类型异常 → 默认 ['evolution']（安全默认）；显式 [] = 用户主动关闭保护"""
+    import yaml
+    cfg_path = os.path.join(os.path.dirname(__file__), '..', '..', 'config.yaml')
+    try:
+        with open(cfg_path, 'r', encoding='utf-8') as f:
+            cfg = yaml.safe_load(f) or {}
+        acts = (cfg.get('security') or {}).get('password_protected_actions')
+        if not isinstance(acts, list):
+            return list(DEFAULT_PROTECTED_ACTIONS)
+        return acts
+    except Exception:
+        return list(DEFAULT_PROTECTED_ACTIONS)
+
+
+def is_protected_action(name):
+    """★ 2026-11-15: 判断某类动作是否受密码保护（password_protected_actions 死配置接线）"""
+    return name in get_protected_actions()
+
+
+def get_admin_password():
+    """★ 2026-09-17 密码收口：读取管理员密码（security.admin_password → admin_password → 'harven2026'）
+    保险箱锁/解锁、面板卸载确认、全权模式验证都走这里，禁止各自另写读取逻辑"""
+    import yaml
+    cfg_path = os.path.join(os.path.dirname(__file__), '..', '..', 'config.yaml')
+    try:
+        with open(cfg_path, 'r', encoding='utf-8') as f:
+            cfg = yaml.safe_load(f) or {}
+        sec = cfg.get('security') or {}
+        pwd = sec.get('admin_password') or cfg.get('admin_password') or 'harven2026'
+        return pwd
+    except Exception:
+        return 'harven2026'
+
+
+def change_admin_password(old_password, new_password):
+    """★ 2026-09-17 密码收口：修改管理员密码（同步写 security.admin_password + 顶层 admin_password）
+    改完保险箱/面板/全权模式全部同步生效，无需重启
+
+    Returns:
+        dict: {success: bool, error: str}
+    """
+    if get_admin_password() != (old_password or ''):
+        return {'success': False, 'error': '旧密码不对'}
+    if not new_password or len(new_password) < 6:
+        return {'success': False, 'error': '新密码至少 6 位'}
+    if new_password == old_password:
+        return {'success': False, 'error': '新密码不能和旧密码一样'}
+    import yaml
+    cfg_path = os.path.join(os.path.dirname(__file__), '..', '..', 'config.yaml')
+    with open(cfg_path, 'r', encoding='utf-8') as f:
+        cfg = yaml.safe_load(f) or {}
+    # 铁律 4：yaml.dump 必须传 dict()
+    sec = cfg.get('security') if isinstance(cfg.get('security'), dict) else {}
+    sec['admin_password'] = new_password
+    sec['remote_password'] = new_password  # ★ R1 2026-09-23 密码统一：远程访问锁与管理员锁同步，全系统一把锁
+    cfg['security'] = sec
+    cfg['admin_password'] = new_password  # 兼容旧读取路径（enable_full_access 等）
+    with open(cfg_path, 'w', encoding='utf-8') as f:
+        yaml.dump(dict(cfg), f, allow_unicode=True, default_flow_style=False)
+    log_operation('security', 'change_admin_password', 'OK')
+    return {'success': True, 'error': ''}
+
+
 def enable_full_access(password, duration=0):
     """开启全权模式
 
@@ -136,17 +209,8 @@ def enable_full_access(password, duration=0):
     Returns:
         dict: {success: bool, error: str}
     """
-    # 验证密码
-    import yaml
-    cfg_path = os.path.join(os.path.dirname(__file__), '..', '..', 'config.yaml')
-    try:
-        with open(cfg_path, 'r', encoding='utf-8') as f:
-            cfg = yaml.safe_load(f)
-        admin_pwd = cfg.get('admin_password', 'harven2026')
-    except Exception:
-        admin_pwd = 'harven2026'
-
-    if password != admin_pwd:
+    # ★ 2026-09-17 密码收口：改用统一读取（原来只读顶层 admin_password，与保险箱不同源）
+    if password != get_admin_password():
         return {'success': False, 'error': '密码错误'}
 
     with _lock:

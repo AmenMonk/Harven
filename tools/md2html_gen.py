@@ -2,9 +2,12 @@
 """Harven AI MD→HTML 桌面版生成器"""
 import re
 import markdown
+from pathlib import Path
 
-MD_PATH = r"H:\HarvenAI\docs\HarvenAI_完整开发文档_v6.md"
-OUT_PATH = r"C:\Users\usera\Desktop\HarvenAI_技术详解.html"
+# ★ #840: 动态项目根（输入 docs/ 下 md，输出到项目根，任意电脑都能用）
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+MD_PATH = PROJECT_ROOT / "docs" / "HarvenAI_完整开发文档_v6.md"
+OUT_PATH = PROJECT_ROOT / "HarvenAI_技术详解.html"
 
 with open(MD_PATH, "r", encoding="utf-8") as f:
     md_content = f.read()
@@ -263,7 +266,7 @@ img {{ max-width: 100%; border-radius: 8px; }}
 <hr>
 <p style="text-align:center;color:var(--text-muted);padding:20px;">
 Harven AI — 你的专属私有 AI，永远站在你这一边 | 永久免费 | 纯本地运行<br>
-文档版本 v6.0 · 2026-06-26 · 老谭 & Harven AI
+文档版本 v6.0 · 2026-06-26 · 开发者 & Harven AI
 </p>
 </main>
 

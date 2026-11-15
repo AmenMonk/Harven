@@ -14,29 +14,39 @@ venv/
 env/
 .venv/
 
-# 数据（运行时通过 volume 挂载）
-data/sqlite/*.db
-data/faiss/*.index
-data/faiss/*.json
-data/isolated_dbs/*.db
-data/knowledge/*
-data/models/whisper-base/*.bin
-data/*.json
+# ★ 数据目录整体排除（模型 25GB+ 用户数据，运行时经 volume 挂载）
+data/
+
+# 大文件保险
+*.zip
+*.gguf
+*.onnx
+*.bin
+*.whl
+
+# 前端构建源（镜像只要 static/spa 构建产物）
+spa/node_modules
+spa/dist
+
+# 打包与发布
+_package_staging
+wheels/
+给龙虾/
 
 # 开发文件
-*.bat
-*.bak
 *.log
-*.txt
-test_output.txt
-import_*.txt
-start_*.txt
-crash_log.txt
-start_err.txt
-_web_debug.txt
-
-# 备份
-*.zip
+*.bak
+docs/
+_dev_scripts/
+.workbuddy/
+_andrea/
+test_*.py
+_test*.py
+check_*.py
+verify_*.py
+fix_*.py
+_hub_*.json
+_hub_*.txt
 
 # IDE
 .idea/
@@ -44,24 +54,6 @@ _web_debug.txt
 *.swp
 *.swo
 
-# 开发文档和脚本（不需要打包进镜像）
-docs/
-_dev_scripts/
-.workbuddy/
-
-# Windows 专有（云端不需要）
-cloudflare_tunnel.py
-启动HarvenAI.bat
-启动HarvenAI_公网版.bat
-
-# 旧路径兼容（均已移至 docs/ 和 _dev_scripts/，保留以防根目录残留）
-灵识开发文档_v1.md
-灵识开发文档_v2.md
-HarvenAI_*.md
-OpenClaw*.md
-check_*.py
-verify_*.py
-fix_*.py
-clear_data.py
-split_app_js.py
-count_prompt.py
+# Windows 专有（容器不需要）
+*.bat
+*.lnk

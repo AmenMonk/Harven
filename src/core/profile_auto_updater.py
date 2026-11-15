@@ -180,6 +180,14 @@ class ProfileAutoUpdater:
             if suggestions:
                 self._save_suggestions(suggestions)
 
+            # ★ 2026-09-18 主动服务：高置信新特征写入待提及列表，下次对话哈文自然提起
+            merged_flat = [
+                {"dimension": dim, "label": t.label, "dimension_label": ALL_DIMENSIONS.get(dim, dim)}
+                for dim, traits in new_traits.items() for t in traits if t.confidence >= 0.7
+            ]
+            if merged_flat:
+                self.write_pending_insights(merged_flat)
+
             # 更新状态
             self._update_analysis_state(len(messages), len(conv_ids))
 
@@ -630,6 +638,124 @@ class ProfileAutoUpdater:
                          f"更新时间: {stats['last_analysis'][:16]}")
 
         return "\n".join(lines) if len(lines) > 1 else ""
+
+    # ── ★ 2026-09-18 画像增强：手动编辑 + 时间线 + 主动服务 ──
+
+    def add_manual_trait(self, dim: str, label: str) -> dict:
+        """手动添加画像特征（用户自己在画像页补充）"""
+        label = (label or "").strip()
+        if not label:
+            return {"success": False, "error": "内容不能为空"}
+        if dim not in ALL_DIMENSIONS:
+            return {"success": False, "error": f"未知维度: {dim}"}
+        if len(label) > 50:
+            return {"success": False, "error": "太长了，50 字以内"}
+        trait = ProfileTrait(
+            label=label,
+            confidence=1.0,
+            evidence="用户手动添加",
+            source="manual",
+            created_at=datetime.now().isoformat(),
+        )
+        self._merge_trait(dim, trait)
+        return {"success": True, "message": f"已添加: {label}"}
+
+    def update_trait(self, dim: str, label: str, new_label: str) -> dict:
+        """修改画像特征的标签文字"""
+        new_label = (new_label or "").strip()
+        if not new_label:
+            return {"success": False, "error": "新内容不能为空"}
+        if len(new_label) > 50:
+            return {"success": False, "error": "太长了，50 字以内"}
+        state = self._load_state()
+        dim_state = state.dimensions.get(dim)
+        if not dim_state:
+            return {"success": False, "error": "该维度暂无内容"}
+        for t in dim_state.values:
+            if t.label == label:
+                t.label = new_label
+                t.source = "manual" if t.source == "auto" else t.source
+                t.evidence = (t.evidence or "") if t.source != "auto" else "用户手动修改"
+                self._save_state(state)
+                return {"success": True, "message": "已修改"}
+        return {"success": False, "error": "没找到这条内容"}
+
+    def delete_trait(self, dim: str, label: str) -> dict:
+        """删除画像特征（用户认为哈文学错了）"""
+        state = self._load_state()
+        dim_state = state.dimensions.get(dim)
+        if not dim_state:
+            return {"success": False, "error": "该维度暂无内容"}
+        before = len(dim_state.values)
+        dim_state.values = [t for t in dim_state.values if t.label != label]
+        if len(dim_state.values) == before:
+            return {"success": False, "error": "没找到这条内容"}
+        self._save_state(state)
+        return {"success": True, "message": f"已删除: {label}"}
+
+    def get_profile_timeline(self, limit: int = 200) -> list:
+        """画像时间线：全部特征平铺按时间倒序（含证据/来源/时间）"""
+        state = self._load_state()
+        items = []
+        for dim, dim_state in state.dimensions.items():
+            for t in dim_state.values:
+                items.append({
+                    "dimension": dim,
+                    "dimension_label": ALL_DIMENSIONS.get(dim, dim),
+                    "label": t.label,
+                    "confidence": t.confidence,
+                    "source": t.source,
+                    "verified_count": t.verified_count,
+                    "evidence": t.evidence,
+                    "created_at": t.created_at or "",
+                })
+        # 有时间的按时间倒序；没时间的（早期数据）排最后
+        dated = [x for x in items if x["created_at"]]
+        undated = [x for x in items if not x["created_at"]]
+        dated.sort(key=lambda x: x["created_at"], reverse=True)
+        return (dated + undated)[:limit]
+
+    PENDING_INSIGHTS_FILE = PROJECT_ROOT / "data" / "profile_insights_pending.json"
+
+    def get_recent_insights(self, days: int = 7) -> list:
+        """最近N天自动学到的新特征（画像页「最近新学到」+ 主动服务共用）"""
+        since = (datetime.now() - timedelta(days=days)).isoformat()
+        out = []
+        for item in self.get_profile_timeline(limit=1000):
+            if item["source"] == "auto" and item["created_at"] and item["created_at"] >= since:
+                out.append(item)
+        return out
+
+    def write_pending_insights(self, traits: List[dict]):
+        """分析发现新特征后，写入待主动提及列表（engine 下次对话时读取）"""
+        try:
+            existing = []
+            if self.PENDING_INSIGHTS_FILE.exists():
+                existing = json.loads(self.PENDING_INSIGHTS_FILE.read_text(encoding="utf-8"))
+            for t in traits:
+                entry = {"dimension": t["dimension"], "label": t["label"],
+                         "dimension_label": t.get("dimension_label", t["dimension"])}
+                if not any(e["dimension"] == entry["dimension"] and e["label"] == entry["label"]
+                           for e in existing):
+                    existing.append(entry)
+            # 最多攒 8 条，防膨胀
+            existing = existing[-8:]
+            self.PENDING_INSIGHTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+            self.PENDING_INSIGHTS_FILE.write_text(
+                json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception as e:
+            logger.error(f"[ProfileUpdater] 写入画像提醒失败: {e}")
+
+    def consume_pending_insights(self) -> List[dict]:
+        """读取并清空待主动提及列表（读即清：提及一次就不再重复）"""
+        try:
+            if not self.PENDING_INSIGHTS_FILE.exists():
+                return []
+            data = json.loads(self.PENDING_INSIGHTS_FILE.read_text(encoding="utf-8"))
+            self.PENDING_INSIGHTS_FILE.unlink()
+            return data or []
+        except Exception:
+            return []
 
     def reset_profile(self) -> dict:
         """重置自动画像"""

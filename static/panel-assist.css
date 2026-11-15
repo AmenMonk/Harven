@@ -1,0 +1,120 @@
+/* 对话即录入 · 通用对话框组件样式（暗色默认，.pa-light 亮色变体） */
+.pa-wrap { margin-top: 14px; }
+.pa-bar { display: flex; gap: 6px; align-items: center; background: var(--pa-bar-bg, #23232a); border: 0.5px solid var(--pa-border, #3a3a44); border-radius: 10px; padding: 8px; }
+.pa-light .pa-bar { --pa-bar-bg: #ffffff; --pa-border: #e3d5c2; }
+.pa-input { flex: 1; border: none; outline: none; background: transparent; color: var(--pa-text, #ddd); font-size: 13px; padding: 6px 4px; }
+.pa-light .pa-input { --pa-text: #4a3520; }
+.pa-btn { border: none; cursor: pointer; border-radius: 8px; padding: 6px 10px; font-size: 13px; background: var(--pa-btn-bg, #2e2e38); color: var(--pa-text, #ddd); }
+.pa-light .pa-btn { --pa-btn-bg: #f5ead9; --pa-text: #7a5a30; }
+.pa-btn-primary { background: var(--pa-accent, #58a6ff); color: #fff; }
+.pa-light .pa-btn-primary { --pa-accent: #e8853d; }
+.pa-btn:disabled { opacity: 0.5; cursor: wait; }
+.pa-hint { font-size: 11px; color: var(--pa-muted, #8b949e); margin-top: 5px; line-height: 1.5; }
+.pa-light .pa-hint { --pa-muted: #a08a6a; }
+.pa-mic-on { color: #e24b4a !important; animation: pa-pulse 1s infinite; }
+@keyframes pa-pulse { 50% { opacity: 0.4; } }
+.pa-chip { display: inline-block; margin-top: 6px; font-size: 11px; cursor: pointer; border: 0.5px solid var(--pa-border, #3a3a44); border-radius: 10px; padding: 2px 10px; color: var(--pa-warn, #d29922); }
+.pa-light .pa-chip { --pa-border: #e3d5c2; }
+.pa-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; z-index: 9999; }
+.pa-card { background: var(--pa-card-bg, #23232a); color: var(--pa-text, #ddd); border: 0.5px solid var(--pa-border, #3a3a44); border-radius: 12px; width: min(560px, 92%); max-height: 84vh; overflow: auto; padding: 16px; }
+.pa-light .pa-card { --pa-card-bg: #fffdf8; --pa-border: #e3d5c2; --pa-text: #4a3520; }
+.pa-card h3 { margin: 0 0 4px; font-size: 14px; }
+.pa-card .pa-sub { font-size: 11px; color: var(--pa-muted, #8b949e); margin-bottom: 12px; }
+.pa-rec { border: 0.5px solid var(--pa-border, #3a3a44); border-radius: 8px; padding: 10px; margin-bottom: 10px; }
+.pa-rec-head { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 6px; color: var(--pa-muted, #8b949e); }
+/* ★ 2026-09-16 家庭空间分组确认卡：组内多条记录分隔 */
+.pa-rec-item { border-top: 1px dashed var(--pa-border, #3a3a44); margin-top: 6px; padding-top: 6px; }
+.pa-rec-item:first-of-type { border-top: none; margin-top: 0; padding-top: 0; }
+.pa-frow { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.pa-frow label { width: 92px; flex-shrink: 0; font-size: 12px; color: var(--pa-muted, #8b949e); text-align: right; }
+.pa-frow input, .pa-frow select { flex: 1; border: 0.5px solid var(--pa-border, #3a3a44); background: var(--pa-input-bg, #1a1a1f); color: var(--pa-text, #ddd); border-radius: 6px; padding: 6px 8px; font-size: 12px; outline: none; }
+.pa-light .pa-frow input, .pa-light .pa-frow select { --pa-input-bg: #faf4ea; --pa-border: #e0d0b8; }
+.pa-empty-flag { font-size: 11px; color: var(--pa-muted, #8b949e); }
+.pa-foot { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+.pa-toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: 84px; background: var(--pa-card-bg, #23232a); color: var(--pa-text, #ddd); border: 0.5px solid var(--pa-border, #3a3a44); border-radius: 8px; padding: 8px 16px; font-size: 12px; z-index: 10000; }
+/* ★ #923 2026-09-27 toast 浅色变体（默认已全浅色，除 theme:dark） */
+.pa-toast.pa-light { --pa-card-bg: #fffdf8; --pa-text: #4a3520; --pa-border: #e3d5c2; box-shadow: 0 4px 14px rgba(90,70,40,0.18); }
+.pa-loading { text-align: center; padding: 26px 0; font-size: 13px; color: var(--pa-muted, #8b949e); }
+.pa-src { font-size: 11px; color: var(--pa-muted, #8b949e); margin: 2px 0 8px; }
+
+/* ═══════════ ★ 2026-09-16 对话框 2.0：悬浮圆钮 + 迷你聊天窗 ═══════════
+   ★ 2026-09-16 用户反馈：满屏蓝色按钮里蓝色圆钮不显眼 → 改绿色+鸭头+58px+默认底部居中；可拖动（.pa-fab-dragged 由 JS 精确坐标接管） */
+.pa-fab { position: fixed; right: auto; left: 50%; transform: translateX(-50%); bottom: 26px;
+  width: 58px; height: 58px; border-radius: 50%;
+  background: linear-gradient(135deg, #34d399, #059669); color: #fff; display: flex; align-items: center;
+  justify-content: center; cursor: grab; z-index: 9998; box-shadow: 0 4px 18px rgba(5,150,105,0.5), 0 0 0 2.5px #fff;
+  transition: box-shadow .15s ease; user-select: none; touch-action: none; }
+.pa-fab:hover { box-shadow: 0 6px 22px rgba(5,150,105,0.65), 0 0 0 2.5px #fff; }
+.pa-fab:active { cursor: grabbing; }
+.pa-fab-dragged { transform: none; }
+.pa-fab-active { background: linear-gradient(135deg, #059669, #047857); }
+.pa-fab-ico { width: 40px; height: 40px; object-fit: contain; pointer-events: none; }
+.pa-fab-dot { position: absolute; top: -4px; right: -4px; min-width: 20px; height: 20px; border-radius: 10px;
+  background: #e24b4a; color: #fff; font-size: 11px; line-height: 20px; text-align: center; padding: 0 4px;
+  border: 2px solid #fff; }
+.pa-light.pa-fab .pa-fab-dot { border-color: #fffdf8; }
+
+/* ★ 2026-09-16 用户反馈"没有历史对话显示/×不好用"根因：窗口没有固定高度，msgs flex:1 塌陷成 0，
+   气泡全被 overflow:hidden 压没。修复：固定 height（拉伸后 inline 覆盖） */
+.pa-chat { position: fixed; right: 22px; bottom: 104px; width: min(350px, calc(100vw - 40px));
+  height: min(430px, calc(100vh - 140px)); max-height: calc(100vh - 90px);
+  background: var(--pa-card-bg, #1e1e24);
+  border: 0.5px solid var(--pa-border, #3a3a44); border-radius: 14px; z-index: 9997;
+  display: flex; flex-direction: column; box-shadow: 0 8px 28px rgba(0,0,0,0.5); overflow: hidden; }
+.pa-light.pa-chat, .pa-chat.pa-light { --pa-card-bg: #fffdf8; --pa-border: #e3d5c2; --pa-text: #4a3520;
+  --pa-muted: #a08a6a; --pa-bar-bg: #f7efe1; --pa-btn-bg: #f0e4d0; --pa-accent: #e8853d; }
+.pa-chat-head { display: flex; align-items: center; gap: 6px; padding: 9px 12px;
+  background: var(--pa-bar-bg, #23232a); border-bottom: 0.5px solid var(--pa-border, #3a3a44); }
+.pa-chat-title { font-size: 13px; font-weight: 600; color: var(--pa-text, #ddd); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.pa-chat-close { cursor: pointer; color: var(--pa-muted, #8b949e); font-size: 14px; padding: 3px 7px;
+  background: none; border: none; border-radius: 7px; line-height: 1; flex-shrink: 0; }
+.pa-chat-close:hover { color: var(--pa-text, #ddd); background: rgba(128,128,128,0.15); }
+
+/* ★ 2026-09-16 模式切换：📝记事 / 💬聊天（大白话，开发者：看一眼就明白） */
+.pa-mode-pills { display: inline-flex; margin-left: auto; background: rgba(128,128,128,0.12);
+  border-radius: 999px; padding: 2px; flex-shrink: 0; }
+.pa-mode-pill { border: none; background: transparent; color: var(--pa-muted, #8b949e); font-size: 11px;
+  padding: 3px 10px; border-radius: 999px; cursor: pointer; white-space: nowrap; transition: all .15s ease; }
+.pa-mode-pill:hover { color: var(--pa-text, #ddd); }
+.pa-mode-pill.on { background: var(--pa-accent, #58a6ff); color: #fff; font-weight: 600; }
+.pa-mode-pill.pa-mode-note.on { background: #10b981; }
+.pa-hist-clear { border: none; background: none; cursor: pointer; font-size: 13px; padding: 3px 5px;
+  border-radius: 7px; flex-shrink: 0; opacity: .75; line-height: 1; }
+.pa-hist-clear:hover { opacity: 1; background: rgba(128,128,128,0.15); }
+
+/* ★ 2026-09-16 窗口右下角拖拽手柄（大小记忆，开发者：对话框也不能伸拉大小） */
+.pa-resize { position: absolute; right: 0; bottom: 0; width: 18px; height: 18px; cursor: nwse-resize;
+  touch-action: none; z-index: 5; }
+.pa-resize::after { content: ''; position: absolute; right: 4px; bottom: 4px; width: 8px; height: 8px;
+  border-right: 2.5px solid var(--pa-muted, #8b949e); border-bottom: 2.5px solid var(--pa-muted, #8b949e);
+  border-radius: 1px; opacity: .6; transition: opacity .15s; }
+.pa-resize:hover::after { opacity: 1; border-color: #10b981; }
+.pa-msgs { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.pa-msg { max-width: 86%; padding: 8px 12px; border-radius: 12px; font-size: 12.5px; line-height: 1.65;
+  word-break: break-word; }
+.pa-msg-ai { align-self: flex-start; background: var(--pa-bubble-ai, #2a2a34); color: var(--pa-text, #ddd);
+  border-bottom-left-radius: 4px; }
+.pa-light .pa-msg-ai { --pa-bubble-ai: #f3e9d8; }
+.pa-msg-user { align-self: flex-end; background: var(--pa-accent, #58a6ff); color: #fff;
+  border-bottom-right-radius: 4px; }
+.pa-light .pa-msg-user { color: #fff; }
+.pa-msg-err { background: rgba(226,75,74,0.14) !important; color: #f0883e !important; }
+.pa-typing { opacity: 0.7; }
+.pa-chat .pa-bar { margin: 0 10px 6px; }
+.pa-chat .pa-hint { margin: 0 12px 10px; }
+.pa-chat .pa-chip { margin: 4px 12px; align-self: flex-start; }
+
+/* ═══ ★ 2026-09-26 对话历史抽屉（📜 按钮）+ 跳转高亮（开发者需求：历史列表+时间跳转） ═══ */
+.pa-hist-drawer { max-width: 430px; }
+.pa-hgroup { margin-top: 8px; }
+.pa-hgroup-t { font-size: 12px; font-weight: 700; color: var(--pa-warn, #d29922); margin: 8px 0 2px; }
+.pa-hitem { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 8px; cursor: pointer; font-size: 13px; }
+.pa-hitem:hover { background: var(--pa-bubble-ai, #2a2a34); }
+.pa-light .pa-hitem:hover { background: #f3e9d8; }
+.pa-hwho { flex: 0 0 auto; font-size: 12px; color: var(--pa-muted, #8b949e); white-space: nowrap; }
+.pa-htxt { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pa-htime { flex: 0 0 auto; font-size: 11px; color: var(--pa-muted, #8b949e); }
+.pa-msg.pa-flash { animation: paFlash 2.2s ease; }
+@keyframes paFlash { 0%, 55% { box-shadow: 0 0 0 3px #FFC53D; } 100% { box-shadow: none; } }
+

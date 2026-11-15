@@ -1,0 +1,64 @@
+/* ═══════════════════════════════════════════════════════
+   哈文 SPA 主题令牌 — 总方案 B0 状态规范
+   色板取自《哈文首页设计稿 v2》：底 #FBFCFE / 字 #3A4453 / 主 #5B87D8
+   模式三色：外脑紫 / 本地绿 / 垂直琥珀
+   ═══════════════════════════════════════════════════════ */
+:root {
+  /* 基础 */
+  --c-bg: #FBFCFE;
+  --c-bg-soft: #F1F3F7;
+  --c-card: #FFFFFF;
+  --c-text: #3A4453;
+  --c-text-2: #9AA3B0;
+  --c-line: #E5EAF2;
+  --c-primary: #5B87D8;
+  --c-primary-weak: #C6D6F5;
+  --c-danger: #E05B5B;
+
+  /* 模式三色（状态规范，全 SPA 唯一出处） */
+  --mode-cloud: #8B5CF6;        /* 外脑紫 */
+  --mode-cloud-bg: #F3EEFD;
+  --mode-local: #22A06B;        /* 本地绿 */
+  --mode-local-bg: #EAF7F1;
+  --mode-vertical: #E8A23D;     /* 垂直琥珀 */
+  --mode-vertical-bg: #FDF5E8;
+
+  /* 图标栅格（线性 1.8 描边 / 22px） */
+  --icon-stroke: 1.8;
+  --icon-size: 22px;
+
+  --radius-card: 14px;
+  --radius-btn: 10px;
+  --shadow-card: 0 1px 4px rgba(58, 68, 83, 0.06);
+
+  /* 页面短别名（B7+ 各页面统一使用，勿删） */
+  --ink: var(--c-text);
+  --sub: var(--c-text-2);
+  --line: var(--c-line);
+  --blue: var(--c-primary);
+  --green: var(--mode-local);
+  --amber: var(--mode-vertical);
+  --amber-soft: #FDF3E2;
+  --red: var(--c-danger);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-family: "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+}
+a { color: var(--c-primary); text-decoration: none; }
+
+/* ═══ ★ D4 2026-09-23 手机五页面窄屏兜底（360px 事实标准宽） ═══
+   首页对话 / 面板 / 知识库 / 模型 / 设置——任何页面禁止横向溢出；
+   面板 iframe 与内嵌表格在窄屏内横滚，不撑破布局 */
+@media (max-width: 430px) {
+  html, body { overflow-x: hidden; }
+  iframe, video, img { max-width: 100%; }
+  pre, code { white-space: pre-wrap; word-break: break-all; }
+  table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
+}

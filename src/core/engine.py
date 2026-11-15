@@ -5,15 +5,48 @@ AI对话核心引擎 v2.0
 """
 import re
 import json
+import threading
 import yaml
 from pathlib import Path
 from datetime import datetime
 from src.core.model_manager import ModelManager
-from src.core.morality import SYSTEM_PROMPT, IDENTITY_PROMPT
+from src.core.identity import SYSTEM_PROMPT, IDENTITY_PROMPT, VOICE_DISCIPLINE
 from src.models.database import save_message, get_messages, get_preference
 from src.core.event_bus import get_event_bus, Events
 import logging
 logger = logging.getLogger(__name__)
+
+# ★ 2026-10-10 #1052 生成停止门（定版方案A·真停止）
+# 链路：前端点「⏹ 停止」→ web_app /api/chat/stop → request_stop(conv_id)
+#      → send() 流式循环每块检查 is_stopped → 命中即收笔，半截回复照常入库并追加「（已停止）」
+_stop_flags = {}
+_stop_lock = threading.Lock()
+
+# ★ #1432（2026-11-04 r48）带图录入触发词：带图消息文字命中任一词 → 走面板录入链
+#   （不再被看图直答截胡）。保守词表：只收「明确表达入库意图」的说法，避免把
+#   「帮我看看这张图」之类的看图提问误拦。pure_chat 浮窗不参与。
+_IMAGE_INTAKE_TRIGGERS = (
+    '存入面板', '存到面板', '记到面板', '记录到面板', '入面板',
+    '记到台账', '记入台账', '记到帐', '记台账', '入台账',
+    '入库存档', '存入档案', '记到档案', '存入物品', '物品入库', '记物品',
+)
+
+
+def request_stop(conversation_id):
+    """标记某会话的当前生成需要停止"""
+    with _stop_lock:
+        _stop_flags[str(conversation_id)] = True
+
+
+def is_stopped(conversation_id) -> bool:
+    """流式循环检查点用：该会话是否被要求停止"""
+    return _stop_flags.get(str(conversation_id), False)
+
+
+def clear_stop(conversation_id):
+    """清除停止标记（新请求开始时清残留；生成结束后兜底清理）"""
+    with _stop_lock:
+        _stop_flags.pop(str(conversation_id), None)
 
 # ── Prompt Injection 防御 ──
 # 聊天内容 ≠ 系统指令。检测用户试图覆盖系统提示词的注入攻击。
@@ -85,6 +118,41 @@ def _model_has_internet(model_id: str) -> bool:
     return False  # 默认不联网
 
 
+# ═══ ★ #929-A6（2026-09-29）has_audio：外脑能不能直接听语音 ═══
+# 实锤（2026-09-30）：glm-5.3-Flash 走标准 chat/completions 发 input_audio → 400 参数有误，不支持。
+# 当前 8 家内置外脑没有一家在标准接口上收音频 → 标记机制在位、默认全 False，将来哪家支持了改这里即可。
+_MODEL_AUDIO_CAPABILITY = {
+    "zhipu": False, "deepseek": False, "doubao": False, "qwen": False,
+    "kimi": False, "yi": False, "baichuan": False, "stepfun": False,
+    "ollama": False, "gemini": False, "openai": False, "claude": False,
+}
+
+
+def _model_has_audio(model_id: str) -> bool:
+    """检查当前外脑是否支持直接听语音（multi_models.json 该模型可写 has_audio: true 强制开启）"""
+    if not model_id:
+        return False
+    m = model_id.lower()
+    for key, val in _MODEL_AUDIO_CAPABILITY.items():
+        if key in m:
+            base = val
+            break
+    else:
+        base = False
+    # 用户级覆盖：multi_models.json → models.<id>.has_audio
+    try:
+        import json as _json
+        from pathlib import Path as _P
+        cfg_file = _P(__file__).resolve().parent.parent.parent / 'data' / 'multi_models.json'
+        cfg = _json.loads(cfg_file.read_text(encoding='utf-8'))
+        val = (cfg.get('models', {}).get(model_id, {}) or {}).get('has_audio')
+        if val is not None:
+            return _to_bool(val)
+    except Exception:
+        pass
+    return base
+
+
 def _to_bool(val):
     """兼容字符串/布尔/整型等多种输入，统一转为 bool"""
     if isinstance(val, bool):
@@ -108,6 +176,80 @@ _NONCHAT_KEYWORDS = [
     'embed', 'clip', 'bakllava',                                # 其他专业
     'starcoder', 'codellama', 'deepseek-coder',                # 纯代码（可选）
 ]
+
+# ── ★ #1509（2026-11-13）：用户自定义口令（追加式，config.yaml custom_keywords）──
+# 形态：
+#   custom_keywords:
+#     - trigger: 记一笔          # 命中词（用户原话包含即命中）
+#       reply: 好，请说出要记的内容   # 可选：直接回复的文本（0 token）
+#       open: 'D:\\工作'          # 可选：打开本地路径（文件夹/文件）
+#     - trigger: 提醒我           # 出现在 remind_words 时追加为提醒触发词
+#       remind: true
+# 规则：只追加不覆盖——内置词表删不掉（保底不搞哑）；命中同样过疑问句守卫
+# （_QUICKOP_BLOCKERS：「XX吗/怎么/？」不触发）；60s 缓存，改配置即热生效。
+_CKW_CACHE = {'ts': 0.0, 'items': []}
+
+def _load_custom_keywords():
+    """读 config.yaml 的 custom_keywords（60s 缓存），返回 list[dict]"""
+    import time as _t
+    now = _t.time()
+    if now - _CKW_CACHE['ts'] < 60:
+        return _CKW_CACHE['items']
+    try:
+        import yaml as _yaml
+        from pathlib import Path as _P
+        _p = _P(__file__).resolve().parent.parent.parent / 'config.yaml'
+        cfg = (_yaml.safe_load(_p.read_text(encoding='utf-8')) or {}) if _p.exists() else {}
+        items = cfg.get('custom_keywords') or []
+        if not isinstance(items, list):
+            items = []
+        _CKW_CACHE['items'] = [it for it in items if isinstance(it, dict) and str(it.get('trigger') or '').strip()]
+    except Exception:
+        _CKW_CACHE['items'] = []
+    _CKW_CACHE['ts'] = now
+    return _CKW_CACHE['items']
+
+
+# ── ★ #1497（2026-11-13）本地FC前置轮：A护栏 + B打通 ───────────────────────
+# A·护栏：当前模型无工具调用能力 + 意图命中 FC 域（邮件等）→ 如实拦截提示换模型，
+#         绝不让模型瞎编「系统没有集成邮箱功能」这类胡话（死命令：不代选、只说破）
+# B·打通：Ollama 模型具备 tools 能力（/api/show capabilities）→ /api/chat + tools
+#         真正的工具调用，tool_calls 就地执行（复用 execute_tool_call）→ 结果回填 → 循环收笔
+_FC_DOMAIN_SIGNALS = ('邮件', '邮箱', '收件', '发件')
+_OLLAMA_TOOLS_CAP_CACHE = {}   # model_short_name -> (timestamp, bool)
+
+
+def _ollama_supports_tools(model_name: str) -> bool:
+    """查 Ollama /api/show capabilities 是否含 tools（300 秒 TTL 缓存，低频探测）
+
+    Args:
+        model_name: Ollama 模型名（如 qwen3:8b / hv-pin-2f963d09b4c7:latest）
+
+    Returns:
+        bool: 模型支持工具调用返回 True；非 Ollama 模型/不可达/未声明 tools 返回 False
+    """
+    if not model_name or not isinstance(model_name, str):
+        return False
+    key = model_name.split(':')[0]
+    try:
+        import time as _time
+        now = _time.time()
+    except Exception:
+        now = 0.0
+    cached = _OLLAMA_TOOLS_CAP_CACHE.get(key)
+    if cached and now - cached[0] < 300:
+        return cached[1]
+    ok = False
+    try:
+        import requests as _rq_cap
+        r = _rq_cap.post('http://127.0.0.1:11434/api/show',
+                         json={'model': model_name}, timeout=5)
+        caps = (r.json() or {}).get('capabilities') or []
+        ok = 'tools' in caps
+    except Exception:
+        ok = False
+    _OLLAMA_TOOLS_CAP_CACHE[key] = (now, ok)
+    return ok
 
 
 class ConversationEngine:
@@ -152,7 +294,25 @@ class ConversationEngine:
             self._query_mode = query_mode
         else:
             mode = get_preference("query_mode")
-            self._query_mode = mode if mode in self.QUERY_MODES else "kb_only"
+            if mode in self.QUERY_MODES:
+                self._query_mode = mode
+            else:
+                # ★ #822: 无持久化偏好时按「当前选的模型」自动判定，不再一律 kb_only。
+                # 选了外脑（如 zhipu）→ direct；本地/未选 → kb_only。
+                # 这就是"重启后要重新选外脑才好用"的病根之一：旧默认把外脑用户打回本地。
+                _cur = ''
+                try:
+                    from src.core.multi_model_manager import get_multi_model_manager
+                    _mm = get_multi_model_manager()
+                    _cur = getattr(_mm, 'current_model', '') or ''
+                except Exception:
+                    pass
+                # ★ #1309（2026-10-29）本地判定走唯一真家 is_local_model
+                #   （原手抄清单漏 harveneye → PC 端同款「本地被误判外脑」病根，一次清）
+                from src.core.multi_model_manager import is_local_model as _isl
+                self._query_mode = 'kb_only' if _isl(_cur) else 'direct'
+                logger.info("[Engine] 无持久化查询模式偏好，按当前模型(%r)自动判定: %s",
+                            _cur, self._query_mode)
 
     def _load_preferences(self):
         """加载用户设置（数据库优先，无记录时回退 config.yaml）"""
@@ -547,27 +707,289 @@ class ConversationEngine:
             query = user_message
         return query[:100]  # 限制长度
 
-    def send(self, user_message, stream=True, query_mode=None, web_search=False):
+    def _try_direct_accounting(self, msg):
+        """★ 2026-10-23 对话花钱意图直录（定版拍板「开发全部」）：
+        陈述句「花了385吃饭」→ 本地正则解析（0 token）→ 走 panel_assist.insert_records
+        同管线入记账面板（查重#913/分类兜底/花销目标核查钩子全继承，同真家）。
+        命中返回提示语（回复头部展示「✅已自动入账」），问句/否定句/超长句返回 ''。"""
+        import re as _re
+        text = str(msg or '').strip()
+        if not text or len(text) > 60:
+            return ''
+        # 问句/否定/指令绝不碰（「花了多少」「别记了」「还没花」）
+        if _re.search(r'[?？]|多少|几块|怎么样|为什么|别记|不用记|不要记|还没花|没花|别入账', text):
+            return ''
+        m = _re.search(
+            r'(?:花了|花费了?|消费了|付了|买[了个]|吃了|交了|充了|加油?)\s*'
+            r'([0-9０-９]+(?:\.[0-9０-９]+)?)\s*'
+            r'(万|块|元|块钱|￥)?', text)
+        if not m:
+            return ''
+        has_unit = bool(m.group(2))
+        # ★ #1224（2026-10-26）方案A 幻觉账根治（实锤：「吃了2个红薯」被记成 2 元账）：
+        #   规则1：数字后紧跟量词/时间单位 = 数量不是钱 → 拒绝直录
+        if not has_unit and _re.match(
+                r'\s*[个杯把碗根支片颗粒瓶包盒袋斤两勺碟条只份双听罐桶排串点分秒小时天号日月年周]', text[m.end():]):
+            return ''
+        #   规则2：「吃了/买了」本身不必然是花钱 → 必须带货币单位才入账
+        if not has_unit and _re.match(r'(?:吃了|买[了个])', m.group(0)):
+            return ''
+        try:
+            amt = float(m.group(1).translate(str.maketrans('０１２３４５６７８９', '0123456789')))
+        except ValueError:
+            return ''
+        if m.group(2) == '万':
+            amt *= 10000
+        if amt <= 0 or amt >= 10000000:
+            return ''
+        # 品项：金额后面的文字（「花了385吃饭」→ 吃饭）；★ #1224 按标点切第一段（不再 12 字硬截腰斩「花生」）
+        tail = text[m.end():].strip(' ，,。.：:的')
+        if tail:
+            item = _re.split(r'[，,。.；;！!？?\s]', tail)[0][:20]
+        else:
+            pre = _re.sub(r'^(今天|昨天|上午|下午|中午|晚上|刚才|刚|我)', '', text[:m.start()]).strip(' ，,。.')
+            item = _re.split(r'[，,。.；;！!？?\s]', pre)[-1][-20:] if pre else ''
+        records = [{'项目': item or '日常消费', '金额': amt, '备注': ('对话直录：' + text[:40])}]
+        from src.core.panel_assist import insert_records
+        n, err, note = insert_records('accounting_daily_1', '', records)
+        if not n:
+            logger.warning(f"[Engine] 花钱直录入库失败: {err}; text={text[:30]}")
+            return ''
+        cat = ''
+        try:
+            from src.core.acc_categories import classify_ex as _cls, load_custom_rules as _lcr
+            cat, _, _ = _cls(records[0]['项目'], '', _lcr())
+        except Exception:
+            pass
+        tip = f"✅已自动入账：{cat or '支出'} {amt:g} 元" + (f"（{item}）" if item else '')
+        try:
+            from src.core.coach_engine import check_spend_goals
+            _alerts = check_spend_goals()
+            if _alerts:
+                tip += '　' + _alerts[0]['title']
+        except Exception:
+            pass
+        logger.info(f"[Engine] 💰 花钱直录: {amt:g}元 {item}（{note[:40] if note else '入账成功'}）")
+        return tip
+
+    def send(self, user_message, stream=True, query_mode=None, web_search=False, images=None, pure_chat=False):
         """
         发送用户消息，执行三段式查询
 
         Args:
             query_mode: 可覆盖实例默认模式 (kb_only/direct)
             web_search: ★ 2026-07-05: 用户是否点了🌐互联网按钮，True=强制搜索
+            images: ★ 2026-09-15 A方案: 随消息附带的图片（dataURL 或本地路径列表），有图自动走看图模型
+            pure_chat: ★ 2026-09-26 模式分开（已定案A）：True=纯聊（浮窗💬聊天模式用），
+                跳过智能拆分等记事拦截——聊天不碰面板库；首页聊天框不传（保留"聊着也能记"）
 
         Returns:
             stream=True: 生成器 (type, content)
                 type: "thinking" | "text" | "warning" | "error" | "source"
         """
+        # ★ 2026-09-26 纯聊标记（_stream_three_stage 读；引擎单例，极小并发竞态可接受）
+        self._pure_chat = bool(pure_chat)
+        # ★ #1320 对话优先闸门：前台对话开始，后台 GPU 任务（打标/深识/重跑）让路 5 分钟
+        try:
+            from src.core import dialog_gate as _dg
+            _dg.mark_active()
+        except Exception:
+            pass
+        # ★ 2026-09-15 A方案: 带图消息 → 看图（优先级最高，不进快车道/路由）
+        # ★ 2026-09-24 A方案改造（定版拍板）：识别方跟随用户当前模式（外脑/本地），
+        #   不再强制本地 minicpm-v —— 图片发给谁由用户当前选择决定，隐私自己掌控
+        # ★ #1432（2026-11-04 r48）带图意图分诊（笔记本实锤截胡根治）：
+        #   带图 + 录入触发词（存入面板/记到台账…）→ 不再看图直答（那只会闲聊不落账），
+        #   图片照旧入统一图库（#918 同源），放行正常管线——智能拆分/词典快车道/确认卡
+        #   接管录入。pure_chat（浮窗纯聊）不参与录入，维持原样。
+        if images:
+            _msg_txt = (user_message or '').strip()
+            _hit_intake = (not getattr(self, '_pure_chat', False)) and any(
+                _t in _msg_txt for _t in _IMAGE_INTAKE_TRIGGERS)
+            # ★ 2026-11-12 归档指令快车道（反吹牛实锤修复）：带图 +「分到XX相册」
+            #   → 本地毫秒级真归档落库，不经模型嘴。实锤：HarvenEye 直答谎称
+            #   「已归类至老谭相册」（存储路径都是编的），照片实际躺在生活照（id=221）。
+            _album_target, _album_hint = '', ''
+            if not getattr(self, '_pure_chat', False):
+                try:
+                    from src.core.img_store import album_move_from_text as _amt
+                    _album_target, _album_hint = _amt(_msg_txt)
+                except Exception as _ame:
+                    logger.debug(f'[Engine] 归档意图解析跳过: {_ame}')
+            if _hit_intake:
+                try:
+                    import base64 as _b64
+                    import re as _re
+                    from src.core import img_store as _istore
+                    _n = 0
+                    for _img in images[:4]:
+                        if not isinstance(_img, str) or not _img:
+                            continue
+                        _m = _re.match(r'^data:image/[a-zA-Z+]+;base64,(.+)$', _img, _re.S)
+                        if _m:
+                            _istore.register(image_data=_b64.b64decode(_m.group(1)),
+                                             source='chat', note=_msg_txt[:200])
+                            _n += 1
+                        elif Path(_img).exists():
+                            _istore.register(image_data=Path(_img).read_bytes(),
+                                             source='chat', note=_msg_txt[:200])
+                            _n += 1
+                    if _n:
+                        logger.info(f'[Engine] #1432 带图录入分诊：命中录入触发词，'
+                                    f'图片{_n}张已入图库，转默录链')
+                except Exception as _ie:
+                    logger.debug(f'[Engine] #1432 带图录入图片入图库跳过: {_ie}')
+                # ★ 走默录链（带图抽取→高置信直入/低置信待确认→图片挂记录），异步不阻塞
+                try:
+                    from src.core.panel_assist import maybe_home_record
+                    maybe_home_record(self.conversation_id, _msg_txt, '', images=images)
+                except Exception as _pe:
+                    logger.debug(f'[Engine] #1432 默录链调用失败: {_pe}')
+                yield ("text", "📥 已收到，正在把这条和照片整理进面板档案："
+                               "能对上号的直接入档，需要你补充信息的会出现在「📥 待确认」，点确认即入账。")
+                return
+            elif _album_target:
+                # ★ 2026-11-12 归档快车道执行：入图库 + set_album 真落库，直出结果
+                try:
+                    import base64 as _b64
+                    import re as _re
+                    from src.core import img_store as _istore
+                    _ids = []
+                    for _img in images[:4]:
+                        if not isinstance(_img, str) or not _img:
+                            continue
+                        _m = _re.match(r'^data:image/[a-zA-Z+]+;base64,(.+)$', _img, _re.S)
+                        if _m:
+                            _reg = _istore.register(image_data=_b64.b64decode(_m.group(1)),
+                                                    source='chat', note=_msg_txt[:200])
+                        elif Path(_img).exists():
+                            _reg = _istore.register(image_data=Path(_img).read_bytes(),
+                                                    source='chat', note=_msg_txt[:200])
+                        else:
+                            continue
+                        if _reg and _reg.get('id'):
+                            _istore.set_album(_reg['id'], _album_target)
+                            _ids.append(_reg['id'])
+                    if _ids:
+                        logger.info(f'[Engine] 归档快车道：{_ids} → 「{_album_target}」')
+                        yield ("text", f"✅ 已把 {len(_ids)} 张照片归到「{_album_target}」相册"
+                                       f"（图片库可查，已锁定不再自动挪动）。")
+                    else:
+                        yield ("text", "⚠️ 没收到有效图片——请带着照片再说一次「分到XX相册」。")
+                except Exception as _ae:
+                    logger.warning(f'[Engine] 归档快车道失败: {_ae}')
+                    yield ("text", f"⚠️ 归档没成功：{_ae}")
+                return
+            elif _album_hint:
+                yield ("text", f"📁 {_album_hint}")
+                return
+            else:
+                yield from self._vision_reply(user_message, images, stream, query_mode=query_mode)
+                return
+
         # ★ 2026-07-29: 方案N — 注入系统状态（模型回答前先查好）
         self._system_status = ''
 
+        # ★ 2026-09-16 家庭提醒引擎：到期提醒注入主聊天（一次弹出即打钩，重复的自动滚到下一轮；失败静默）
+        try:
+            from src.core.home_reminder import inject_due as _hr_inject
+            for _rm in _hr_inject():
+                yield ("text", _rm + "\n\n")
+        except Exception as _hre:
+            logger.debug(f"[Engine] 到期提醒注入跳过: {_hre}")
+
+        # ★ 2026-11-15 (#1522-B): 播放意图本地快车道 — 必须在分段判定之前拦截，
+        #   否则被 / 分段流水线劫持重新生成（「点播放=重新生成一遍歌」实锤修复）
+        if user_message:
+            _play_resp = self._try_playback_route(user_message)
+            if _play_resp:
+                logger.info(f"[Engine] 播放快车道命中: {user_message[:30]}")
+                yield ("text", _play_resp)
+                return
+
+        # ★ 2026-09-15 V1.5: / 分段接力识别（定版方案）— 协作流水线开启时，
+        #   用 / 或 ／ 隔开的 ≥2 段命令 = 手动挡流水线；必须在快车道之前判定（快车道要让路）
+        self._pipeline_segments = None
+        if user_message:
+            _cm_chk = self._collab_mode_override
+            if _cm_chk is None:
+                try:
+                    from src.utils.config import get_preference as _gp_cm
+                    _cm_chk = _gp_cm('collab_mode') or 'off'
+                except Exception:
+                    _cm_chk = 'off'
+            if _cm_chk == 'cloud_local':
+                _segs = self._split_pipeline_segments(user_message)
+                if _segs:
+                    self._pipeline_segments = _segs
+                    logger.info(f"[Engine] / 分段接力: {len(_segs)} 段 ↔ 流水线")
+
         # ★ 2026-08-13: 智能意图匹配 — 关键词组合，不漏词
         # 不依赖FC（本地模型不支持tools参数），用关键词组合直接路由
-        if user_message and not user_message.startswith('/help') and '[CONFIRM_AGENT:' not in user_message:
-            fc_result = yield from self._try_smart_route(user_message, stream)
-            if fc_result is not None:
-                return fc_result
+        # ★ 分段接力消息跳过快车道（"作曲/画图"等触发词不再劫持流水线命令）
+        if user_message and not user_message.startswith('/help') and '[CONFIRM_AGENT:' not in user_message and not self._pipeline_segments:
+            # ★ 2026-09-16: 快车道只匹配用户原话（剥离助手小窗拼进的位置前缀/背景补充，
+            #   防上下文里的"目录/应用"等词跟用户原话拼出误触发 → 实测实锤bug）
+            _route_msg = self._strip_assist_context(user_message)
+            # ★ 2026-09-15: 快车道只产出最终文本（内部无流式token），先收集再注入来源标识
+            fc_events = list(self._try_smart_route(_route_msg, stream))
+            if fc_events:
+                # ★ A批A7: token账本 — B方案命中（关键词快车道，零token）
+                try:
+                    from src.core.token_ledger import record as _tl_b
+                    _tl_b('b_plan_hits', msg=user_message[:50])
+                except Exception:
+                    pass
+                # ★ 2026-09-15: 快车道也标注回复方（否则前端看不到是谁答的）
+                if not any(t == 'model_source' for t, _ in fc_events):
+                    fc_events.insert(0, ("model_source", {
+                        "model": "fastlane", "label": "⚡ 快车道 · 本地执行",
+                        "is_external": False, "mode": "fastlane",
+                    }))
+                for _t, _c in fc_events:
+                    yield (_t, _c)
+                return
+
+        # ★ 2026-10-05 #990 查询链分层 C′ 第0层：纯查询本地直出（0 token，两端一致）
+        #   病根（实测实锤）：「这个月开销」这类纯数字查询也全量进模型管线——
+        #   预查+模型组织两遍跑，电脑手机各问一遍 = 外脑答两次浪费 token，且说法各异。
+        #   直出后同一模板同一数据 → 电脑手机字面一致；分析类照旧进模型不受影响。
+        if user_message and not getattr(self, '_pure_chat', False):
+            _qd_ans = self._query_direct_answer(user_message)
+            if _qd_ans:
+                logger.info(f"[Engine] #990 纯查询直出命中({len(_qd_ans)}字, 0 token): {user_message[:30]}")
+                try:
+                    from src.core.token_ledger import record as _tl_q
+                    _tl_q('b_plan_hits', msg='[direct] ' + user_message[:50])
+                except Exception:
+                    pass
+                yield ("model_source", {
+                    "model": "panel_direct", "label": "📋 本地速答 · 数据直查",
+                    "is_external": False, "mode": "panel_direct",
+                })
+                for _i in range(0, len(_qd_ans), 60):
+                    yield ("text", _qd_ans[_i:_i + 60])
+                try:
+                    save_message(self.conversation_id, "user", user_message)
+                    save_message(self.conversation_id, "assistant", _qd_ans,
+                                 metadata={"source": "panel_direct"})
+                except Exception as _qe:
+                    logger.warning(f"[Engine] 直出消息保存失败: {_qe}")
+                yield ("done", None)
+                return
+
+        # ★ 2026-10-23 对话花钱意图直录（定版拍板「开发全部」）：
+        #   放在快车道/#990 直出之后——快车道已处理的记事命令不重复入账，
+        #   查询句「花了多少」已被直出回答不误触发；这里只接漏网的陈述句。
+        if (user_message and not getattr(self, '_pure_chat', False)
+                and not user_message.startswith('/') and '[CONFIRM_AGENT:' not in user_message
+                and not self._pipeline_segments):
+            try:
+                _acc_tip = self._try_direct_accounting(user_message)
+                if _acc_tip:
+                    yield ("text", _acc_tip + "\n\n")
+            except Exception as _dae:
+                logger.debug(f"[Engine] 花钱直录跳过: {_dae}")
 
         # ★ 2026-08-10: /help 快捷命令 — 直接返回使用指南，不走模型推理
         if user_message and user_message.strip().lower().startswith('/help'):
@@ -643,6 +1065,14 @@ class ConversationEngine:
 
         # ★ 2026-07-05: web_search 标记（用户点🌐按钮 → Step 1.5 强制搜索）
         self._web_search_this_query = web_search
+        # ★ 方案A 联网授权制（2026-10-05 定版拍板）：按🌐开关设置执行层门禁——
+        #   未授权时即使模型凭记忆喊 web_search/web_fetch，执行层也拒绝（fail-closed）。
+        #   定义注入侧（get_fc_bundle/get_tool_definitions）同样按此开关过滤。
+        try:
+            from src.core.builtin_tools import set_web_search_allowed as _set_ws
+            _set_ws(bool(web_search))
+        except Exception as _ws_e:
+            logger.debug(f"[Engine] 联网授权开关设置失败: {_ws_e}")
         # 允许本次调用临时覆盖查询模式（保密模式下禁止切换）
         if query_mode and query_mode in self.QUERY_MODES:
             if self._privacy_mode:
@@ -673,6 +1103,10 @@ class ConversationEngine:
 
         if plugin_result:
             if stream:
+                # ★ 2026-09-15: 插件路径也标注回复方
+                self._reply_source = "🧩 插件 · 本地"
+                yield ("model_source", {"model": "plugin", "label": "🧩 插件 · 本地",
+                                        "is_external": False, "mode": "plugin"})
                 yield ("text", plugin_result)
             return plugin_result
 
@@ -753,6 +1187,11 @@ class ConversationEngine:
 
         if agent_result:
             if stream:
+                # ★ 2026-09-15: Agent 直跑路径也标注回复方
+                self._reply_source = f"🧩 {agent_result['agent_name']} · 本地"
+                yield ("model_source", {"model": _agent_id_early or "agent",
+                                        "label": f"🧩 {agent_result['agent_name']} · 本地",
+                                        "is_external": False, "mode": "agent"})
                 yield ("text", f"🤖 [{agent_result['agent_name']}] {agent_result['output']}")
             return agent_result["output"]
 
@@ -855,6 +1294,14 @@ class ConversationEngine:
                 system_prompt += task_ctx
         except Exception as e:
             logger.error(f"[Engine] 加载任务上下文失败: {e}")
+
+        # ★ 2026-09-17 反假记账声明（实锤：聊天模式说"模拟飞行1200"没入账，
+        #   模型却回复"已经记录了1200元"——模型本身没有记账能力，只有系统
+        #   输出「已处理/已入库」才是真实入账）
+        system_prompt += ("\n【记账诚实规则】你本人没有直接记账的能力。只有当系统执行结果里出现"
+                          "「已处理」「已入库」字样时，才表示真的入账了。严禁声称\"已经记录/已入账/"
+                          "记好了\"这类没有发生的操作。若用户想记账而系统没有执行，请如实说明，"
+                          "并建议他在记账账本里用「记一笔」或把小窗切到「记事」模式再说一遍。")
         return system_prompt
 
     def _adapt_mm_stream(self, mm_gen):
@@ -862,16 +1309,70 @@ class ConversationEngine:
         适配多模型管理器的输出流为纯文本生成器
         mm_gen yields {"type": "text/error", "content": str}
         我们需要 yield 纯文本字符串（与 ModelManager.chat 的输出格式一致）
+        ★ 2026-09-27 幻觉工具JSON清洗（流式版）：GLM 会在正文里输出
+        ```json {"tool_calls":[...]} ```（想调工具但没有工具通道），流式路径
+        原样漏屏（开发者美团查询实锤，非流式路径 4295 早有拦截）。
+        对策：缓冲 ```json / ``` 围栏块，内容含 "tool_calls" 特征 → 拦截不上屏；
+        其余围栏（正常代码/JSON回答）闭合后原样放行。
         """
+        buf = ''
+        in_fence = False
+        fence_lang = ''
         for item in mm_gen:
             if not isinstance(item, dict):
                 continue
             t = item.get("type", "")
             c = item.get("content", "")
-            if t == "text" and c:
-                yield c
-            elif t == "error":
+            if t == "error":
+                if in_fence and buf:
+                    yield '```' + fence_lang + ('\n' + buf if buf else '')
                 yield f"[错误]{c}"
+                in_fence = False
+                buf = ''
+                continue
+            if t != "text" or not c:
+                continue
+            if not in_fence:
+                idx = c.find('```')
+                if idx == -1:
+                    yield c
+                    continue
+                if idx > 0:
+                    yield c[:idx]
+                rest = c[idx + 3:]
+                nl = rest.find('\n')
+                fence_lang = rest[:nl] if nl != -1 else rest
+                _lang = fence_lang.strip().lower()
+                if _lang in ('', 'json'):
+                    # json/裸围栏进入缓冲模式
+                    buf = rest[nl + 1:] if nl != -1 else ''
+                    in_fence = True
+                else:
+                    # python 等其他语言围栏：透传不缓冲
+                    yield '```' + rest
+                continue
+            # 缓冲模式
+            buf += c
+            end = buf.find('```')
+            if end == -1:
+                if len(buf) > 12000:  # 防御：异常未闭合的超长缓冲直接放行
+                    yield '```' + fence_lang + '\n' + buf
+                    buf = ''
+                    in_fence = False
+                continue
+            body = buf[:end]
+            tail = buf[end + 3:]
+            if '"tool_calls"' in body:
+                logger.warning("[Engine] 流式拦截：幻觉tool_calls JSON已剥离不上屏")
+                if tail:
+                    yield tail
+            else:
+                yield '```' + fence_lang + ('\n' + body if body else '') + '```' + tail
+            buf = ''
+            in_fence = False
+        # 流结束仍有未闭合缓冲：原样放行
+        if in_fence:
+            yield '```' + fence_lang + ('\n' + buf if buf else '')
 
     def _has_active_task(self):
         """检查当前对话是否有进行中的任务"""
@@ -1259,6 +1760,280 @@ class ConversationEngine:
             return "🔴 这会修改系统配置文件！修改不当可能影响哈文正常运行。已自动备份原配置，如果出问题可以回滚。确定要修改吗？建议仔细确认。"
         return None
 
+    # ★ 2026-09-27 #885 E1 纯聊天快车道（已批准）——判定词表
+    #   闲聊/角色扮演/介绍解释类跳过 FC 首轮非流式（答案写完才显示=白等全文生成时间），
+    #   直接流式出字。保守白名单 + 操作动词排除，宁漏勿杀：拿不准就照常走 FC。
+    _FC_SKIP_WHITELIST = [
+        '变身', '扮演', '角色扮演', '假设你是', '假如你是', '你就是', '来当', '当一回', '装作',
+        '讲个故事', '讲一个故事', '说个笑话', '讲个笑话', '来个笑话', '给我讲个',
+        '介绍一下', '解释一下', '是什么', '什么是', '是什么意思', '为什么', '怎么用', '如何使用',
+        '有什么区别', '有什么用', '你有什么', '你会什么', '你会不会', '你能做什么',
+    ]
+    _FC_SKIP_GREET = re.compile(
+        r'^(你好|您好|哈喽|hello|hi|嗨|在吗|在么|早安|早上好|中午好|下午好|晚上好|晚安|'
+        r'谢谢|感谢|辛苦了|你好呀|hello+)[!！。~ ～?？\s]*$', re.IGNORECASE)
+    _FC_SKIP_BLOCKERS = [
+        # 文件/命令/系统操作
+        '打开', '删除', '新建', '写入', '读取', '执行', '运行', '安装', '卸载', '清空',
+        '下载', '上传', '重启', '关机', '截图', '控制', '播放', '列出', '遍历', '搜索',
+        '帮我找', '找一下', '查一下', '查查', '查看', '看看我的', '路径', '目录', '文件夹',
+        # 数据域（有专门车道，不走这里）
+        '记账', '记一笔', '花了', '花销', '账单', '花了多少',
+        '任务', '提醒', '天气', '新闻', '翻译',
+        # ★ #1497（2026-11-13 实锤）：邮件域——「邮箱最新收到的邮件是什么」命中白名单
+        #   「是什么」被判闲聊砍 FC。邮箱/邮件永远有专门工具车道，禁止判闲聊。
+        '邮件', '邮箱', '收件', '发件',
+        # 附件/系统注入
+        '【文件', '系统注', '文件:',
+        # ★ #1316（2026-10-30 咖啡机事故实锤）：改/写类操作词——「这个咖啡机是什么牌子 给它加标注」
+        #   命中白名单「是什么」被判闲聊砍 FC → GLM 无工具只能写代码裸奔。操作动作必须走 FC。
+        '标注', '加标注', '备注', '添加', '设为', '设成', '改成', '改名', '重命名', '命名',
+        '记住', '记下来', '删掉', '去掉', '换成', '存到', '存进', '放到', '放进', '归类',
+    ]
+    # ★ #1316 指令式动作正则：「给它加标注」「帮我记下」「把它改成X」等「代词+动作」
+    #   结构一律不判闲聊（宁漏勿杀：宁多走一轮 FC，绝不把操作当闲聊砍工具）
+    _FC_SKIP_ACTION_RE = re.compile(r'(给它|帮我|把它|给我)[们个]?\s*(加|设|标|改|记|存|删|换|命名|备注)')
+
+    def _fc_pure_chat_skip(self, text):
+        """#885 纯聊天快车道判定：命中白名单/问候语且无操作动词 → 跳过FC首轮非流式。
+        ★ #1316：操作动作（词表/指令式正则）优先于白名单——先查动作再判闲聊。"""
+        t = (text or '').strip()
+        if not t or len(t) > 120:
+            return False
+        if any(b in t for b in self._FC_SKIP_BLOCKERS):
+            return False
+        if self._FC_SKIP_ACTION_RE.search(t):
+            return False
+        if self._FC_SKIP_GREET.match(t):
+            return True
+        return any(w in t for w in self._FC_SKIP_WHITELIST)
+
+    # ═══ ★ #1497（2026-11-13）本地FC前置轮：A护栏 + B打通 ═══
+
+    def _local_fc_preround(self, all_messages, model_name, user_message, notify=None):
+        """本地模型 FC 前置轮（A护栏 + B打通，一步到位）。
+
+        外脑阵营早有 FC 循环（mm.generate_response tools=）；本地阵营此前是哑巴——
+        13 个 FC 工具只加载在上下文里，从不以 Ollama tools 格式真传，模型不知道自己
+        能调工具 → 瞎编「系统没有集成邮箱功能」（2026-11-12 23:59 实锤）。
+
+        Returns:
+            ('skip', None)   不归本管 → 调用方走原有本地链路（零行为变化）
+            ('guard', 文本)  A护栏命中 → 调用方如实上屏+落库，不再喂给模型
+            ('done', 文本)   B已收笔 → 调用方直接上屏最终回答
+        """
+        _emit = notify or (lambda kind, content: None)
+        try:
+            from src.core.builtin_tools import get_fc_bundle, execute_tool_call
+        except Exception:
+            return ('skip', None)
+
+        # 门1：纯聊天快车道（与外脑 #885 同一门，闲聊不进 FC 轮）
+        if self._fc_pure_chat_skip(user_message or ''):
+            return ('skip', None)
+
+        # 门2：模型 tools 能力探测
+        if not _ollama_supports_tools(model_name):
+            # A·护栏：FC 域意图 + 模型没工具能力 → 如实说破（死命令：不代选，主动权在用户）
+            if any(k in (user_message or '') for k in _FC_DOMAIN_SIGNALS):
+                logger.info(f"[Engine] #1497-A 护栏触发: model={model_name}, msg={(user_message or '')[:40]}")
+                msg = (
+                    f"⚙️ 「{(user_message or '')[:40]}」这类操作需要**工具执行能力**（查邮件/发邮件/记账动手这类）。\n\n"
+                    f"当前模型「{model_name}」不具备工具调用能力，我不能假装办了，也不替你换模型。\n\n"
+                    f"👉 两个办法（你选）：\n"
+                    f"1. 点对话区 🤖 切到外脑，再发一次，立刻能办；\n"
+                    f"2. 换支持工具调用的本地模型（qwen3 / qwen3-vl / qwen2.5 系都可以）。"
+                )
+                return ('guard', msg)
+            return ('skip', None)
+
+        # 门3：取 FC 工具清单（联网授权制：本地前置轮不注入联网工具）
+        try:
+            fc_tools, _catalog = get_fc_bundle(allow_web_search=False)
+        except Exception:
+            return ('skip', None)
+        if not fc_tools:
+            return ('skip', None)
+
+        _emit('thinking', '🔎 本地工具调用中…')
+        import requests as _rq_fc
+        import json as _json_fc
+        messages = list(all_messages)
+        # ★ #1497-B 补丁（2026-11-13 00:15 线上 400 实锤）：sanitize 后再发——
+        #   历史注入的预查消息可能 content=None / role 非标准 / content 是 list，
+        #   Ollama /api/chat 直接 400 Bad Request（响应体此前没落日志，瞎区）。
+        #   规范成 Ollama 只认的 {role, content(str)}，非标准条目直接丢弃。
+        _ok_roles = ('system', 'user', 'assistant')
+        _clean = []
+        for _m in messages:
+            if not isinstance(_m, dict):
+                continue
+            _r = _m.get('role')
+            if _r not in _ok_roles:
+                continue
+            _c = _m.get('content')
+            if _c is None:
+                _c = ''
+            elif not isinstance(_c, str):
+                try:
+                    _c = _json_fc.dumps(_c, ensure_ascii=False)
+                except Exception:
+                    _c = str(_c)
+            _clean.append({'role': _r, 'content': _c})
+        messages = _clean if _clean else [{'role': 'user', 'content': user_message or ''}]
+        # ★ #1497 强提示词（2026-11-13 实锤裸调对照）：不提示时 qwen3 系把 tools 当说明书
+        #   看（回复「我可以帮你推断服务器地址」却不发 tool_calls）；加「必须调工具」提示后
+        #   qwen3-vl / qwen3 双模型均精准出 tool_calls（与外脑 FC 强化提示词 2026-08-13 同理）
+        _hint = (
+            "## 🔧 工具调用规则\n"
+            "1. 用户的请求凡是需要查数据、执行操作（查邮件/发邮件/查记录/记一笔/执行命令/读写文件等），"
+            "必须**立即调用对应工具**真正执行，严禁只给建议或让用户自己动手。\n"
+            "2. 工具返回结果后，用中文组织简洁人话回答，带上关键数据。\n"
+            "3. 没有合适工具才用文字说明，如实讲办不了。"
+        )
+        # ★ #1497-C 瘦身（2026-11-13 老谭拍板 A+B）：前置轮只做「判定调不调工具+执行」，
+        #   不需要全套人设注入（技能/教练简报/方案N/REA 等 12000+ tokens）——每条消息
+        #   原样重发等于白等十几秒。瘦身为「身份+时间+FC规则」；历史只带最近 5 条
+        #   （B 截断，老谭定 5 条）。工具结果收笔后，正式回答仍由原链路全套上下文兜底，质量不受影响。
+        from datetime import datetime as _dt_1497c
+        _slim_system = (
+            "你是「Harven AI 哈文」，本地家庭AI助手。当前时间："
+            + _dt_1497c.now().strftime('%Y-%m-%d %H:%M') + "。\n\n" + _hint
+        )
+        messages = ([{'role': 'system', 'content': _slim_system}]
+                    + [m for m in messages if m.get('role') in ('user', 'assistant')][-5:])
+        tools_used = []
+        _nudged = False   # ★ #1497 解释空转只追问一次
+        for round_i in range(5):
+            try:
+                r = _rq_fc.post('http://127.0.0.1:11434/api/chat',
+                                json={'model': model_name, 'messages': messages,
+                                      'tools': fc_tools, 'stream': False,
+                                      'options': {'temperature': 0.3,
+                                                  # ★ #1497-B 补丁2（2026-11-13 实锤）：线上 system
+                                                  #   全套注入 12000+ tokens，Ollama 默认 num_ctx=4096
+                                                  #   → 400 "exceeds the available context size"。
+                                                  #   显式拉高到 24576（qwen3 原生 32K 内）
+                                                  'num_ctx': 24576}},
+                                timeout=300)
+                if r.status_code != 200:
+                    # ★ #1497-B 补丁：非 200 把 Ollama 响应体落日志（此前只报状态码，瞎区）
+                    logger.warning(
+                        f"[Engine] #1497-B 第{round_i+1}轮 HTTP {r.status_code}: {r.text[:300]}")
+                    return ('skip', None)
+                m = (r.json() or {}).get('message') or {}
+            except Exception as e:
+                logger.warning(f"[Engine] #1497-B 第{round_i+1}轮调用失败: {e}")
+                return ('skip', None)   # 失败不拦截 → 原有链路兜底（不回落外脑，铁律 #891）
+            tcs = m.get('tool_calls') or []
+            content = (m.get('content') or '').strip()
+            if not tcs:
+                if not tools_used:
+                    if not _nudged:
+                        # ★ #1497 解释空转追问（2026-11-13 实锤：第1轮模型解释「要哪个邮箱/
+                        #   先配置」不调工具 → 追问1次 → qwen3-vl 精准出 tool_calls email_fetch）
+                        _nudged = True
+                        logger.info(f"[Engine] #1497 第{round_i+1}轮解释不调工具，追问一次")
+                        messages.append({'role': 'assistant', 'content': content or ''})
+                        messages.append({'role': 'user',
+                                         'content': '不要解释，也不要向用户索要配置信息。'
+                                                    '相关配置系统已就绪，请立即调用合适的工具完成我的请求。'})
+                        continue
+                    # 追问后仍不调 → 交回原有流式链路（保持流式体验与标注，零回归）
+                    return ('skip', None)
+                # 工具已执行 → 这是收笔总结
+                final = self._defuse_raw_json(content) if content else ''
+                logger.info(f"[Engine] #1497-B 收笔: 工具足迹={tools_used}, {len(final)}字")
+                return ('done', final)
+            # 有 tool_calls → 落 assistant 消息 + 逐个执行 + tool 结果回填
+            messages.append({'role': 'assistant', 'content': content, 'tool_calls': tcs})
+            for tc in tcs:
+                fn = (tc.get('function') or {}) or {}
+                name = fn.get('name', '')
+                args = fn.get('arguments') or {}
+                if isinstance(args, str):
+                    try:
+                        args = _json_fc.loads(args)
+                    except Exception:
+                        args = {}
+                logger.info(f"[Engine] #1497-B 本地FC工具: {name}({str(args)[:150]})")
+                try:
+                    result = execute_tool_call(name, args if isinstance(args, dict) else {})
+                except Exception as e:
+                    result = _json_fc.dumps({'success': False, 'error': str(e)}, ensure_ascii=False)
+                tools_used.append(name)
+                messages.append({'role': 'tool', 'content': str(result)[:8000]})
+        # 5 轮还没收笔 → 放弃总结，让用户看工具足迹
+        return ('done', '⚙️ 工具已执行（' + '、'.join(dict.fromkeys(tools_used)) +
+                '），但模型没能生成总结。请把想看的具体内容再问一次。')
+
+    # ★ 2026-10-05 #990 查询链分层 C′（定版拍板）——第0层纯查询直出
+    #   分析信号词：命中任何一个 = 用户要的是「看法」不是「数字」→ 交模型，不直出
+    _QUERY_ANALYZE_RE = re.compile(
+        r'分析|为什么|为啥|建议|趋势|对比|总结|异常|规律|报告|省|划算|合理|健康|怎么样|如何|靠谱|评价')
+    _QUERY_DIRECT_MAXLEN = 40   # 纯查询是短句；超长多半带叙事/多问，落回现状链
+
+    def _query_direct_answer(self, text):
+        """#990 查询链分层第0层：纯数据查询本地直出（0 token、毫秒级、两端字面一致）。
+        命中条件（全满足才直出，宁缺勿滥）：
+          1. 不含分析信号词（分析/建议/为什么…→ 交给模型组织）
+          2. 消息 ≤40 字
+          3. 档案中枢 hub_direct_answer 命中（记账域关键词 + 时间解析成功）
+        未命中返回 None → 落回现状链（预查注入 + 当前模型组织人话），
+        即 C′ 的第2层「分析类才进模型」；灰区全部自然落现状链，
+        不再单设 40 token 意图小调用（多一次往返徒增延迟与故障面，砍掉）。"""
+        try:
+            t = (text or '').strip()
+            if not t or len(t) > self._QUERY_DIRECT_MAXLEN:
+                return None
+            if self._QUERY_ANALYZE_RE.search(t):
+                return None
+            from src.core.archive_hub import hub_direct_answer as _hda
+            ans, _res = _hda(t)
+            return (ans or '').strip() or None
+        except Exception:
+            return None
+
+    # ★ 2026-09-27 #886 B JSON回炉保底（已批准）
+    _RAW_JSON_RE = re.compile(r'^\s*\{[\s\S]*\}\s*$')
+
+    def _defuse_raw_json(self, text):
+        """外脑把工具结果的生 JSON 原样复读成回答时（实锤案例：GLM 二轮复读
+        {"success":true,"message":"本月暂无记账记录",...}），本地翻译成人话。"""
+        t = (text or '').strip()
+        if not (t.startswith('{') and t.rstrip().endswith('}')):
+            return text
+        if not self._RAW_JSON_RE.match(t):
+            return text
+        try:
+            obj = json.loads(t)
+        except Exception:
+            return text
+        if not isinstance(obj, dict):
+            return text
+        # 只处理带工具结果特征的字段组合，正常 JSON 代码回答不受影响
+        if not any(k in obj for k in ('success', 'message', 'error', 'records', 'results')):
+            return text
+        msg = str(obj.get('message') or obj.get('error') or '').strip()
+        if not msg:
+            return "查询完成了，但这次没有整理成文字。你可以到对应面板里直接查看，或者换个问法再试一次。"
+        extra = ''
+        if ('total_income' in obj) or ('total_expense' in obj):
+            extra = f"（收入 {obj.get('total_income', 0)} 元，支出 {obj.get('total_expense', 0)} 元）"
+        elif 'total_count' in obj:
+            extra = f"（共 {obj.get('total_count', 0)} 条）"
+        logger.info("[Engine] JSON回炉触发：外脑输出生JSON，已本地翻译")
+        return f"{msg}{extra}"
+
+    # ★ #1315（2026-10-30 咖啡机事故实锤）围栏语言标记清洗
+    @staticmethod
+    def _strip_fence_lang(code):
+        """GLM 写码有时在围栏内复读语言标记——```python\npython\nimport …``` →
+        裸词 `python` 行被执行 → NameError ×2（咖啡机事故最后一环实锤）。
+        剥掉首部裸语言标记行：合法 Python 里独立一行 python/py/python3 必然 NameError，
+        剥掉永远安全、永不误伤。"""
+        return re.sub(r'^\s*(?:python3?|py)\s*\n', '', code or '')
+
     def _classify_query(self, message):
         """
         判断查询类型（关键词快速匹配 + LLM 兜底）
@@ -1397,13 +2172,20 @@ JSON:"""
     # ★ 2026-07-03: 垂直任务参数提取模式（智能预填）
     # ═══════════════════════════════════════════════════════════════
     def _detect_vertical_task(self, user_message: str) -> str | None:
-        """检测用户消息是否匹配垂直模型任务，返回模型ID或None"""
+        """检测用户消息是否匹配垂直模型任务，返回模型ID或None
+
+        ★ 2026-11-15: 加 _model_available 可用性过滤（方案 A ③）——
+        不可用模型（如 SD/Bark/MusicGen/wan22 占位）不参与抢答，
+        避免死条目/未部署模型截胡消息（#1518 同族病根）。
+        """
         try:
-            from src.core.vertical_api import _BUILTIN_MODELS
+            from src.core.vertical_api import _BUILTIN_MODELS, _model_available
             msg_lower = user_message.lower()
             best_model = None
             best_score = 0
             for model in _BUILTIN_MODELS:
+                if not _model_available(model):  # ★ 收 dict 不是 id（签名 _model_available(m: dict)）
+                    continue  # 模型不可用 → 不抢答
                 keywords = model.get("task_keywords", [])
                 score = sum(2 for kw in keywords if kw.lower() in msg_lower)
                 if score > best_score:
@@ -1506,7 +2288,7 @@ ADVISE:您是想做一首乡村音乐吗？\\n如果是，我还需要了解：�
 ADVISE:您是想做一首忧伤的音乐吗？\\n如果是，我建议搭配古典风格+小提琴+70BPM。您觉得呢？\\n如果不是想做音乐，直接告诉我您想做什么。
 
 示例3 - 用户："写一首曲子"（有动作词无参数）
-ADVISE:好的！我帮您规划。\\n\\nMusicGen 可以生成 5-30 秒纯伴奏。\\n为了做出满意曲子，我需要了解：\\n1. 什么风格？（乡村/爵士/古典/摇滚/电子...）\\n2. 什么情绪？（欢快/忧伤/激昂/浪漫...）\\n3. 什么场景？（背景音乐/游戏配乐/手机铃声...）
+ADVISE:好的！我帮您规划。\\n\\nACE-Step 可以生成纯音乐或带人声歌曲（10-240秒）。\\n为了做出满意曲子，我需要了解：\\n1. 什么风格？（国风/流行/古典/摇滚/电子...）\\n2. 纯音乐还是带人声唱歌？\\n3. 什么场景？（背景音乐/游戏配乐/手机铃声...）
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 【模式B：建议+确认】（1-2个明确参数）★ 核心
@@ -1758,209 +2540,632 @@ SUGGEST:吉他适合多种风格。\\n我建议：民谣 + 吉他 + 90BPM + 平�
 
     def _route_model_for_query(self, query_mode):
         """
-        智能模型路由：根据查询模式选择最合适的模型。
-        Returns: (use_external: bool, model_label: str, model_id: str)
-
-        路由规则（2026-06-12 更新）：
-        - direct / auto → 优先云端大模型（DeepSeek等），未配置则回落 Ollama
-        - kb_only → 本地模型（纯知识库检索不需要云端）
-        - 如果未配置外部模型，全部回落 Ollama
-        - 【安全回落】外部模型 API key 缺失或调用失败时，自动回落 Ollama
+        ★ 2026-08-25 P1: 用户选择大于一切——严格执行，绝不自动切换。
+        
+        Returns: (use_external: bool, model_label: str, model_id: str, error_msg: str|None)
+        - current_model=ollama   → 双引擎探测（Ollama→GGUF），就绪走本地
+        - current_model=外脑X     → 只用 X，不切本地不切其他外脑
+        - current_model=None      → 提示选择模型
+        - 不可用                  → error_msg（四段式：选择→状态→原因→指引），调用方展示
         """
         if query_mode in ("direct", "auto"):
             try:
-                from src.core.multi_model_manager import get_multi_model_manager
+                from src.core.multi_model_manager import get_multi_model_manager, is_local_model
                 mm = get_multi_model_manager()
                 if mm is None:
-                    logger.warning(f"[Engine] ⚠️ 多模型管理器为None！回退Ollama")
-                    return False, "本地模型", "ollama"
+                    return False, "本地模型", "ollama", None
 
-                all_providers = mm._get_all_providers()
-
-                # 优先使用用户设定的当前模型（如果不是 ollama）— 但检查 API key
-                if mm.current_model != "ollama":
-                    model_cfg = mm.config.get('models', {}).get(mm.current_model, {})
-                    provider_info = all_providers.get(mm.current_model, {})
-                    needs_key = provider_info.get('needs_key', False)
-                    logger.info(f"[Engine] 🔍 当前模型={mm.current_model}, enabled={model_cfg.get('enabled')}, needs_key={needs_key}, has_api_key={bool(model_cfg.get('api_key'))}")
-                    # API key 缺失 → 检查 multi_models.json 和 config.yaml 两个来源
-                    if needs_key and not model_cfg.get('api_key'):
-                        # 1. multi_models.json 的 model_keys
-                        global_keys = mm.config.get('model_keys', {})
-                        if global_keys.get(mm.current_model):
-                            model_cfg['api_key'] = global_keys[mm.current_model]
-                        # 2. config.yaml 的 model_keys（★ 修复：回退到 config.yaml）
-                        if not model_cfg.get('api_key'):
-                            cfg_path = Path(__file__).parent.parent.parent / "config.yaml"
-                            try:
-                                cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
-                                yaml_keys = cfg.get('model_keys', {})
-                                if yaml_keys.get(mm.current_model):
-                                    model_cfg['api_key'] = yaml_keys[mm.current_model]
-                            except Exception as _e: logger.debug(f'[Engine] 忽略错误: {_e}')
-                        # 3. ★ 新增：也检查 provider_info 中可能有的 key
-                        if not model_cfg.get('api_key'):
-                            prov_cfg = mm.config.get('models', {}).get(mm.current_model, {})
-                            if prov_cfg.get('api_key'):
-                                model_cfg['api_key'] = prov_cfg['api_key']
-                    
-                    if needs_key and not model_cfg.get('api_key'):
-                        logger.warning(
-                            f"[Engine] 模型 {mm.current_model} 需要 API key 但未配置，"
-                            f"强制回落 Ollama（current_model={mm.current_model}）"
+                # ── 情况1：外脑模式下未选择外脑模型 ──
+                # ★ 2026-08-26: 外脑下拉已移除"本地模型"选项——外脑(direct)模式下
+                #    current_model 未选/ollama 一律明确报错，绝不默默回落本地。
+                #    本地模式的唯一入口是对话区的 🏠本地 模式按钮（kb_only）。
+                # ★ #1288（2026-10-29）分槽记忆补「读」半边：撞本地模型/未选时先自动换回
+                #    cloud 槽（用户上次选的外脑，非代选），换不回才按原细分报错——
+                #    「外脑模式选了本地 HarvenEye」报错彻底退役（10-29 实测实锤现场）
+                # ★ #1309（2026-10-29）本地判定走唯一真家 is_local_model，禁止手抄清单
+                if is_local_model(mm.current_model):
+                    _old = mm.current_model
+                    _restored = mm.restore_mode_slot('cloud')
+                    if _restored:
+                        logger.info(f"[Engine] #1288 外脑模式自动换回 cloud 槽: "
+                                    f"{_old!r} → {_restored}")
+                        # ★ #1310（2026-10-29 1c 换槽知情，定版拍板）：自动换槽必须让用户看见——
+                        #   旧版只写日志，用户看到「选的本地却冒出 GLM」全程懵（咖啡机事故实锤）。
+                        #   提示存 self._slot_switch_notice，两处调用方（send/看图）带出。
+                        try:
+                            _plabel = (mm._get_all_providers().get(_restored, {}) or {}).get('name', _restored)
+                        except Exception:
+                            _plabel = _restored
+                        self._slot_switch_notice = (
+                            f"⚠️ 自动换槽：外脑模式下检测到你选的是本地模型（{_old or '未选'}），"
+                            f"已自动换回你上次选的外脑「{_plabel}」。"
+                            f"想回本地请点对话区的 🏠本地 按钮。"
                         )
-                    elif model_cfg.get('enabled'):
-                        name = provider_info.get("name", mm.current_model)
-                        logger.info(f"[Engine] {query_mode}模式使用用户选定模型: {mm.current_model} ({name})")
-                        return True, name, mm.current_model
                     else:
-                        logger.warning(f"[Engine] 模型 {mm.current_model} 未启用，回落 Ollama")
+                        # 槽位也空/脏 → 保持原细分报错（四段式指引）
+                        if mm.current_model == "harveneye":
+                            return True, "HarvenEye（本地混合模型）", "harveneye", (
+                                "你处于 🤖外脑模式 → 但当前选的模型是本地的 HarvenEye → 无法用外脑推理 → "
+                                "请到 设置→模型管理 选一个外脑（如 智谱AI），"
+                                "或点击对话区的 🏠本地 按钮切换回本地模式用 HarvenEye"
+                            )
+                        logger.warning("[Engine] 外脑模式但未选择外脑模型（current_model=%r）", mm.current_model)
+                        return False, "未选择外脑模型", "ollama", (
+                            "你处于 🤖外脑模式 → 还没有选择外脑模型 → 无法推理 → "
+                            "请到 设置→模型管理 在外脑下拉选择一个模型（如 智谱AI），"
+                            "或点击对话区的 🏠本地 按钮切换回本地模式"
+                        )
 
-                # current_model 是 ollama 或未启用/无API key → 自动查找最佳外部模型
-                all_models = mm.get_all_models()
-                logger.info(f"[Engine] 搜索可用外部模型，共 {len(all_models)} 个提供者，当前current_model={mm.current_model}")
-                for m in all_models:
-                    if m['id'] == 'ollama':
-                        continue
-                    if not m['enabled']:
-                        logger.debug(f"[Engine] 跳过 {m['id']}: 未启用")
-                        continue
-                    # 如果需要 API key，检查是否有（三层回退：mm.config → config.yaml）
-                    if m['needs_key']:
-                        cfg_entry = mm.config.get('models', {}).get(m['id'], {})
-                        api_key = cfg_entry.get('api_key', '')
-                        if not api_key:
-                            # 回退：检查 config.yaml model_keys
-                            try:
-                                cfg_path = Path(__file__).parent.parent.parent / "config.yaml"
-                                cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
-                                api_key = cfg.get('model_keys', {}).get(m['id'], '')
-                            except Exception as _e: logger.debug(f'[Engine] 忽略错误: {_e}')
-                        if not api_key:
-                            logger.debug(f"[Engine] 跳过 {m['id']}: 需要 API key 但未配置")
-                            continue
-                        # 将找到的 key 写入内存，防止后续重复查询
-                        cfg_entry['api_key'] = api_key
-                    # 找到了！临时切换并返回
-                    name = m['name']
-                    model_id = m['id']
-                    logger.info(f"[Engine] {query_mode}模式自动切换到外部模型: {model_id} ({name})")
-                    return True, name, model_id
+                # ── 情况2：用户选了外脑 X → 严格只用 X ──
+                provider_id = mm.current_model
+                all_providers = mm._get_all_providers()
+                provider_info = all_providers.get(provider_id, {})
+                model_cfg = mm.config.get('models', {}).get(provider_id, {})
+                needs_key = provider_info.get('needs_key', False)
+                _pname = provider_info.get('name', provider_id)
 
-                logger.debug(f"[Engine] {query_mode}模式：无可用外部模型（未启用或无API key），回退Ollama")
+                # Key 三层只读回退（不改用户启用状态）
+                api_key = model_cfg.get('api_key', '')
+                if not api_key:
+                    api_key = mm.config.get('model_keys', {}).get(provider_id, '')
+                if not api_key:
+                    try:
+                        cfg_path = Path(__file__).parent.parent.parent / "config.yaml"
+                        api_key = (yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {})\
+                            .get('model_keys', {}).get(provider_id, '')
+                    except Exception:
+                        api_key = ''
+                if needs_key and not api_key:
+                    return True, _pname, provider_id, (
+                        f"你选的是 {_pname} → 未配置 API Key → 无法调用 → "
+                        "请到 设置→模型管理 填入 Key，或手动切换其他模型"
+                    )
+                if not model_cfg.get('enabled'):
+                    return True, _pname, provider_id, (
+                        f"你选的是 {_pname} → 模型未启用 → 无法调用 → "
+                        "请到 设置→模型管理 开启此模型，或切换其他模型"
+                    )
+                logger.info(f"[Engine] 用户选定模型: {provider_id}（严格执行，不自动切换）")
+                return True, _pname, provider_id, None
+
             except Exception as e:
-                logger.warning(f"[Engine] ⚠️ 多模型管理器检测异常（回退Ollama）: {type(e).__name__}: {e}")
-        return False, "本地模型", "ollama"
+                logger.warning(f"[Engine] 路由异常回退本地: {type(e).__name__}: {e}")
+                return False, "本地模型", "ollama", None
 
-    def _invoke_collab_foreign(self, collab_manager, user_message: str) -> str:
-        """
-        调用协作外脑获取分析结果（非流式，同步模式）
-        
-        协作模式三步骤：
-        1. 隐私过滤（根据 collab.privacy_level）
-        2. 构建包含 Skills JSON 工具的 system prompt
-        3. 调用外部模型获取分析结果
-        
-        Returns: 外脑分析文本，失败返回空字符串
-        """
-        # 【保密模式】禁止任何外部调用（包括协作外脑）
-        if self._privacy_mode:
-            logger.warning("[Engine] 保密模式下禁止协作外脑调用")
+        # kb_only 等其他模式 → 本地
+        return False, "本地模型", "ollama", None
+
+    # ═══ 2026-09-14 V1：协作流水线（对话站 + 执行站） ═══
+
+    def _pipeline_transcripts_text(self, transcripts: list) -> str:
+        """把前面各站产出整理成文本，喂给后续站"""
+        lines = []
+        for t in transcripts:
+            if t['kind'] == 'text':
+                lines.append(f"- [{t['name']}] {t['content'][:600]}")
+            else:
+                line = f"- [{t['name']}] 已生成文件: {t.get('file') or '(无路径)'}"
+                if t.get('output'):
+                    line += f"；说明: {t['output'][:200]}"
+                lines.append(line)
+        return '\n'.join(lines) if lines else ''
+
+    def _pipeline_call_local(self, system_prompt: str, content: str) -> str:
+        """本地当前选中模型非流式调用（流水线对话站）
+        ★ #1517（2026-11-14）引擎名≠模型名根治：协作本地站旧版把 self.model.model 直接当
+          Ollama 模型名打 11434——用户切 HarvenEye 引擎后拿「harveneye」去查 Ollama 必 404，
+          流水线第 2 站必挂（实测复现：❌ 第 2 站「🏠 本地 harveneye」调用失败）。
+          引擎名先解析真身（优先级与 #1291 文字分流同源：钉选通道 → understand 槽出厂通道），
+          非引擎名走原路零变化。"""
+        local_name = getattr(self.model, 'model', '') or ''
+        if not local_name:
+            logger.warning("[Pipeline] 本地站: 当前无本地模型")
+            return ""
+        if local_name == 'harveneye':
+            # ★ 2026-11-15：真身解析逻辑抽到 _pipeline_call_harveneye（与独立 HarvenEye 站共用）
+            return self._pipeline_call_harveneye(system_prompt, content)
+        return self._pipeline_call_ollama(local_name, system_prompt, content)
+
+    def _pipeline_call_harveneye(self, system_prompt: str, content: str) -> str:
+        """HarvenEye 视觉大脑纯文本调用（流水线 HarvenEye 站 / 本地站选中 Eye 时共用）
+        ★ 2026-11-15（老谭定版：含通用大脑的 HarvenEye = 本地通用模型能力升级版，
+        进协作流水线本地站下拉，名字就叫 HarvenEye）：
+        钉选通道优先 → understand 槽出厂通道，三 provider 分流转调（原 #1517 逻辑抽出）。"""
+        # 钉选通道优先（用户在模型管理钉的视觉大脑）
+        ch = {}
+        try:
+            from src.core.vision_link import resolve_pinned_channel as _rpc_1517
+            ch = _rpc_1517() or {}
+        except Exception as _e:
+            logger.debug(f"[Pipeline] 钉选通道解析失败: {_e}")
+        if ch.get('provider') == 'ollama' and ch.get('model'):
+            return self._pipeline_call_ollama(ch['model'], system_prompt, content)
+        if ch.get('provider') == 'llama_cpp' and ch.get('gguf'):
+            return self._pipeline_call_gguf_path(ch['gguf'], system_prompt, content)
+        if ch.get('provider') == 'api' and ch.get('api_model'):
+            return self._pipeline_call_external(ch['api_model'], system_prompt, content)
+        # 无钉选 → understand 槽出厂通道（config autowire 后通常已是 llama_cpp）
+        try:
+            from src.vision import config as _vcfg_1517
+            _u = _vcfg_1517.ENGINES.get('understand', {})
+            if _u.get('provider') == 'ollama' and _u.get('model'):
+                return self._pipeline_call_ollama(_u['model'], system_prompt, content)
+            if _u.get('provider') == 'llama_cpp' and _u.get('gguf'):
+                return self._pipeline_call_gguf_path(_u['gguf'], system_prompt, content)
+        except Exception as _e:
+            logger.debug(f"[Pipeline] understand 槽兜底解析失败: {_e}")
+        logger.warning("[Pipeline] HarvenEye 站: 解析不出可用的理解槽大脑（无钉选且出厂通道不可用）")
+        return ""
+
+    def _pipeline_call_gguf_path(self, gguf_path: str, system_prompt: str, content: str) -> str:
+        """GGUF 直路径调用（#1517：llama_cpp 通道的视觉大脑没有 _get_all_models 户口，
+        不能走 _pipeline_call_gguf 的 id 查表，直接按路径加载；带实例缓存）"""
+        try:
+            import os as _os
+            from src.core.llama_engine import LlamaEngine
+            cache_attr = f"_pipe_llama_path_{hash(gguf_path) & 0xffffff}"
+            eng = getattr(self, cache_attr, None)
+            if eng is None or not getattr(eng, 'is_loaded', False):
+                eng = LlamaEngine(_os.path.expanduser(gguf_path))
+                if not eng.is_loaded:
+                    logger.warning(f"[Pipeline] GGUF 加载失败: {gguf_path}")
+                    return ""
+                setattr(self, cache_attr, eng)
+            return (eng.generate(prompt=f"User: {content}\nAssistant:",
+                                 system_prompt=system_prompt,
+                                 temperature=0.6, max_tokens=1024) or "").strip()
+        except Exception as e:
+            logger.error(f"[Pipeline] GGUF 直路径调用失败: {e}")
             return ""
 
+    def _pipeline_call_ollama(self, model_name: str, system_prompt: str, content: str) -> str:
+        """指定 Ollama 模型非流式调用（★ 2026-09-16 本地站可选任意已装模型）"""
+        try:
+            import requests as _rq
+            r = _rq.post('http://localhost:11434/api/generate',
+                         json={'model': model_name, 'system': system_prompt,
+                               'prompt': content, 'stream': False},
+                         timeout=600)
+            if r.status_code != 200:
+                logger.warning(f"[Pipeline] 本地站 HTTP {r.status_code}")
+                return ""
+            return (r.json() or {}).get('response', '').strip()
+        except Exception as e:
+            logger.error(f"[Pipeline] 本地站调用失败: {e}")
+            return ""
+
+    def _pipeline_call_gguf(self, gguf_id: str, system_prompt: str, content: str) -> str:
+        """GGUF 垂直对话模型调用（llama-cpp 引擎，不经过 Ollama）"""
+        try:
+            import os as _os
+            from src.core.vertical_api import _get_all_models
+            m = next((x for x in _get_all_models() if x.get('id') == gguf_id), None)
+            if not m or not m.get('model_path'):
+                logger.warning(f"[Pipeline] GGUF {gguf_id} 不存在或无路径")
+                return ""
+            from src.core.llama_engine import LlamaEngine
+            cache_attr = f"_pipe_llama_{gguf_id}"
+            eng = getattr(self, cache_attr, None)
+            if eng is None or not getattr(eng, 'is_loaded', False):
+                eng = LlamaEngine(_os.path.expanduser(m['model_path']))
+                if not eng.is_loaded:
+                    logger.warning(f"[Pipeline] GGUF {gguf_id} 加载失败")
+                    return ""
+                setattr(self, cache_attr, eng)
+            return (eng.generate(prompt=f"User: {content}\nAssistant:",
+                                 system_prompt=system_prompt,
+                                 temperature=0.6, max_tokens=1024) or "").strip()
+        except Exception as e:
+            logger.error(f"[Pipeline] GGUF 调用失败: {e}")
+            return ""
+
+    def _pipeline_call_external(self, provider: str, system_prompt: str, content: str) -> str:
+        """外脑非流式调用（流水线对话站）— 复用 multi_model_manager 换模型技巧"""
         try:
             from src.core.multi_model_manager import get_multi_model_manager
-            from src.core.skills_manager import get_skills_manager
-
             mm = get_multi_model_manager()
-            foreign_model = collab_manager.foreign_model
-
-            # 检查外脑是否可用
-            all_providers = mm._get_all_providers()
-            provider_info = all_providers.get(foreign_model, {})
-            model_cfg = mm.config.get('models', {}).get(foreign_model, {})
-            needs_key = provider_info.get('needs_key', False)
-
-            if needs_key and not model_cfg.get('api_key'):
-                # 从 multi_models.json 和 config.yaml 两个来源回退读取 API key
+            providers = mm._get_all_providers() or {}
+            info = providers.get(provider, {})
+            model_cfg = mm.config.get('models', {}).get(provider, {})
+            if info.get('needs_key', False) and not model_cfg.get('api_key'):
                 global_keys = mm.config.get('model_keys', {})
-                if global_keys.get(foreign_model):
-                    model_cfg['api_key'] = global_keys[foreign_model]
+                if global_keys.get(provider):
+                    model_cfg['api_key'] = global_keys[provider]
                 if not model_cfg.get('api_key'):
-                    cfg_path = Path(__file__).parent.parent.parent / "config.yaml"
-                    try:
-                        cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
-                        yaml_keys = cfg.get('model_keys', {})
-                        if yaml_keys.get(foreign_model):
-                            model_cfg['api_key'] = yaml_keys[foreign_model]
-                    except Exception as _e: logger.debug(f'[Engine] 忽略错误: {_e}')
-                if not model_cfg.get('api_key'):
-                    logger.warning(f"[Engine] 协作外脑 {foreign_model} 无 API key，跳过")
+                    logger.warning(f"[Pipeline] 外脑 {provider} 无 API Key，跳过")
                     return ""
-
-            if not model_cfg.get('enabled', True):
-                logger.warning(f"[Engine] 协作外脑 {foreign_model} 未启用，跳过")
-                return ""
-
-            # 1. 隐私过滤
-            filtered_msg = collab_manager.filter_user_data(user_message)
-            logger.debug(f"[Engine] 协作外脑隐私过滤: {collab_manager.privacy_level}, "
-                        f"原长度={len(user_message)}, 过滤后={len(filtered_msg)}")
-
-            # 2. 构建 system prompt
-            system_prompt = (
-                "你是 Harven AI 的协作外脑。你的任务是分析用户问题并提供关键见解。\n"
-                "回答要求：简洁、结构化、300字以内。\n"
-                "你的分析结果将交给本地模型 模型做最终整合回答。\n"
-                "不要回答最终答案，只提供：相关知识点、关键事实、分析角度、注意事项。\n"
-            )
-
-            # 注入 Skills JSON 工具描述
-            try:
-                sm = get_skills_manager()
-                tools_prompt = collab_manager.build_tools_prompt(sm, user_message)
-                if tools_prompt:
-                    system_prompt += tools_prompt
-            except Exception as e:
-                logger.debug(f"[Engine] 协作外脑 Skills 注入跳过: {e}")
-
-            # 3. 调用外部模型
             messages = [
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": filtered_msg},
+                {"role": "user", "content": content},
             ]
-
-            old_model = mm.current_model
-            mm.current_model = foreign_model
-            # ★ 修复：不修改 mm.config['current_model']（避免持久化到磁盘）
-            logger.info(f"[Engine] 协作外脑调用: {foreign_model}, privacy={collab_manager.privacy_level}")
-
-            try:
-                response_gen = mm.generate_response(messages, stream=False)
-                result = ""
-                # generate_response 始终返回生成器，yield dict: {'type':'text'/'error','content':'...'}
-                for chunk in response_gen:
-                    if isinstance(chunk, dict):
-                        if chunk.get('type') == 'text':
-                            result += chunk.get('content', '')
-                        elif chunk.get('type') == 'error':
-                            logger.warning(f"[Engine] 协作外脑返回错误: {chunk.get('content', '')}")
-                            return ""
-                    elif isinstance(chunk, str):
-                        result += chunk
-                
-                # ★ 安全清洗：剥离外脑可能产生的幻觉 tool_calls JSON 块
-                result = self._clean_collab_response(result)
-                result = result.strip()[:1500]
-                if result:
-                    logger.info(f"[Engine] 协作外脑返回 {len(result)} 字")
-                return result
-            finally:
-                mm.current_model = old_model
-
+            # ★ #1265（2026-10-29）：模型显式传参，不再临时换血 mm.current_model（竞态根治）
+            result = ""
+            for chunk in mm.generate_response(messages, stream=False, model=provider):
+                if isinstance(chunk, dict):
+                    if chunk.get('type') == 'text':
+                        result += chunk.get('content', '')
+                    elif chunk.get('type') == 'error':
+                        logger.warning(f"[Pipeline] 外脑 {provider} 错误: {chunk.get('content', '')}")
+                        return ""
+                elif isinstance(chunk, str):
+                    result += chunk
+            return self._clean_collab_response(result).strip()
         except Exception as e:
-            logger.error(f"[Engine] 协作外脑调用失败: {e}")
+            logger.error(f"[Pipeline] 外脑 {provider} 调用失败: {e}")
             return ""
+
+    def _pipeline_call_chat(self, participant: str, system_prompt: str, content: str) -> str:
+        """对话站统一入口：local/本地模型 → Ollama 或 llama-cpp；其他 → 外脑 API
+        ★ 2026-11-15：harveneye 独立站（老谭定版：含通用大脑的 HarvenEye 进本地站下拉）"""
+        if participant == 'local':
+            return self._pipeline_call_local(system_prompt, content)
+        if participant == 'harveneye':
+            return self._pipeline_call_harveneye(system_prompt, content)
+        if participant.startswith('ollama:'):
+            return self._pipeline_call_ollama(participant[7:], system_prompt, content)
+        if participant.startswith('gguf:'):
+            return self._pipeline_call_gguf(participant[5:], system_prompt, content)
+        return self._pipeline_call_external(participant, system_prompt, content)
+
+    def _pipeline_participant_name(self, participant: str) -> str:
+        if participant == 'local':
+            _lm = getattr(self.model, 'model', '') or '模型'
+            # ★ #1517：引擎名显示真身（协作站名不再出现「🏠 本地 harveneye」这种引擎牌）
+            if _lm == 'harveneye':
+                return "🏠 HarvenEye"
+            return f"🏠 本地 {_lm}"
+        if participant == 'harveneye':
+            # ★ 2026-11-15：独立 HarvenEye 站（老谭定名：就叫 HarvenEye）
+            return "🏠 HarvenEye"
+            return f"🏠 本地 {participant[7:]}"
+        if participant.startswith('gguf:'):
+            try:
+                from src.core.vertical_api import _get_all_models
+                m = next((x for x in _get_all_models() if x.get('id') == participant[5:]), None)
+                return f"🏠 本地 {m.get('name', participant[5:]) if m else participant[5:]}"
+            except Exception:
+                return f"🏠 本地 {participant[5:]}"
+        try:
+            from src.core.multi_model_manager import get_multi_model_manager
+            mm = get_multi_model_manager()
+            info = (mm._get_all_providers() or {}).get(participant, {})
+            return f"☁️ {info.get('name', participant)}"
+        except Exception:
+            return f"☁️ {participant}"
+
+    def _pipeline_get_tool_model(self, tool_id: str):
+        """执行站：按 ID 找可执行的垂直工具模型（画图/作曲/语音类）"""
+        try:
+            from src.core.vertical_api import _get_all_models
+            return next((m for m in _get_all_models()
+                         if m.get('id') == tool_id and m.get('engine') == 'tool_executor'), None)
+        except Exception as e:
+            logger.error(f"[Pipeline] 读取垂直工具模型失败: {e}")
+            return None
+
+    def _pipeline_fill_params(self, model: dict, upstream_text: str) -> dict:
+        """执行站自动填表：LLM 把上游文字抽成表单参数 JSON，失败回退默认值"""
+        schema = {}
+        defaults = {}
+        for k, p in (model.get('params') or {}).items():
+            schema[k] = {'type': p.get('type'), 'label': p.get('label'),
+                         'options': p.get('options'), 'min': p.get('min'), 'max': p.get('max')}
+            defaults[k] = p.get('default', '')
+        raw = ""
+        try:
+            sys_p = ("你是参数填充器。根据上下文为目标模型生成表单参数。"
+                     "只输出一个 JSON 对象，禁止解释、禁止 markdown 代码块标记。")
+            content = (
+                f"目标模型：{model.get('name')}（{model.get('description', '')}）\n"
+                f"表单定义：{json.dumps(schema, ensure_ascii=False)}\n\n"
+                f"[上下文]\n{upstream_text[:3000]}\n\n只输出参数 JSON。"
+            )
+            raw = self._pipeline_call_local(sys_p, content)
+        except Exception as e:
+            logger.warning(f"[Pipeline] 参数抽取调用失败: {e}")
+        extracted = {}
+        if raw:
+            try:
+                import re as _re
+                m = _re.search(r'\{[\s\S]*\}', raw)
+                if m:
+                    parsed = json.loads(m.group(0))
+                    if isinstance(parsed, dict):
+                        extracted = parsed
+            except Exception as e:
+                logger.warning(f"[Pipeline] 参数 JSON 解析失败: {e}")
+        # 合并：默认值打底，抽取值做选项/范围矫正
+        params = dict(defaults)
+        for k, v in extracted.items():
+            if k not in params:
+                continue
+            p_def = (model.get('params') or {}).get(k, {})
+            opts = p_def.get('options')
+            if opts:
+                sv = str(v)
+                if sv in opts:
+                    params[k] = sv
+                else:
+                    hit = next((o for o in opts if o.startswith(sv) or sv in o), None)
+                    if hit:
+                        params[k] = hit
+            elif p_def.get('type') == 'range':
+                try:
+                    fv = float(v)
+                    params[k] = max(p_def.get('min', 0), min(p_def.get('max', 100), fv))
+                except (TypeError, ValueError):
+                    pass
+            else:
+                params[k] = str(v)
+        # 兜底：prompt 类字段用上游原文（抽取失败也有合理值）
+        if 'prompt' in params and not str(params.get('prompt') or '').strip('-'):
+            params['prompt'] = (upstream_text or '')[:800]
+        return params
+
+    @staticmethod
+    def _split_pipeline_segments(message: str):
+        """★ 2026-09-15 V1.5: / 分段接力（定版方案）— 用 / 或 ／ 把一条消息切成多站命令。
+        段序=站序：段1给站1、段2给站2…每段是该站的明确指令，替代 AI 自行分工。
+        ≥2 段才算分段消息；返回 None 表示普通消息（不打 / 完全不受影响）。
+        反误伤规则（实测 24/7、D:/music、网址都踩过）：
+          每段必须像"一句命令"——含≥2个中文字符；或含中英混合≥3字符；
+          盘符结尾（看看 D:）/ 网址被切开的一律不算分段。"""
+
+        def _looks_like_command(p: str) -> bool:
+            if len(p) < 2:
+                return False
+            cjk = len(_re.findall(r'[\u4e00-\u9fff]', p))
+            if cjk >= 2:
+                return True
+            letters = len(_re.findall(r'[A-Za-z]', p))
+            return (cjk + letters) >= 3 and len(p) >= 3
+
+        import re as _re
+        if not message or ('/' not in message and '／' not in message):
+            return None
+        # ★ 2026-11-15 (#1522-A 老谭实锤修复): 路径 token 保护 — 斜杠两侧全是路径字符（字母数字_.-）
+        #   的连续串整体保护不拆：/data/media/x.wav、网址路径、24/7 一网打尽。
+        #   背景：消息里带 /data/media/ 音频路径时每个 / 都被当命令分隔符 → 一条消息被拆成 12 段。
+        #   中文段不受影响（斜杠后是中文 → 不在字符类 → 照常拆）。
+        #   盘符串（D:/music/歌.mp3）单独保护：冒号截断字符类，用 \S* 连吃整段非空白。
+        _prot = _re.sub(r'\b[A-Za-z]:[/／]\S*',
+                        lambda _m: _m.group(0).replace('/', '\x00').replace('／', '\x01'), message)
+        _prot = _re.sub(r'[A-Za-z0-9_\-.]*(?:[/／][A-Za-z0-9_\-.]+)+',
+                        lambda _m: _m.group(0).replace('/', '\x00').replace('／', '\x01'), _prot)
+        parts = _re.split(r'[/／]', _prot)
+        segs = [p.strip().replace('\x00', '/').replace('\x01', '／') for p in parts if p.strip()]
+        if len(segs) < 2:
+            return None
+        for p in segs:
+            if _re.search(r'[A-Za-z]:\s*$', p):      # "看看 D:" → 路径被切
+                return None
+            if '://' in message and p.startswith(('http://', 'https://', 'ftp://')):
+                return None                           # 网址被切
+            if not _looks_like_command(p):
+                return None                           # 24 / 7 / 2024 等纯数字段
+        return segs
+
+    @staticmethod
+    def _try_playback_route(message: str):
+        """★ 2026-11-15 (#1522-B): 播放意图本地快车道 — 零 token 毫秒级响应。
+        背景：「播放这首歌曲」被 / 分段流水线劫持 → ACE-Step 重新生成一遍歌（老谭实锤）。
+        命中 → 返回带音频路径的响应文本（前端 embedChatAudio 自动渲染成播放器）；
+        非播放意图 → 返回 None 继续正常流程。必须在分段判定之前调用。"""
+        import re as _re2
+        msg = (message or '').strip()
+        if not msg or len(msg) > 40:
+            return None
+        # ① 带具体音频文件名：播放/打开 xxx.wav|mp3…
+        _fm = _re2.search(r'([\w\-\u4e00-\u9fa5]*\.(?:wav|mp3|m4a|ogg|flac))', msg, _re2.I)
+        if _fm and _re2.search(r'播放|打开|放', msg):
+            _picked = ConversationEngine._pick_media_file(_fm.group(1))
+            if _picked:
+                return f"🎵 已找到你要的歌，点下方播放：\n`{_picked}`"
+            return None  # 指定的文件不存在 → 不拦，交给模型解释
+        # ② 纯播放意图短句（严格 fullmatch 白名单，防误伤「播放器怎么装」这类问句）
+        if not _re2.fullmatch(r'[你看]?[给我]?(?:播放?|放|听听?)(?:一下|这?首|这首歌|这首曲子)?(?:歌|歌曲|音乐|曲子)?[吧呗啊呀~\s]*', msg):
+            return None
+        if _re2.search(r'生成|写|做|编|创作|画|歌词', msg):
+            return None  # 生成类意图放行
+        _picked = ConversationEngine._pick_media_file(None)
+        if _picked:
+            return f"🎵 已找到最新生成的歌，点下方播放：\n`{_picked}`\n\n（想换一首？去协作流水线重新生成即可）"
+        return "🎵 音库里还没有歌——先在协作流水线生成一首，再喊我播放。"
+
+    @staticmethod
+    def _pick_media_file(keyword):
+        """从 data/media 挑音频：keyword=None 取最新（同名 mp3 优先）；keyword=文件名模糊匹配。返回 /data/media/ 相对路径或 None。"""
+        try:
+            from pathlib import Path as _Path
+            media = _Path(__file__).parent.parent.parent / 'data' / 'media'
+            if not media.exists():
+                return None
+            exts = ('.wav', '.mp3', '.m4a', '.ogg', '.flac')
+            cands = [p for p in media.iterdir() if p.suffix.lower() in exts and p.is_file()]
+            if not cands:
+                return None
+            if keyword:
+                kw = keyword.rsplit('.', 1)[0]
+                cands = [p for p in cands if kw in p.stem] or \
+                        [p for p in cands if keyword.lower() in p.name.lower()]
+                if not cands:
+                    return None
+                cands.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+            else:
+                cands.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+            top = cands[0]
+            # 同名 mp3 优先（体积小加载快；B 方案转码产物）
+            for p in cands[:5]:
+                if p.stem == top.stem and p.suffix.lower() == '.mp3':
+                    top = p
+                    break
+            return f"/data/media/{top.name}"
+        except Exception:
+            return None
+
+    def _run_collab_pipeline(self, cm, user_message: str):
+        """
+        V1 协作流水线：对话站(外脑/本地) + 执行站(垂直工具) 编排执行。
+        生成器：yield 进度/文本事件；return {'completed': bool, 'error': str}
+        用户消息已在 send() 入口入库，这里只存最终回答。
+        """
+        try:
+            from src.utils.config import get_config
+            steps = (get_config() or {}).get('collab_pipeline') or []
+            if not steps:
+                # 未配置 → 默认经典两步（等价旧行为：外脑分析 → 本地作答）
+                steps = [{'type': 'chat', 'participant': cm.foreign_model},
+                         {'type': 'chat', 'participant': 'local'}]
+            steps = [s for s in steps if isinstance(s, dict) and s.get('type') in ('chat', 'tool')]
+
+            # ★ 2026-09-15 V1.5: / 分段接力 — 段序=站序（定版方案：用户手动挡）
+            segs = getattr(self, '_pipeline_segments', None)
+            _notes = []
+            if segs:
+                _default_pid = cm.foreign_model or 'local'
+                # ★ 2026-11-15 (#1522-C 老谭实锤修复): 补站提示只出一条汇总（原 while 每补一站
+                #   append 一条相同提示 → 12 段消息刷屏 9 条 ℹ️）
+                if len(steps) < len(segs):
+                    _add_n = len(segs) - len(steps)
+                    _base_n = len(steps)
+                    steps.extend([{'type': 'chat', 'participant': _default_pid}] * _add_n)
+                    _notes.append(f"你打了 {len(segs)} 段命令但流水线只有 {_base_n} 站 → 已自动补 {_add_n} 个对话站（{_default_pid}），可去「🦞 协作」面板换成别的模型")
+                if len(steps) > len(segs):
+                    _notes.append(f"段少站多 → 第 {len(segs)+1} 站起共 {len(steps)-len(segs)} 站已跳过")
+                    steps = steps[:len(segs)]
+                if steps[-1].get('type') != 'chat':
+                    steps.append({'type': 'chat', 'participant': _default_pid})
+                    _notes.append("最后一站是生成站 → 已自动补一个整合作答站")
+
+            if len(steps) < 2 or steps[-1].get('type') != 'chat':
+                yield ("error", "❌ 协作流水线配置无效（至少 2 站且最后一站须是对话站）。请点「🦞 协作」重新编排保存。")
+                return {'completed': False, 'error': 'invalid pipeline'}
+
+            from src.core.multi_model_manager import get_multi_model_manager
+            mm = get_multi_model_manager()
+
+            n = len(steps)
+            chain_names = []
+            transcripts = []
+
+            # ★ 分段接力回显：让用户一眼看到"段→站"对应关系
+            if segs:
+                yield ("thinking", f"⛓️ 分段接力 · {len(segs)} 段命令 ↔ {n} 站：按顺序开跑")
+                for _nt in _notes:
+                    yield ("text", f"ℹ️ {_nt}\n\n")
+
+            for i, st in enumerate(steps):
+                is_last = (i == n - 1)
+                if st['type'] == 'chat':
+                    pid = st.get('participant', 'local')
+                    pname = self._pipeline_participant_name(pid)
+                    yield ("pipeline_step", {"index": i, "total": n, "kind": "chat", "name": pname,
+                                             "status": "running",
+                                             "message": f"⛓️ 第 {i+1}/{n} 站 · {pname} 思考中…"})
+                    upstream = self._pipeline_transcripts_text(transcripts)
+                    if is_last:
+                        sys_p = ("你是哈文协作流水线的最终整合站。请基于本站任务和前面各站的产出，"
+                                 "用面向普通人的大白话给出完整最终回答；如果前面生成了文件（图片/音乐/语音），"
+                                 "要逐一介绍成果。不要出现'流水线/第几站/站点'这类技术词。")
+                    else:
+                        sys_p = ("你是哈文协作流水线中的分析站。只输出对后续站点有用的要点、方案或参数建议，"
+                                 "简洁、结构化，不要寒暄，不要重复用户问题。")
+                    # ★ 2026-09-15 V1.5: 分段接力 — 本站任务 = 用户打的第 i 段命令（没打段则用整条消息，兼容自动补站）
+                    _seg = segs[i] if segs and i < len(segs) else None
+                    if _seg:
+                        content = f"【本站任务】{_seg}"
+                        if upstream:
+                            content += f"\n\n[前面各站产出]\n{upstream}"
+                    else:
+                        content = user_message if not upstream else f"{user_message}\n\n[前面各站产出]\n{upstream}"
+                    text = self._pipeline_call_chat(pid, sys_p, content)
+                    if not text:
+                        yield ("error", f"❌ 第 {i+1} 站「{pname}」调用失败，流水线中止。\n\n"
+                                        f"请检查该参与者的 API Key / 服务状态，或在「🦞 协作」里调整编排。")
+                        return {'completed': False, 'error': f'step {i+1} chat failed'}
+                    chain_names.append(pname)
+                    transcripts.append({'kind': 'text', 'name': pname, 'content': text})
+                    yield ("pipeline_step", {"index": i, "total": n, "kind": "chat", "name": pname,
+                                             "status": "done", "summary": text[:120]})
+                else:
+                    model = self._pipeline_get_tool_model(st.get('model', ''))
+                    if not model:
+                        yield ("error", f"❌ 第 {i+1} 站的垂直工具「{st.get('model')}」不可用（需要画图/作曲/语音类可执行模型）。")
+                        return {'completed': False, 'error': f'step {i+1} tool missing'}
+                    tname = f"{model.get('icon', '🧩')} {model.get('name', model.get('id'))}"
+                    # ★ 2026-09-16 用户反馈#3：生成站要有明确的"在生成什么+要等多久"提示
+                    _kind_cn = {'music_generation': '音乐', 'image_generation': '图片',
+                                'speech_synthesis': '语音'}.get(model.get('type'), '作品')
+                    _est_cn = {'music_generation': '约2~8分钟', 'image_generation': '约20秒~2分钟',
+                               'speech_synthesis': '约10~60秒'}.get(model.get('type'), '约1~5分钟')
+                    yield ("pipeline_step", {"index": i, "total": n, "kind": "tool", "name": tname,
+                                             "status": "running",
+                                             "message": f"🎬 正在生成{_kind_cn} · {tname}（{_est_cn}，别关页面）…"})
+                    # ★ 2026-09-15 V1.5: 分段接力 — 生成站的填表依据 = 用户该段命令 + 上游产出
+                    _tool_upstream = self._pipeline_transcripts_text(transcripts)
+                    if segs and i < len(segs):
+                        _tool_upstream = f"【本站任务】{segs[i]}\n\n[上游产出]\n{_tool_upstream}"
+                    params = self._pipeline_fill_params(model, _tool_upstream)
+                    logger.info(f"[Pipeline] 执行站 {model.get('id')} 参数: {json.dumps(params, ensure_ascii=False)[:200]}")
+                    import threading as _th
+                    _box = {}
+
+                    def _worker():
+                        try:
+                            from src.core.vertical_api import _execute_via_tool_executor
+                            _box['r'] = _execute_via_tool_executor(model, params)
+                        except Exception as ex:
+                            _box['e'] = ex
+
+                    w = _th.Thread(target=_worker, daemon=True)
+                    w.start()
+                    # ★ 2026-09-16 生成进度心跳：每30秒报一次，长任务不再像卡死（10分钟硬超时保留）
+                    _elapsed = 0
+                    while w.is_alive():
+                        w.join(timeout=30)
+                        if w.is_alive():
+                            _elapsed += 30
+                            if _elapsed >= 600:
+                                yield ("error", f"❌ {tname} 执行超时（10分钟），流水线中止。")
+                                return {'completed': False, 'error': 'tool timeout'}
+                            yield ("thinking", f"🎬 {tname} 还在生成中…（已 {_elapsed // 60} 分 {_elapsed % 60} 秒，{_est_cn}）")
+                    if _box.get('e'):
+                        yield ("error", f"❌ {tname} 执行失败：{str(_box['e'])[:200]}")
+                        return {'completed': False, 'error': 'tool error'}
+                    r = _box.get('r') or {}
+                    if r.get('error'):
+                        yield ("error", f"❌ {tname} 执行失败：{str(r.get('error'))[:200]}")
+                        return {'completed': False, 'error': 'tool error'}
+                    furl = r.get('file', '')
+                    chain_names.append(tname)
+                    transcripts.append({'kind': 'file', 'name': tname, 'file': furl,
+                                        'output': r.get('output', '')})
+                    yield ("pipeline_step", {"index": i, "total": n, "kind": "tool", "name": tname,
+                                             "status": "done", "file": furl,
+                                             "summary": (r.get('output') or '')[:120]})
+
+            final_text = next((t['content'] for t in reversed(transcripts) if t['kind'] == 'text'), '')
+            if not final_text:
+                yield ("error", "❌ 流水线没有产出最终回答。")
+                return {'completed': False, 'error': 'no final text'}
+
+            chain = ' → '.join(chain_names)
+            self._reply_source = f"⛓️ {chain}"
+            yield ("model_source", {"model": "collab", "label": f"⛓️ {chain}",
+                                    "is_external": False, "mode": "collab"})
+            yield ("source", f"⛓️ 协作流水线 · {chain}")
+            for j in range(0, len(final_text), 120):
+                yield ("text", final_text[j:j + 120])
+            try:
+                save_message(self.conversation_id, "assistant", final_text,
+                             metadata={"source": f"⛓️ {chain}"})
+            except Exception as se:
+                logger.warning(f"[Pipeline] 回答入库失败: {se}")
+            logger.info(f"[Pipeline] 完成: {chain} ({len(final_text)} 字)")
+            return {'completed': True}
+        except Exception as e:
+            logger.error(f"[Pipeline] 流水线异常: {e}")
+            return {'completed': False, 'error': str(e)}
 
     @staticmethod
     def _clean_collab_response(response_text: str) -> str:
@@ -2018,6 +3223,13 @@ SUGGEST:吉他适合多种风格。\\n我建议：民谣 + 吉他 + 90BPM + 平�
         """
         mode = self._query_mode
 
+        # ★ #1242（2026-10-27）：知识库开关即时生效——每条消息刷新偏好
+        #   （_load_preferences 幂等，顺带刷新 temperature/stream，开销毫秒级）
+        try:
+            self._load_preferences()
+        except Exception:
+            pass
+
         msg = user_message.lower()
 
         # 层级一：用户明确要求查资料
@@ -2067,19 +3279,19 @@ SUGGEST:吉他适合多种风格。\\n我建议：民谣 + 吉他 + 90BPM + 平�
             return
 
         # ★ 2026-08-08: 智能消息拆分 — 复杂消息拆成多个操作
-        _split_result = _try_smart_split(user_message, self.conversation_id)
-        if _split_result:
-            try:
-                save_message(self.conversation_id, "user", user_message)
-                save_message(self.conversation_id, "assistant", _split_result)
-            except Exception:
-                pass
-            yield ("text", _split_result)
-            yield ("done", None)
-            return
-            yield ("text", quick_result)
-            yield ("done", None)
-            return
+        # ★ 2026-09-26 模式分开（已定案A）：浮窗💬聊天（pure_chat）=纯聊，跳过记事拦截，
+        #   "永智农场怎么样？"被面板目录文案误判成提醒的根因即此；首页聊天框保留（09-17 开发者要求）
+        if not getattr(self, '_pure_chat', False):
+            _split_result = _try_smart_split(user_message, self.conversation_id)
+            if _split_result:
+                try:
+                    save_message(self.conversation_id, "user", user_message)
+                    save_message(self.conversation_id, "assistant", _split_result)
+                except Exception:
+                    pass
+                yield ("text", _split_result)
+                yield ("done", None)
+                return
 
         # ★ 2026-08-03: 流水线已废弃，由Skill脚本替代
 
@@ -2090,15 +3302,38 @@ SUGGEST:吉他适合多种风格。\\n我建议：民谣 + 吉他 + 90BPM + 平�
         _collab_on = _collab_val_sk and _collab_val_sk != "off"
 
         # ★ 2026-07-17: Skill触发词自动执行
-        _skill_match = _try_skill_trigger_match(user_message)
-        if _skill_match:
-            _skill_name = _skill_match
-            # ★ 协作OFF时阻止垂直Skill
+        # ★ 2026-09-15 V1.5: / 分段接力消息跳过技能触发（否则"作曲"等词会把流水线命令抢给 music-gen 直跑）
+        # ★ 2026-09-26 A方案①：浮窗💬聊天（pure_chat）也跳过——聊天纯聊，技能触发词不再抢答
+        #   （实锤：09-26 开发者在聊天模式问"聊天没有记录?"被触发词机制抢去跑脚本吐JSON报错）
+        _skill_hit = None if (getattr(self, '_pipeline_segments', None) or getattr(self, '_pure_chat', False)) else _try_skill_trigger_match(user_message)
+        _skill_name, _skill_action = _skill_hit if _skill_hit else (None, None)
+        _skill_context = ''  # ★ #988：待模型组织人话的 skill 结构化结果（未命中/纯文本时为空）
+        # ★ #1518（2026-11-14 A方案）：协作OFF命中垂直Skill不再「挡门吞消息」——
+        #   旧版直接 yield 警告 + return，用户问题一个字不答（实锤：老谭贴歌词片段问
+        #   "乡村曲风单词"，片段含"编曲"命中 music-gen → 只弹"需要开启协作"就收工，
+        #   连发 4 次全被吞）。新版：记住命中，跳过技能执行，正常管线回答，
+        #   回答末尾附一句垂直入口提示（见 _stream_three_stage 尾部 _vertical_blocked 分支）。
+        _vertical_blocked = None
+        if _skill_name:
             _vertical_skills = ['music-gen', 'musicgen', 'bark', 'stable-diffusion', 'huatuo']
-            if not _collab_on and _skill_name and any(v in _skill_name.lower() for v in _vertical_skills):
-                yield ("text", f"⚠️ 【{_skill_name}】需要开启协作模式才能执行。\n\n请点击右上角协作模式按钮开启。")
-                yield ("done", None)
-                return
+            if not _collab_on and any(v in _skill_name.lower() for v in _vertical_skills):
+                _vertical_blocked = _skill_name
+                logger.info(f"[Engine] #1518 垂直Skill【{_skill_name}】协作OFF不再拦截，转正常回答+末尾提示")
+                _skill_name = None  # 跳过技能执行，正常管线接管
+
+        # ★ #1518：末尾提示助手——回答出口可能有多个（FC 收笔/FC 非流式/主循环收尾），
+        #   每个出口收笔前调一次，只在有回答且未发过时返回提示（幂等，只附一次）
+        _vb_flushed = [False]
+        def _vb_take_hint():
+            if not _vertical_blocked or _vb_flushed[0]:
+                return ''
+            _vb_flushed[0] = True
+            _vb_labels = {'music-gen': '音乐生成', 'musicgen': '音乐生成', 'bark': '语音合成',
+                          'stable-diffusion': '图片生成', 'huatuo': '医疗问答'}
+            _vb_label = _vb_labels.get(_vertical_blocked.lower(), _vertical_blocked)
+            return (f"\n\n> 💡 这条消息命中了垂直技能【{_vb_label}】，当前协作模式未开启，没有自动执行。\n"
+                    f"> 想真做：开「🤝 协作」模式，或到「🎨 垂直」面板直接使用。")
+        if _skill_name:
             yield ("text", f"🔧 检测到【{_skill_name}】触发词，正在执行...\n\n")
 
             # ★ 2026-08-08: 流式执行 — 实时显示进度
@@ -2106,64 +3341,97 @@ SUGGEST:吉他适合多种风格。\\n我建议：民谣 + 吉他 + 90BPM + 平�
             import json as _json
             full_output = ''
             final_result = None
-            for item in run_skill_script_streaming(_skill_name, 'main', {}, timeout=300):
+            # ★ 2026-09-15: 把用户原话传进 params（此前传 {} → music-gen 等技能提取不到
+            #   "乡村/30秒"这类意图，永远落默认值；技能脚本从 HARVEN_SKILL_PARAMS 读）
+            # ★ 2026-09-26 ③：action 不再写死 'main'——按消息意图从技能动作表选真实值
+            for item in run_skill_script_streaming(_skill_name, _skill_action or 'main', {'message': user_message}, timeout=300):
                 if isinstance(item, str):
                     # 进度行
+                    # ★ 2026-09-26 ④：脚本异常打到 stdout 的错误 JSON 不再直吐用户
+                    #   （实锤：accounting 传 'main' 报"不支持的操作"时原始 JSON 直接上屏）
+                    if item.lstrip().startswith('{') and '"success"' in item:
+                        full_output += item + '\n'
+                        continue
                     full_output += item + '\n'
                     yield ("text", item + '\n')
                 elif isinstance(item, dict):
                     final_result = item
 
-            _skill_result = final_result.get('output', '') if final_result else full_output
+            # ★ 2026-09-26 ④：失败不再把错误JSON/空结果当回答——说人话并转正常管线
+            #   （不存库、不提前收尾，落到下面继续正常回答流程）
+            # ★ #988（2026-10-05 定版拍板）：成功但输出是结构化 JSON（记账流水/查询结果等）
+            #   也不再直接上屏/存库收尾——同样转正常管线，由当前阵营模型组织人话。
+            #   病根实锤（09-05 开发者截图）：accounting 查询结果 JSON 被当进度行直吐上屏（乱码），
+            #   或存库后不上屏（用户只见"正在执行"就没了）。审计报告美化分支保留。
+            _skill_ok = bool(final_result and final_result.get('success'))
+            if not _skill_ok:
+                _err_brief = ((final_result or {}).get('error') or '执行出错').strip().splitlines()[0][:80]
+                yield ("text", f"⚠️ 技能【{_skill_name}】自动执行没成功（{_err_brief}）。我直接回答你：\n\n")
+            else:
+                _skill_result = (final_result or {}).get('output', '') or full_output
 
-            # 解析输出格式
-            full_response = _skill_result[:5000]
-            try:
-                data = _json.loads(_skill_result)
-                if 'stats' in data and 'issues' in data:
-                    stats = data.get('stats', {})
-                    issues = data.get('issues', [])
-                    p0 = [i for i in issues if i.get('severity') == 'P0']
-                    p1 = [i for i in issues if i.get('severity') == 'P1']
-                    p2 = [i for i in issues if i.get('severity') == 'P2']
-                    report = "## 📋 代码健康审计报告\n\n"
-                    report += f"| 指标 | 数值 |\n|------|------|\n"
-                    report += f"| 扫描文件 | {stats.get('files_scanned', 0)} |\n"
-                    report += f"| 总问题数 | {stats.get('total', 0)} |\n"
-                    report += f"| P0（崩溃） | {len(p0)} |\n"
-                    report += f"| P1（功能缺失） | {len(p1)} |\n"
-                    report += f"| P2（废代码） | {len(p2)} |\n\n"
-                    if p0:
-                        report += "### 🔴 P0 严重问题\n\n"
-                        for i in p0:
-                            report += f"- `{i['file']}:{i['line']}` **{i['issue']}**\n"
-                    if p1:
-                        report += "\n### 🟡 P1 功能缺失\n\n"
-                        for i in p1:
-                            report += f"- `{i['file']}:{i['line']}` {i['issue'][:50]}\n"
-                    if p2:
-                        p2_by_file = {}
-                        for i in p2:
-                            p2_by_file.setdefault(i['file'], []).append(i)
-                        report += f"\n### 🟢 P2 废代码（{len(p2)}个）\n\n"
-                        for f in sorted(p2_by_file.keys()):
-                            report += f"- `{f}`: {len(p2_by_file[f])}个\n"
-                    report += f"\n**总结**: "
-                    if p0: report += f"🔴 {len(p0)}个崩溃级问题！"
-                    elif p1: report += f"🟡 {len(p1)}个功能缺失。"
-                    else: report += "🟢 代码健康良好。"
-                    full_response = report
-            except (ValueError, TypeError):
-                pass  # 纯文本输出已在流式yield中显示
-            # ★ 2026-08-06: Skill执行也存消息到数据库
-            try:
-                save_message(self.conversation_id, "user", user_message)
-                save_message(self.conversation_id, "assistant", full_response)
-                logger.info(f"[Engine] Skill消息已存: conv={self.conversation_id}")
-            except Exception as e:
-                logger.warning(f"[Engine] Skill消息保存失败: {e}")
-            yield ("done", None)
-            return
+                # 解析输出格式
+                full_response = _skill_result[:5000]
+                _structured = False
+                try:
+                    data = _json.loads(_skill_result)
+                    if isinstance(data, (dict, list)):
+                        _structured = True
+                    if isinstance(data, dict) and 'stats' in data and 'issues' in data:
+                        stats = data.get('stats', {})
+                        issues = data.get('issues', [])
+                        p0 = [i for i in issues if i.get('severity') == 'P0']
+                        p1 = [i for i in issues if i.get('severity') == 'P1']
+                        p2 = [i for i in issues if i.get('severity') == 'P2']
+                        report = "## 📋 代码健康审计报告\n\n"
+                        report += f"| 指标 | 数值 |\n|------|------|\n"
+                        report += f"| 扫描文件 | {stats.get('files_scanned', 0)} |\n"
+                        report += f"| 总问题数 | {stats.get('total', 0)} |\n"
+                        report += f"| P0（崩溃） | {len(p0)} |\n"
+                        report += f"| P1（功能缺失） | {len(p1)} |\n"
+                        report += f"| P2（废代码） | {len(p2)} |\n\n"
+                        if p0:
+                            report += "### 🔴 P0 严重问题\n\n"
+                            for i in p0:
+                                report += f"- `{i['file']}:{i['line']}` **{i['issue']}**\n"
+                        if p1:
+                            report += "\n### 🟡 P1 功能缺失\n\n"
+                            for i in p1:
+                                report += f"- `{i['file']}:{i['line']}` {i['issue'][:50]}\n"
+                        if p2:
+                            p2_by_file = {}
+                            for i in p2:
+                                p2_by_file.setdefault(i['file'], []).append(i)
+                            report += f"\n### 🟢 P2 废代码（{len(p2)}个）\n\n"
+                            for f in sorted(p2_by_file.keys()):
+                                report += f"- `{f}`: {len(p2_by_file[f])}个\n"
+                        report += f"\n**总结**: "
+                        if p0: report += f"🔴 {len(p0)}个崩溃级问题！"
+                        elif p1: report += f"🟡 {len(p1)}个功能缺失。"
+                        else: report += "🟢 代码健康良好。"
+                        full_response = report
+                        _structured = False  # 已美化成人话报告，直接收尾
+                except (ValueError, TypeError):
+                    _structured = False  # 纯文本输出已在流式yield中显示
+
+                if _structured:
+                    # ★ #988：转正常管线 — 结果注入 enhanced_context，模型组织人话（不在这里收尾）
+                    _skill_context = full_response
+                    logger.info(f"[Engine] #988 skill【{_skill_name}】输出结构化 JSON({len(full_response)}字)，"
+                                f"转当前阵营模型组织人话（快车道不再直吐/存库）")
+                else:
+                    # 纯文本/已美化报告：原逻辑存库收尾
+                    # ★ 2026-08-06: Skill执行也存消息到数据库（★ 2026-09-14 带来源）
+                    try:
+                        _src_skill = getattr(self, "_reply_source", "")
+                        save_message(self.conversation_id, "user", user_message)
+                        save_message(self.conversation_id, "assistant", full_response,
+                                     metadata=({"source": _src_skill} if _src_skill else None))
+                        logger.info(f"[Engine] Skill消息已存: conv={self.conversation_id}")
+                    except Exception as e:
+                        logger.warning(f"[Engine] Skill消息保存失败: {e}")
+                    yield ("done", None)
+                    return
 
         # 判断查询类型（direct/kb_only 都使用分类结果）
         query_info = self._classify_query(user_message)
@@ -2185,10 +3453,197 @@ SUGGEST:吉他适合多种风格。\\n我建议：民谣 + 吉他 + 90BPM + 平�
                 "如果用户问关于电脑/系统/重启/蓝屏等问题，请直接引用上述日志回答。\n"
             )
 
+        # ★ #988（2026-10-05 定版拍板）：快车道 skill 查询结果注入 — 模型组织人话
+        #   架构原则落地：数据提取→本地毫秒级（skill 已查完），结果注入→当前阵营模型组织人话。
+        #   用户问"这个月花了多少钱"，skill 提取的流水 JSON 在这里变成模型的素材而非直接输出。
+        if _skill_context:
+            enhanced_context += (
+                "\n\n## 📊 已查到的本机数据（技能刚从本地数据库提取）\n"
+                "以下是结构化原始数据。请基于它用自然语言回答用户：该汇总的汇总、该分类的分类，"
+                "直接说结论；**严禁原样输出 JSON 或逐条罗列原始字段**。\n"
+                "```\n" + _skill_context[:4000] + "\n```\n"
+            )
+            logger.info(f"[Engine] #988 skill查询结果已注入上下文({len(_skill_context)}字)，由模型组织人话")
+
+        # ★ 2026-09-26 甲（已批准）：找东西先查本机档案 — 预查面板数据注入
+        #   病根：首页「帮我找公司执照照片」直接落外脑 → GLM 只有文件类工具 → 爬目录搜图片
+        #   100% 落空（面板数据/照片都在 sqlite 库里，不在文件系统）。预查后外脑直接引用。
+        if not getattr(self, '_pure_chat', False):
+            try:
+                from src.core.panel_assist import archive_quick_context as _aqc
+                _arch_txt, _arch_hit = _aqc(user_message)
+                if _arch_txt:
+                    enhanced_context += ("\n\n## 🗂️ 本机档案预查结果\n" + _arch_txt + "\n")
+            except Exception as _ae:
+                logger.debug(f"[Engine] 档案预查跳过: {_ae}")
+
+        # ★ 2026-09-27 #882 乙：档案中枢预查（记账等结构化域，本地毫秒级直查）
+        #   病根：查账类问题曾被排除名单放去外脑 → FC 映射查错库（lingzi.db 空库）→ 生 JSON/谎称「暂无记录」
+        #   中枢先查好真实数据注入；给本地还是外脑由用户当前选的模型决定，中枢不挑模型
+        if not getattr(self, '_pure_chat', False):
+            try:
+                from src.core.archive_hub import hub_quick_context as _hqc
+                _hub_txt = _hqc(user_message)
+                if _hub_txt:
+                    enhanced_context += ("\n\n" + _hub_txt + "\n")
+            except Exception as _he:
+                logger.debug(f"[Engine] 档案中枢预查跳过: {_he}")
+
+        # ★ #1210/#1207 数据中枢一次注入（2026-10-25）：问题提到名册成员（或「孩子」泛指）
+        #   → 画像+批改+错题+健康+账单+议程一次喂齐，「帮小明分析这周数学」不再需要翻面板
+        if not getattr(self, '_pure_chat', False):
+            try:
+                from src.core.member_hub import build_context as _mctx
+                _member_txt = _mctx(user_message)
+                if _member_txt:
+                    enhanced_context += ("\n\n" + _member_txt + "\n")
+            except Exception as _me:
+                logger.debug(f"[Engine] 成员中枢注入跳过: {_me}")
+            # ★ #1209 议程进上下文：以前议程只在前端卡片，问管家「今天有什么要办的」模型根本看不到
+            try:
+                from src.core.member_hub import agenda_summary_for_chat as _agsum
+                _ag_txt = _agsum()
+                if _ag_txt:
+                    enhanced_context += ("\n\n" + _ag_txt + "\n")
+            except Exception as _ae2:
+                logger.debug(f"[Engine] 议程注入跳过: {_ae2}")
+
+            # ★ #1314（2026-10-29 2c 模块动态全局注入，定版拍板）：最近 24h 模块动作本地
+            #   毫秒级预查注入——病根（咖啡机事故实锤断层之二）：手机拍照链动作（存照片/
+            #   建台账记录/深识草稿）只落库不进聊天上下文，追问「这个咖啡机什么牌子」模型
+            #   不知道刚拍过咖啡机。#1312 会话回写管「本会话接得上」，这里管「任何会话、
+            #   隔了多少条消息都接得上」。全 try 包裹，查不动就静默跳过，绝不挡回复。
+            if not getattr(self, '_pure_chat', False):
+                try:
+                    from datetime import timedelta as _td2
+                    _since = (datetime.now() - _td2(hours=24)).strftime('%Y-%m-%d %H:%M:%S')
+                    _dyn = []
+                    # 1) 图库 24h 新入库（search 按 id 倒序最新优先，取 10 条再按时间筛）
+                    try:
+                        from src.core import img_store as _ist2
+                        for _it in (_ist2.search(limit=10) or []):
+                            if (_it.get('created_at') or '') >= _since:
+                                _note = (_it.get('note') or '').strip() or '（无说明）'
+                                _dyn.append(f"📷 照片「{_note[:30]}」存入相册「{_it.get('album') or '未分类'}」"
+                                            f"（图库 id={_it['id']}）")
+                    except Exception as _ie2:
+                        logger.debug(f"[Engine] 模块动态·照片跳过: {_ie2}")
+                    # 2) 各面板 24h 新记录（panel_<id> 表 created_at 过滤，每面板最多 3 条）
+                    try:
+                        from src.core.panel_manager import get_panel_manager, DB_PATH as _PM_DB
+                        from src.models.database import get_connection as _gc2
+                        _pm2 = get_panel_manager()
+                        _conn2 = _gc2(str(_PM_DB))
+                        for _p in (_pm2.get_all_panels() or [])[:20]:
+                            _pid = _p.get('id', '')
+                            _pname = _p.get('name') or _pid
+                            try:
+                                _cols = [r[1] for r in _conn2.execute(
+                                    f'PRAGMA table_info("panel_{_pid}")').fetchall()]
+                                if 'created_at' not in _cols:
+                                    continue
+                                _name_col = next((x for x in ('物品名称', '名称', '项目', '事项', '标题', '内容')
+                                                  if x in _cols), '')
+                                _sel = f'id, "{_name_col}"' if _name_col else 'id'
+                                for _r in _conn2.execute(
+                                        f'SELECT {_sel} FROM "panel_{_pid}" WHERE created_at >= ? '
+                                        f'ORDER BY id DESC LIMIT 3', (_since,)).fetchall():
+                                    _nm = ((str(_r[1]).strip() if _name_col and len(_r) > 1 and _r[1] is not None else '')
+                                           or '（新记录）')
+                                    _dyn.append(f"📝 面板「{_pname}」新增记录 #{_r[0]}：{_nm[:30]}")
+                            except Exception:
+                                continue
+                        _conn2.close()
+                    except Exception as _pe2:
+                        logger.debug(f"[Engine] 模块动态·面板跳过: {_pe2}")
+                    # 3) 待确认队列概览（深识草稿/凭证等，模型知道有东西等用户点头）
+                    try:
+                        from src.core import panel_assist as _pa2
+                        _pend2 = _pa2.list_pending() or []
+                        if _pend2:
+                            _dyn.append(f"⏳ 有 {len(_pend2)} 条待确认事项等你点头（管家中心可查）")
+                    except Exception:
+                        pass
+                    if _dyn:
+                        enhanced_context += (
+                            "\n\n## 🕘 最近24小时模块动态（预查注入，可直接引用）\n"
+                            + '\n'.join(_dyn[:12])
+                            + "\n如果用户问「刚才/今天拍了什么、存了什么、记了什么」，直接引用以上动态回答。\n")
+                        logger.info(f"[Engine] #1314 模块动态已注入({len(_dyn)}条)")
+                except Exception as _de2:
+                    logger.debug(f"[Engine] 模块动态注入跳过: {_de2}")
+
+        # ★ #1290（2026-10-29）自检预检注入：自检类问题本地毫秒级采全系统快照喂给模型——
+        #   病根：外脑自检走 FC 一步一步查（6~7 轮 API 往返 30~60 秒），而事实本地一瞬查完。
+        #   方案N同族：「数据提取→本地毫秒级，结果注入→外脑组织人话」，6 轮变 1 轮
+        if not getattr(self, '_pure_chat', False):
+            try:
+                from src.core.system_preflight import preflight_context as _pfc
+                _pre_txt = _pfc(user_message)
+                if _pre_txt:
+                    enhanced_context += ("\n\n" + _pre_txt + "\n")
+            except Exception as _pe:
+                logger.debug(f"[Engine] 自检预检注入跳过: {_pe}")
+
+        # ★ #1256（2026-10-27）面板实况注入：问「面板/模块有几个/有哪些」不再靠模型编——
+        #   病根：这类问题 discover/B 方案/FC 全接不住，裸模型幻觉「三个客厅卧室厨房」（#1255 手机实锤）
+        try:
+            if re.search(r'面板|模块', user_message) and re.search(r'几个|多少|数量|哪些|列表|清单', user_message):
+                from src.core.panel_manager import get_panel_manager as _gpm
+                from src.core.panel_routes import _groups_map as _gmap
+                _vis = [p for p in _gpm().get_all_panels() if not p.get('hidden')]
+                _gm = _gmap()
+                _by_g = {}
+                for _p in _vis:
+                    _by_g.setdefault(_gm.get(_p.get('id'), '常用'), []).append(_p.get('name') or _p.get('id'))
+                _plines = [f"- {g}（{len(ns)}个）：{'、'.join(ns)}" for g, ns in _by_g.items()]
+                enhanced_context += (
+                    f"\n\n## 🧩 面板实况（当前已装 {len(_vis)} 个可见面板，分 {len(_by_g)} 组）\n"
+                    + "\n".join(_plines) +
+                    "\n回答「有几个/有哪些」时直接引用以上真实数字与名字，严禁编造。\n"
+                )
+                logger.info(f"[Engine] #1256 面板实况已注入（{len(_vis)}面板/{len(_by_g)}组）")
+        except Exception as _pne:
+            logger.debug(f"[Engine] 面板实况注入跳过: {_pne}")
+
+        # ★ #1220-C（2026-10-25）长期记忆召回：问句关键词命中用户以前让你长期记住的事实
+        #   → 注入 top3。「儿子对青霉素过敏」这类生活常量，说过一次就要一直记得。
+        #   零网络零嵌入（关键词滑窗打分，宁缺勿滥 min_score=2），失败静默不挡聊天。
+        try:
+            from src.core.memory_facts import recall as _mf_recall
+            _facts = _mf_recall(user_message, limit=3)
+            if _facts:
+                enhanced_context += (
+                    "\n\n## 🧠 长期记忆（用户以前让你记住的事，与当前问题相关时自然引用，别逐条复述）\n"
+                    + "\n".join('- ' + f['fact'] for f in _facts) + "\n"
+                )
+        except Exception as _mfe:
+            logger.debug(f"[Engine] 长期记忆召回跳过: {_mfe}")
+
+        # ★ 2026-09-18 #743 画像主动服务：最近自动学到的新特征，读即清（提及一次不再重复）
+        try:
+            from src.core.profile_auto_updater import get_profile_updater as _gpu
+            _tips = _gpu().consume_pending_insights()
+            if _tips:
+                _tip_lines = "\n".join(
+                    f"- {t.get('dimension_label', t['dimension'])}：{t['label']}" for t in _tips[:5]
+                )
+                enhanced_context += (
+                    "\n\n## 📌 画像更新提醒（主动服务）\n"
+                    "我最近从我们的对话中注意到了这些新特点：\n" + _tip_lines +
+                    "\n如果本次回答与上面内容相关，可以自然地向用户提一句"
+                    "（比如「对了，我注意到你…」）；如果不相关就不要硬提，等合适的时机。\n"
+                )
+        except Exception as _pe:
+            logger.debug(f"[Engine] 画像主动服务注入跳过: {_pe}")
+
         # ★ 2026-07-29: 强化提示词 — 告诉模型有哪些FC工具可用
         try:
             from src.core.builtin_tools import get_tool_definitions as _gtd
-            _fc_count = len(_gtd())
+            # ★ 方案A 联网授权制（2026-10-05 定版拍板）：工具计数与联网提示按🌐开关生成
+            _ws_on = bool(getattr(self, '_web_search_this_query', False))
+            _fc_count = len(_gtd(allow_web_search=_ws_on))
+            _web_line = "- web_search(query) / web_fetch(url) — 联网搜索\n" if _ws_on else ""
             enhanced_context += (
                 f"\n\n## 🔧 可用的FC工具（{_fc_count}个）\n"
                 "你有以下工具可以直接调用（不需要写代码！）：\n"
@@ -2207,7 +3662,7 @@ SUGGEST:吉他适合多种风格。\\n我建议：民谣 + 吉他 + 90BPM + 平�
                 "- speak_text(text,save_path) — 文字转语音\n"
                 "- create_qrcode(data,save_path) — 生成二维码\n"
                 "- get_time() — 获取时间\n"
-                "- web_search(query) / web_fetch(url) — 联网搜索\n"
+                + _web_line +
                 "⚠️ 遇到系统/文件/软件问题时，必须先调用对应FC工具，不要写Python代码！\n"
             )
         except Exception:
@@ -2696,6 +4151,7 @@ SUGGEST:吉他适合多种风格。\\n我建议：民谣 + 吉他 + 90BPM + 平�
                 
                 # ═══ 规则 2：专业模型能力检测 ═══
                 _local_model_name = getattr(self.model, 'model', '')
+                if not isinstance(_local_model_name, str): _local_model_name = ''  # ★ 2026-08-25 类型守护
                 _specialized_keywords = [
                     'embed', 'nomic', 'bge-', 'e5-',
                     'vision', 'clip', 'llava', 'bakllava',
@@ -2712,26 +4168,20 @@ SUGGEST:吉他适合多种风格。\\n我建议：民谣 + 吉他 + 90BPM + 平�
                         )
                     })
                 
-                yield ("thinking", f"☁️ 云地协作 · 外脑 {cm.foreign_model} 分析中...")
-
-                collab_analysis = self._invoke_collab_foreign(cm, user_message)
-                
-                if not collab_analysis:
-                    err_msg = f"❌ 外脑（{cm.foreign_model}）连接失败\n\n云地协作依赖外脑。外脑无法连接，协作已中止。\n\n建议：\n· 检查外脑 API Key\n· 切换到 🏠本地双模 或 关闭协作"
-                    yield ("error", err_msg)
-                    logger.error(f"[Engine] 云地协作: 外脑连接失败")
+                # ★ 2026-09-14 V1：协作流水线（对话站+执行站编排，替代单外脑分析）
+                yield ("thinking", "⛓️ 协作流水线启动...")
+                _pipe_res = yield from self._run_collab_pipeline(cm, user_message)
+                if _pipe_res and _pipe_res.get('completed'):
+                    yield ("done", "")
                     return
-                
-                # 外脑成功 → 直接由外脑输出结果（不经过本地通用模型）
-                yield ("source", f"☁️ {cm.foreign_model} · 外脑主导回答")
-                enhanced_context += f"\n\n## ☁️ 云地协作 · 外脑分析（{cm.foreign_model}）\n{collab_analysis}\n\n你是外脑，请直接回答用户。如果需要调用本地垂直模型（音乐/图片/语音），请描述需求参数。"
-                yield ("thinking", "☁️ 云地协作 · 外脑回答中...")
-                is_collab_skipped = True
-                logger.info(f"[Engine] 云地协作: 外脑={cm.foreign_model} 主导")
+                # 失败原因已在管线内通过 error 事件告知
+                logger.error(f"[Engine] 协作流水线失败: {(_pipe_res or {}).get('error')}")
+                return
             
             # 本地双模协作：本地通用模型调度本地垂直模型
             elif cm.is_local_dual:
                 _local_model = getattr(self.model, 'model', '')
+                if not isinstance(_local_model, str): _local_model = ''  # ★ 2026-08-25 类型守护
                 
                 # ★ 读取本地双模配置（大脑模型偏好）
                 from src.utils.config import get_config
@@ -2811,63 +4261,57 @@ SUGGEST:吉他适合多种风格。\\n我建议：民谣 + 吉他 + 90BPM + 平�
                 logger.debug(f"[Engine] 协作模式跳过: {e}")
 
         # 非协作模式 / 协作不可用时 → 执行 Step 3 路由
+        _route_error = None
+        self._slot_switch_notice = None  # ★ #1310 每次发送重置换槽知情提示
         if not is_collab_skipped:
-            use_external, model_label, model_id = self._route_model_for_query(self._query_mode)
-            logger.info(f"[Engine] 路由: mode={self._query_mode}, use_external={use_external}, label={model_label}")
+            # ★ 2026-08-25 P1: 四元组返回（新增 error_msg 四段式错误）
+            use_external, model_label, model_id, _route_error = self._route_model_for_query(self._query_mode)
+            logger.info(f"[Engine] 路由: mode={self._query_mode}, use_external={use_external}, label={model_label}, error={bool(_route_error)}")
         elif is_collab_skipped:
             # 协作模式：外脑已用，强制用 Ollama 整合
             logger.info(f"[Engine] 协作模式: 跳过路由，强制使用本地模型 整合")
 
         # ═══════════════════════════════════════════════════════════════
-        # 外脑连接规则（2026-07-07 更新）：
-        # - direct 模式（用户明确选了外脑）：连接失败 → 报错停止，绝不偷偷用本地顶替
-        # - 协作模式：外脑+本地缺一不可。任何一个失败 → 报错停止，不降级、不冒充
+        # ★ 2026-08-25 P1: 严格路由错误（四段式：选择→状态→原因→指引）
+        # 用户选择大于一切——不降级、不冒充、不自动切换，错误明确告知
         # ═══════════════════════════════════════════════════════════════
         if is_collab_skipped:
-            # ★ 协作模式已通过自己的验证流程（外脑成功 + Ollama在线），跳过此检查
+            # 协作模式已通过自己的验证流程（外脑成功 + Ollama在线），跳过此检查
             model_label = "本地模型"
             model_id = "ollama"
-            pass
-        elif not use_external and self._query_mode in ("direct", "auto"):
-            if self._query_mode == "direct":
-                # ★ 2026-07-05: direct 模式外脑连不上，友好提示+引导配置
-                err_msg = (
-                    f"❌ 外脑（{model_label}）连接不成功\n\n"
-                    f"可能原因：\n"
-                    f"· API Key 未配置或已失效\n"
-                    f"· 模型未启用\n"
-                    f"· 网络无法访问模型服务端\n\n"
-                    f"📋 配置外脑步骤：\n"
-                    f"1. 点击右上角 ⚙️ 设置按钮\n"
-                    f"2. 进入「🤖 模型管理」标签\n"
-                    f"3. 点击子导航的「🔀 多模型」按钮\n"
-                    f"4. 找到想要使用的外部模型（如 DeepSeek/GLM/豆包）\n"
-                    f"5. 填入 API Key 并保存\n"
-                    f"6. 确保模型已启用（开关打开）\n"
-                    f"7. 回到对话框重新发送消息\n\n"
-                    f"💡 如果您的电脑配置较高（有独立显卡），也可以切换到「🏠本地模式」使用本地模型。"
-                )
-                yield ("error", err_msg)
-                logger.error(f"[Engine] direct模式外脑不可用: {model_label}, 中止请求")
-                return  # 直接结束，不用本地模型 顶替
-            # ★ 2026-07-07: auto模式已取消，direct模式外脑失败直接中止
+        elif _route_error:
+            # ★ #1264（2026-10-29 定版拍板）：删除 #1251 代答特例——
+            #   旧逻辑「主模型=HarvenEye + 外脑模式 → Eye 直接代答」违反铁律 0
+            #   （页面上选外脑、回答却是本地，开发者 10-29 实锤）。当时为修手机端
+            #   「没给出有效回答」的断裂体验，但该显示问题已由 #1256 拒答落库根治，
+            #   特例失去存在理由。铁律 0（2026-10-25 死命令）优先：外脑模式下没选外脑
+            #   → 一律明确拒答指引，绝不本地顶包。
+            # ★ #1256：拒答引导也落库（此前只 yield error 不入库 → 手机/电脑会话记录缺这条回答，
+            #   电脑端打开就是空白；落库后引导文案两边可见）
+            _guide = f"❌ {_route_error}"
+            try:
+                save_message(self.conversation_id, "assistant", _guide,
+                             metadata={"source": "⚠️ 路由提示"})
+            except Exception as _se:
+                logger.warning(f"[Engine] 路由提示入库失败: {_se}")
+            yield ("error", _guide)
+            logger.error(f"[Engine] 路由失败（严格模式不切换）: {_route_error[:80]}")
+            return  # 严格模式：错误即停止，绝不用其他模型顶替
 
         # 外脑路由成功时的 thinking 提示 + 来源标识
         if self._query_mode == "direct" and use_external:
             yield ("thinking", f"🤖 外脑模式 · 正在连接 {model_label}...")
+            # ★ #1310（1c 换槽知情）：发生自动换槽时必须让用户看见，不能只写日志
+            if getattr(self, '_slot_switch_notice', None):
+                yield ("thinking", self._slot_switch_notice)
+                self._slot_switch_notice = None
             # ★ 关键：注入来源标识，让前端能显示模型来源
+            self._reply_source = model_label  # ★ 2026-09-14 来源持久化
             yield ("model_source", {
                 "model": model_id,
                 "label": model_label,
                 "is_external": True,
                 "mode": "direct"
-            })
-        # ★ 2026-07-07: auto模式已取消，只有direct模式使用外脑
-            yield ("model_source", {
-                "model": model_id,
-                "label": model_label,
-                "is_external": True,
-                "mode": "auto"
             })
         elif not use_external:
             if is_collab_skipped:
@@ -2880,6 +4324,7 @@ SUGGEST:吉他适合多种风格。\\n我建议：民谣 + 吉他 + 90BPM + 平�
                     _cm_ref = locals().get('cm')
                     collab_model = getattr(_cm_ref, 'foreign_model', '外部模型') if _cm_ref else '外部模型'
                     collab_label = f"☁️ 协作 · {collab_model}"
+                self._reply_source = collab_label  # ★ 2026-09-14 来源持久化
                 yield ("model_source", {
                     "model": "collab",
                     "label": collab_label,
@@ -2888,6 +4333,7 @@ SUGGEST:吉他适合多种风格。\\n我建议：民谣 + 吉他 + 90BPM + 平�
                 })
             else:
                 if _agent_override_prompt and _agent_pref != "external":
+                    self._reply_source = f"🧩 {registry._agents[_agent_matched]['name']} · 本地"  # ★ 2026-09-14
                     yield ("model_source", {
                         "model": _agent_matched,
                         "label": f"🧩 {registry._agents[_agent_matched]['name']} · 本地",
@@ -2895,9 +4341,17 @@ SUGGEST:吉他适合多种风格。\\n我建议：民谣 + 吉他 + 90BPM + 平�
                         "mode": "agent"
                     })
                 else:
+                    # ★ 2026-09-15 用户反馈：本地标签带具体模型名（"🏠 本地 · qwen2.5:14b"，不再只写"本地模型"）
+                    _local_name = ''
+                    try:
+                        _local_name = (getattr(self.model, 'model', '') or '').strip()
+                    except Exception:
+                        _local_name = ''
+                    _loc_label = f"🏠 本地 · {_local_name}" if _local_name else "🏠 本地模型"
+                    self._reply_source = _loc_label  # ★ 2026-09-14 来源持久化
                     yield ("model_source", {
-                        "model": "local",
-                        "label": "本地模型",
+                        "model": _local_name or "local",
+                        "label": _loc_label,
                         "is_external": False,
                         "mode": self._query_mode
                     })
@@ -2927,6 +4381,11 @@ SUGGEST:吉他适合多种风格。\\n我建议：民谣 + 吉他 + 90BPM + 平�
 - 获取时间 → 调用 `get_time()`
 - 扫描系统 → 调用 `scan_system()`
 - 安装Python包 → 调用 `install_package(name)`
+
+### 🤐 回答纪律（2026-10-05 开发者定）
+- **正文只写最终答案**。工具执行过程系统会以过程卡展示给用户，不要在回答里复述
+  "我做了什么/我搜了几轮/第一步第二步"这类操作流水账。
+- 查到的资料直接消化后给结论，引用来源一句话即可。
 
 ### 📝 写代码（仅当没有对应FC工具时）
 **只有当没有FC工具能完成任务时，才写```python代码块。**
@@ -3027,6 +4486,7 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
             use_minimal_prompt = False  # Agent prompt 不追加额外能力描述
             # Agent 用外脑模式时的标识
             if _agent_pref == "external":
+                self._reply_source = f"🧩 {registry._agents[_agent_matched]['name']} · 外脑"  # ★ 2026-09-14
                 yield ("model_source", {
                     "model": _agent_matched,
                     "label": f"🧩 {registry._agents[_agent_matched]['name']} · 外脑",
@@ -3089,7 +4549,7 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
 7. **垂直模型**：多种专业垂直模型统称（已内置6种+动态扩展）
    - 已内置：🎵音乐生成 / 🎨图片生成 / 🔊语音合成 / 💻代码生成 / 📊数据分析 / 🌐文档翻译
    - ★ 垂直模型独立调用，不经过知识库/Skills/画像/习惯
-8. **图片识别**：查看分析用户上传的图片（用minicpm-v:8b视觉模型）
+8. **图片识别**：查看分析用户上传的图片（由用户选择的视觉模型处理，本地推荐 qwen3-vl:8b-instruct，也可配外脑视觉）
 9. **联网搜索**：Bing内置+SearXNG可选增强，点🌐按钮或关键词触发
 10. **模型安装**：对话驱动安装各种模型
     - 支持pip/HuggingFace/ModelScope(魔搭)/GitHub/Ollama五种安装方式
@@ -3147,7 +4607,7 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
 - 新对话中用户问起时，你可以从记忆中知道之前做过什么
 - 如果你不确定之前是否做过，先检查本地目录
 
-""" + LOCAL_CAPABILITIES
+""" + LOCAL_CAPABILITIES + VOICE_DISCIPLINE  # ★ #929-A5 外脑直连同样遵守语音播报铁律（所有模型一视同仁）
 
             # ★ 注入记忆系统描述 + 实际记忆内容（所有模式共享）
             system_prompt += """
@@ -3204,6 +4664,29 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
 """
             # 保存原 system_prompt，在其前方插入模型真实身份
             system_prompt = _model_identity + system_prompt
+
+            # ★ 2026-09-16 对话框导航（B路线）：模型可输出 [NAVIGATE:路径] 标记，前端识别后跳转
+            # 规则刻意收紧：仅祈使（打开/进入/切换）才输出标记，提及/询问绝不输出，防止聊天误跳
+            try:
+                _nav_panels = ''
+                try:
+                    from src.core.panel_manager import get_panel_manager as _gpm2
+                    _pl = (_gpm2().get_all_panels() or [])[:40]
+                    _nav_panels = "\n".join(
+                        f"- 「{p.get('name', '')}」 → [NAVIGATE:/panel/{p.get('id', '')}]" for p in _pl if p.get('id')
+                    )
+                except Exception:
+                    _nav_panels = ''
+                system_prompt += f"""
+
+## 🧭 页面跳转指令（严格条件）
+本界面可以跳转页面。**仅当主人明确要求"打开/进入/切换"某个页面或面板时**：先用一句话确认（如"好的，已为你打开～"），然后在回复**最末尾**单独加一个标记（占一行）。主人只是**提到或询问**某页面（如"家庭面板里有什么"），**绝对不要**加标记，正常回答即可。
+固定页面：面板中心 [NAVIGATE:/panels] · 知识库 [NAVIGATE:/knowledge] · 技能库 [NAVIGATE:/skills] · 任务 [NAVIGATE:/tasks] · 邮箱 [NAVIGATE:/mail] · HarvenHub [NAVIGATE:/hub] · 模型中心 [NAVIGATE:/models] · 设置 [NAVIGATE:/settings] · 运行状态 [NAVIGATE:/status] · 时间轴 [NAVIGATE:/timeline] · 创作工坊 [NAVIGATE:/studio] · 更多 [NAVIGATE:/more] · 家庭模板 [NAVIGATE:/space/family] · 公司模板 [NAVIGATE:/space/company] · 创作模板 [NAVIGATE:/space/create]
+已安装面板（按名字对号入座，找不到就别加标记）：
+{_nav_panels or '（暂无面板清单，不要输出面板标记）'}
+"""
+            except Exception as _e:
+                logger.debug(f"[Engine] 导航提示注入失败: {_e}")
 
             # 注入专项培养系统提示词（只注入内容，不注入 JSON 输出指令）
             if self._specialization_prompt and self._specialization_prompt.strip():
@@ -3313,22 +4796,24 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
                 logger.debug(f"[Engine] Skills JSON 工具注入跳过: {e}")
 
         # ===== 所有模式共享：注入脚本Skill列表（让模型知道有哪些可执行技能）=====
+        # ★ 2026-10-20 第四批4.1 Skill目录式：默认只注入「名+一句话+触发词」省 token；
+        #   命中触发词的技能才展开动作清单+调用方式（装 20 个技能不再每消息多几千 token）
         try:
             from src.core.scripts_runner import list_skill_scripts
             from pathlib import Path as _Path
             script_skills = list_skill_scripts()
             if script_skills:
-                skills_list_text = ""
+                skills_brief = ""       # 目录：名+一句话+触发词
+                skills_hit = ""         # 命中：展开动作+用法
+                _msg_l = (user_message or '').lower()
                 for ss in script_skills:
                     sname = ss.get('skill_name', '')
-                    # 读SKILL.md获取描述和触发词
                     skill_md = Path(__file__).parent.parent.parent / 'data' / 'skills' / sname / 'SKILL.md'
                     desc = ''
                     triggers = ''
                     if skill_md.exists():
                         try:
                             md_content = skill_md.read_text(encoding='utf-8')
-                            # 解析YAML frontmatter
                             if md_content.startswith('---'):
                                 end = md_content.find('---', 3)
                                 if end > 0:
@@ -3341,29 +4826,90 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
                                             triggers = yl.split(':', 1)[1].strip()
                         except Exception as _e:
                             logger.debug(f"[Engine] 忽略错误: {_e}")
-                    actions = [a.get('name', '') for a in ss.get('actions', [])]
-                    skills_list_text += f"- {sname}"
+                    skills_brief += f"- {sname}"
                     if desc:
-                        skills_list_text += f"：{desc}"
+                        skills_brief += f"：{desc}"
                     if triggers:
-                        skills_list_text += f"（触发词：{triggers}）"
-                    if actions:
-                        skills_list_text += f"（可用动作：{', '.join(actions)}）"
-                    skills_list_text += "\n"
+                        skills_brief += f"（触发词：{triggers}）"
+                    skills_brief += "\n"
+                    # 命中判定：触发词出现在用户消息里
+                    _hit = triggers and any(
+                        t.strip() and t.strip().lower() in _msg_l
+                        for t in triggers.replace('，', ',').split(',') if t.strip())
+                    if _hit:
+                        actions = [a.get('name', '') for a in ss.get('actions', [])]
+                        skills_hit += f"\n### 命中技能：{sname}（{desc}）\n"
+                        if actions:
+                            skills_hit += f"可用动作：{', '.join(actions)}\n"
+                        skills_hit += f"调用：execute_skill_script(skill_name=\"{sname}\", action=\"动作名\", params={{}})\n"
 
                 system_prompt += f"""
 
-## 🔧 可执行技能（Script Skills）
-以下技能有可执行脚本，当用户请求匹配触发词时，**优先用 execute_skill_script 工具调用对应技能**，不要自己写代码：
-
-{skills_list_text}
-调用方式：execute_skill_script(skill_name="技能名", action="main", params={{}})
+## 🔧 可执行技能目录（Script Skills）
+{skills_brief}
 """
-                logger.info(f"[Engine] 注入 {len(script_skills)} 个脚本Skill到系统提示词")
+                if skills_hit:
+                    system_prompt += f"""
+### 本条消息命中的技能（展开用法，优先用它，不要自己写代码）：
+{skills_hit}
+调用方式：execute_skill_script(skill_name="技能名", action="该技能可用动作里的一个", params={{}})
+（★ action 必须从命中技能的"可用动作"里选）
+其他未命中技能的动作清单可用 tool_schema(skill_name="execute_skill_script") 查询。
+"""
+                else:
+                    system_prompt += """
+（用户请求若明确匹配以上某技能的触发词，用 execute_skill_script(skill_name, action, params) 调用；动作清单可用 tool_schema 查询。）
+"""
+                logger.info(f"[Engine] 注入 {len(script_skills)} 个脚本Skill目录（目录式，命中展开 {skills_hit.count('命中技能')} 个）")
         except Exception as e:
             logger.debug(f"[Engine] 脚本Skill注入跳过: {e}")
 
         # ===== 所有模式共享：注入增强上下文（知识库/GitHub/搜索结果）=====
+        # ★ 2026-10-22 教练层·环境简报注入：让 AI「记得」全家录入态势（本地统计~200字，0额外调用）
+        try:
+            from src.core.coach_engine import daily_brief, COACH_RULES as _CR
+            _brief_parts = []
+            _b = daily_brief()
+            if _b.get('items'):
+                _brief_parts.append('今日待办：' + '；'.join(i['text'] for i in _b['items'][:4]))
+            for _pid, _fn in _CR.items():
+                try:
+                    _o = _fn()
+                    if _o.get('text'):
+                        _brief_parts.append(f'[{_pid}] ' + str(_o['text'])[:70])
+                except Exception:
+                    pass
+            if _brief_parts:
+                enhanced_context += ('\n\n## 🧑‍🏫 教练环境简报（本地实时统计，供参考不必复述）\n'
+                                     + '\n'.join(_brief_parts))
+        except Exception:
+            pass
+        # ★ 2026-10-21 速度包：菜谱/菜单类请求——直接注入冰箱库存快照，让外脑一轮出菜单
+        #   （实锤：「海蛎子做面」走 query_panel 工具轮+生成轮=28s；库存前置后省掉工具往返）
+        try:
+            _recipe_kw = ('菜谱', '菜单', '做什么菜', '做个面', '做面', '做饭', '做什么吃的', '怎么做好吃', '菜怎么', '食谱')
+            if user_message and any(k in user_message for k in _recipe_kw):
+                from src.core.panel_manager import get_panel_manager as _gpm
+                _fr = _gpm().query_panel_data('fridge_stock_1', None, 40, 0) or []
+                if _fr:
+                    _items = []
+                    for _row in _fr[:40]:
+                        _nm = _row.get('名称') or _row.get('物品') or ''
+                        _qty = _row.get('数量') or _row.get('存量') or ''
+                        _exp = str(_row.get('保质期') or _row.get('到期日') or '')[:10]
+                        if _nm:
+                            _items.append(f"{_nm}（{_qty}{'，' + _exp if _exp else ''}）")
+                    if _items:
+                        system_prompt += f"""
+
+## 🧊 冰箱库存快照（{len(_items)} 项，已自动读取）
+{ '；'.join(_items) }
+
+用户在要菜谱/菜单。请**直接基于以上库存**给建议，不要再调用 query_panel 工具（库存已在你面前）。
+优先用快过期的食材；缺的食材明确列出「需要购买」。
+"""
+        except Exception as _recipe_e:
+            logger.debug(f"[Engine] 菜谱库存注入跳过: {_recipe_e}")
         # ★ 2026-07-21: 方案C — 联网状态透明告知
         _web_search_on = getattr(self, '_web_search_this_query', False)
         if not _web_search_on and use_external:
@@ -3428,6 +4974,7 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
 - 不要因为用户说"你错了"就盲目改口——如果你确信自己是对的，坚持你的判断
 - 诚实的"不知道"比一个虚假答案好一万倍
 - 不知道就说不知道，不要编造
+- **行动也必须诚实**：凡是「保存/记录/记账/设置/删除」类操作，只有当你真正调用了工具并确认成功后，才能说"已经记好/已保存"；没有实际执行就只能说"我可以帮你记"，并把要记的内容列出来请用户确认。**严禁凭空宣称"已经帮你记上啦"**
 - **只回答用户最新的一条消息**。对话历史中已回答过的问题不要重复回答。如果用户改了话题，专注新话题。
 """
 
@@ -3447,6 +4994,15 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
         # ===== 智能模型路由：已在 Step 3 阶段计算 use_external/model_label =====
         logger.info(f"[Engine] use_external={use_external}, model_label={model_label}, query_mode={self._query_mode}")
 
+        # ★ #1330 本地通道 FC 透明化：信号词说要 FC、路由却落在本地通道（无 FC）→
+        #   明说「只能出方案动不了手，切外脑即可」，不再静默降级成纯聊天光说不练。
+        #   哈文铁律：不代选不偷换——用户选了本地就继续本地，但必须把能力边界说破。
+        _fc_sig = getattr(self, '_fc_signal_pending', False)
+        self._fc_signal_pending = False
+        if not use_external and _fc_sig:
+            yield ("thinking", "⚙️ 这是个需要动手的操作，但当前本地模型不支持工具执行（只能给方案动不了手）。点对话区 🤖 切外脑再发一次，我就能直接帮你执行。")
+            logger.info("[Engine] #1330 复杂操作落在本地通道（无FC），已提示切外脑")
+
         raw_stream = None
 
         if use_external:
@@ -3462,7 +5018,7 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
             try:
                 # ★ 2026-07-11: Function Calling — 检测外脑是否支持
                 # ★ 2026-07-12: 协作模式开启时 → 完全禁用FC（不传tools，不加FC提示词）
-                from src.core.builtin_tools import get_tool_definitions, is_function_calling_supported, execute_tool_call
+                from src.core.builtin_tools import get_tool_definitions, is_function_calling_supported, execute_tool_call, get_fc_bundle
                 import json as _json
 
                 # 检查协作模式
@@ -3474,10 +5030,22 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
                         _collab_val = "off"
 
                 fc_tools = None
+                _tool_catalog_text = ''
                 if is_function_calling_supported(model_id) and (_collab_val == "off" or not _collab_val):
                     # ★ 只在非协作模式时启用FC
-                    fc_tools = get_tool_definitions()
-                    logger.info(f"[Engine] ★★★ Function Calling 已启用, {len(fc_tools)}个工具 (协作模式={_collab_val}) ★★★")
+                    # ★ A批A3(2026-09-13): 目录式注入 — 常驻高频工具全量 + 其余只进"名+一句话"目录
+                    # ★ 方案A 联网授权制（2026-10-05 定版拍板）：联网工具按🌐开关注入——
+                    #   未授权时 web_search/web_fetch 不进常驻清单也不进目录，模型无从自主联网
+                    fc_tools, _tool_catalog_text = get_fc_bundle(
+                        allow_web_search=bool(getattr(self, '_web_search_this_query', False)))
+                    # ★ 2026-09-27 #885 E1 纯聊天快车道（已批准）：闲聊/角色扮演/介绍解释类
+                    #   跳过首轮非流式检测（省一整轮全文生成等待），直接走下方流式分支；
+                    #   数据/操作类问题不受影响，照常走 FC
+                    if fc_tools and self._fc_pure_chat_skip(user_message):
+                        fc_tools = None
+                        logger.info("[Engine] 纯聊天快车道：判定为闲聊/介绍类，跳过FC首轮非流式，直接流式")
+                    else:
+                        logger.info(f"[Engine] ★★★ Function Calling 已启用(目录式), {len(fc_tools)}个常驻工具+目录 (协作模式={_collab_val}) ★★★")
                 else:
                     if _collab_val and _collab_val != "off":
                         logger.info(f"[Engine] 协作模式({ _collab_val }) → FC完全禁用，走协作流程")
@@ -3488,26 +5056,49 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
                 if fc_tools:
                     # ★ 2026-08-13: 强化FC提示词 — 必须调工具，禁止写代码
                     # ★ 2026-08-16: i18n — 按用户消息语言选提示词（含CJK用中文版，否则英文版）
+                    # ★ 2026-09-26 语言判定修复（实测实锤冒英文）：单句全是文件名/路径时判不出，
+                    #   扩到最近对话历史，仍判不出默认中文（哈文是中文产品）
                     _fc_messages = list(all_messages)
-                    _has_cjk = any('\u4e00' <= ch <= '\u9fff' for ch in user_message)
+                    _has_cjk = any('\u4e00' <= ch <= '\u9fff' for ch in (user_message or ''))
+                    if not _has_cjk:
+                        for _hm in reversed(all_messages[-6:]):
+                            _hc = _hm.get('content', '') if isinstance(_hm, dict) else ''
+                            if isinstance(_hc, str) and any('\u4e00' <= ch <= '\u9fff' for ch in _hc):
+                                _has_cjk = True
+                                break
                     if _has_cjk:
                         _fc_hint = (
                             "\n★★★ FC已启用 ★★★\n"
                             "1. 优先调工具，不写代码。路径示例：\"G盘虚拟飞行\"→path=\"G:\\\\虚拟飞行\"\n"
-                            "2. 工具映射：检查目录→list_dir | 读文件→read_file | 删除→delete_path | 执行命令→execute_command | 查软件→check_software\n"
+                            "2. 工具映射：检查目录→list_dir | 读文件→read_file | 删除→delete_path | 执行命令→execute_command | 查软件→check_software | 查面板档案记录→query_panel（用户找自己存过的信息如执照/物品位置时用，不要爬目录搜文件；查账目可传 time_range=今天/本月/近7天）\n"
+                            "   ★ 查账/花销类问题（\"今天花了多少钱\"\"本月账单\"）：若上下文已给出【档案中枢·已查到的真实数据】，直接用那份数据用人话回答，禁止再调任何工具、禁止输出 JSON 原文。没有预查数据时才调 query_panel(time_range=…)\n"
+                            "   记账（如\"47.6 炸酱面\"\"买咖啡50\"）→skill_script(action=\"execute\", skill_name=\"accounting\", script_action=\"main\", params={\"action\":\"add\",\"amount\":金额数字,\"category\":\"餐饮/买菜/交通/学习/其他\",\"note\":\"项目名\"})——参数已给全，禁止再调 tool_schema 查它\n"
+                            "   2.5 ★ 用户报健身/运动完成情况（\"今晚练的是腿\"\"今天跑步5公里\"）→ add_panel_record(panel_name=\"健身记录\", fields={\"日期\":\"今天\",\"运动项目\":\"练腿\",…时长/强度有就填})——健身数据要进面板台账才出统计，禁止只塞随身记了事；字段名不确定先 edit_panel(action=\"list\") 查。★带「成员」列的面板（健身/餐饮/健康等）fields 必带 成员=谁（用户说了名字填名字；没说就留空不填成员列，不要猜）。健身计划提醒（\"后天提醒我练胸\"）→ set_reminder(title=\"练胸\", remind_at=解析时间, module=\"fitness\")\n"
                             "3. 多步操作：拿到结果后继续调工具，直到任务完成\n"
                             "4. 清空回收站→execute_command(\"powershell -Command Clear-RecycleBin -Force\")\n"
                             "   验证：list_dir(C:\\\\$Recycle.Bin)——SID文件夹还在是正常的，里面没文件=已清空\n"
                             "5. 卸载→execute_command(\"winget uninstall XX\")→验证check_software\n"
                             "6. 不要动注册表！不要reg delete！不要rd /s /q系统目录！\n"
                             "7. 不解释，直接调工具。调完所有工具后用中文总结\n"
+                            "7.5 ★★ 工具调用纪律（省时铁律）：需要查数据/执行操作时，**第一轮就直接调工具**，严禁第一轮先写解释性文字（如「让我帮您查一下」）——每多一轮就多等 10 秒。同类查询能一次调完就一次调完（可并行多个工具），不要拆成多轮慢慢调\n"
+                            "7.6 ★★ 并行调用铁律（#1290 省时）：互相不依赖的多个查证/操作（如查端口+查进程+读配置+查数据库），必须在**同一轮里一次返回多个 tool_calls** 并行发起，严禁一轮只调一个工具分四五轮慢慢查——每多一轮用户就多等 5~10 秒。只有下一步的参数依赖上一步结果时才允许串行。另外：上下文里若已给出预查数据（【自检快照】/【档案中枢】/【本机档案预查】等），直接引用作答，相关调查类工具一律禁调\n"
                             "8. 回复用中文，不输出JSON原始数据\n"
+                            "9. ★ 介绍/解释/咨询类问题（如「你有什么技能」「XX是什么」「怎么用」）直接凭已有知识回答，禁止为了回答去 list_dir/read_file 翻文件——只有用户明确要查看/操作具体文件时才用文件工具\n"
+                            "10. ★★ 消息里含【文件:…】内容或「系统注」说明时：分析直接基于给出的内容作答，严禁为寻找该文件去 list_dir/execute_command 全盘搜索（Downloads/Desktop/H盘 等一律禁止）——文件由用户上传，不在硬盘其他位置，搜也搜不到\n"
+                            "11. ★★ 找图片/照片类请求（包括生活照：自拍/风景/美食/家人/宠物/截图，如「找上次拍的晚饭」「孩子笑的那张照片」）：直接一步调 search_images 工具（哈文图库总账：手机拍照/聊天发图/面板附件/知识库图片全在里面），不要先查工具参数、不要浏览目录、禁止用 list_dir/execute_command/python 代码去任何磁盘目录翻找图片文件（C盘/D盘/G盘/H盘一律禁止）——图库没有就翻不到，只会浪费时间。搜不到就诚实说「图库里没有这个描述的照片」，并建议用户到「记忆相册」页面找或补充描述。找到后在回答里用 Markdown 图片语法展示：![照片](返回的url)——前端会自动渲染成可看的图\n"
+                            "12. ★★ 绝不输出 tool_calls JSON：想调工具就用真正的工具通道；没有合适的工具就用文字说明，把 {\"tool_calls\":…} 写进回答属于严重错误，用户会看到一坨代码\n"
+                            "13. ★ 用户想打开/进入某个板块或页面时（如「打开图片库」「带我去知识库」「看看记账面板」「我要看照片」）：先简短回应，然后在回答末尾单独一行输出跳转标记：【打开:/photos】。可用页面：/photos=图片库（总存放地）、/memory=记忆相册（生活照/自拍/风景/美食，一句话找照片+AI修图）、/panels=面板列表（不确定面板ID时跳这个）、/knowledge=知识库、/skills=技能库、/tasks=任务、/mail=邮箱、/models=模型中心、/settings=设置、/status=运行状态、/timeline=时间轴、/hub=市场。常用面板直达（ID必须一字不差）：/panel/accounting_daily_1=记账、/panel/home_calendar=日历待办、/panel/home_items=物品存放、/panel/fridge_stock_1=冰箱、/panel/home_docs=证件与保单、/panel/study_center=孩子学习、/panel/kid_archive=孩子档案、/panel/health_file=健康档案、/panel/fitness_log=健身、/panel/med_cabinet=药箱、/panel/meal_diary=餐饮、/panel/elder_care=老人关怀、/panel/car_maintenance_1=车辆保养、/panel/memory_album=生活记录。标记必须严格用【打开:页面路径】格式；前端会渲染成开门按钮，用户点了就跳。上下文/工具结果里出现过的 panel_id 优先直接用。★ 用户找生活照片时：先调 search_images 展示找到的图，再在末尾附【打开:/memory】方便进相册细看\n"
+                            "14. ★★ 落库纪律（双向铁律，2026-10-25 实锤双向乌龙）：①执行过写入工具（add_inbox_note/add_panel_record/task_create/update_panel_record 等）后，必须按工具返回的 JSON 如实回执——存到了哪（随身记/面板/任务）、提醒时间多少；禁止只说「已记好」；②用户问「记到哪了/存了没」：必须调 query_my_records 查证后回答，禁止只调 query_panel 查面板就断言「没落库」（随身记/提醒/任务都不在面板表里，查面板为空≠没落库）；③没调任何写入工具时严禁说「已记好/已保存」；④返回里带「没有重复记录/已存在」时如实转告用户（说明刚记过，不用再记）\n"
+                            "15. ★★ 提醒归位（开发者 10-25 拍板：能进模块的不进随身记）：带明确时间的「X时间提醒我Y」→ set_reminder(title=Y, remind_at=解析时间, module=按域：健身/运动→fitness、食材/过期/冰箱→fridge、物品/晾晒/换季/保养→items、孩子/作业/接送→kid、日程→calendar、其他→通用)，禁止塞随身记；只有真正的琐事/想法（如「记一下那个新食谱」无时间）才 add_inbox_note。混合句拆开各落各家（练腿→add_panel_record + 提醒练胸→set_reminder）\n"
+                            "16. ★★ 反吹牛铁律 + 相册动手（2026-11-12 实锤：模型两次谎报「已建相册已归类」实际什么都没做）：①只有工具返回 success=true 才能对用户说「已完成/已创建/已归类」——工具报错、返回空、没找到，都必须如实说失败原因；**没有对应工具的请求，明说「这个我现在办不了」并给替代路径**，严禁编造成功假象。②建相册/移照片/把某人的照片归一起 → manage_album 工具动手：action=list 列相册 | create 建相册 | move 移照片（先 search_images 拿 id）| move_faces 人脸归册（person=家人名字，本地人脸识别全库扫后自动归册）。照片归类类请求必须调本工具，禁止只动嘴\n"
                         )
                     else:
                         _fc_hint = (
                             "\n★★★ FC ENABLED ★★★\n"
                             "1. Prefer calling tools over writing code. Path example: \"D drive SteamLibrary\" → path=\"D:\\\\SteamLibrary\"\n"
-                            "2. Tool mapping: list directory→list_dir | read file→read_file | delete→delete_path | run command→execute_command | check software→check_software\n"
+                            "2. Tool mapping: list directory→list_dir | read file→read_file | delete→delete_path | run command→execute_command | check software→check_software | query panel records→query_panel (use when user looks for their own saved info like licenses/item locations; never crawl the filesystem; pass time_range=today/this month/last 7 days for account queries)\n"
+                            "   ★ Account/spending questions (\"how much did I spend today\"): if the context already contains [Archive Hub] real data, answer from it in natural language — do NOT call any tool, do NOT output raw JSON. Only call query_panel(time_range=…) when no hub data is present\n"
+                            "   Log expense (e.g. \"47.6 lunch\")→skill_script(action=\"execute\", skill_name=\"accounting\", script_action=\"main\", params={\"action\":\"add\",\"amount\":<number>,\"category\":\"food/transport/other\",\"note\":\"<item>\"}) — params given in full, do NOT call tool_schema to look it up\n"
                             "3. Multi-step: after each result, keep calling tools until the task is fully done\n"
                             "4. Empty recycle bin→execute_command(\"powershell -Command Clear-RecycleBin -Force\")\n"
                             "   Verify: list_dir(C:\\\\$Recycle.Bin)——SID folders remaining is normal; empty inside = cleaned\n"
@@ -3515,17 +5106,46 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
                             "6. NEVER touch the registry! No reg delete! No rd /s /q on system directories!\n"
                             "7. Do not explain — call tools directly. After all tools are done, summarize in English\n"
                             "8. Reply in English. Do not output raw JSON data\n"
+                            "9. ★ For intro/explanation/consultation questions (e.g. \"what skills do you have\", \"what is X\", \"how to use\"), answer directly from knowledge — do NOT list_dir/read_file just to answer. Only use file tools when the user explicitly asks to view/operate on specific files\n"
+                            "10. ★★ When the message contains [File: ...] content or [System note]: analyze the given content directly. NEVER search the whole disk (Downloads/Desktop/H drive etc.) via list_dir/execute_command to find that file — it was uploaded by the user and does not exist elsewhere on disk\n"
+                            "11. ★★ NO-BOAST RULE: only say \"done/created/moved\" when the tool returned success=true. If a tool failed, returned empty, or no suitable tool exists, say so honestly and offer an alternative — NEVER fabricate success. For album requests (create album / move photos / group photos of a family member) call the manage_album tool (action=list/create/move/move_faces) — never claim you organized photos without calling it\n"
                         )
-                    if _fc_messages and _fc_messages[0].get('role') == 'system':
-                        _fc_messages[0]['content'] = _fc_hint + "\n\n" + _fc_messages[0]['content']
+                    # ★ A批A3: 目录追加 — 非常驻工具只给名+一句话，用时先 tool_schema 拿参数
+                    if _tool_catalog_text:
+                        _catalog_hint = (
+                            "\n9. 其他工具目录（要用目录里的工具时，先调 tool_schema 拿参数定义，再调用目标工具）：\n"
+                            + _tool_catalog_text
+                        )
                     else:
-                        _fc_messages.insert(0, {'role': 'system', 'content': _fc_hint.strip()})
+                        _catalog_hint = ''
+                    if _fc_messages and _fc_messages[0].get('role') == 'system':
+                        _fc_messages[0]['content'] = _fc_hint + _catalog_hint + "\n\n" + _fc_messages[0]['content']
+                    else:
+                        _fc_messages.insert(0, {'role': 'system', 'content': (_fc_hint + _catalog_hint).strip()})
 
-                    # ★ 2026-08-14: FC循环检测 — 最多5轮工具调用
-                    _fc_max_rounds = 5
+                    # ★ 2026-08-14: FC循环检测（★ #1329：上限 5→10——搬家类多步任务实锤 5 轮不够，
+                    #   被指断在半路；配合收尾不传 tools 强制总结，超长任务也有真回答）
+                    _fc_max_rounds = 10
                     _fc_done = False
+                    _fc_final = ""  # ★ #1075 FC 最终回答留存（收笔落库用）
+                    _fc_executed = []  # ★ #1329 执行足迹（工具名×次数，收尾汇报用）
+                    # ★ 2026-10-20 FC慢治理#4: 连续失败计数 — 连败2轮注入收口提示（最坏5轮→3轮）
+                    _fc_fail_streak = 0
+                    _fc_fail_hinted = False
+                    # ★ #1212 空转收口（10-25 实锤：问管家第2/3轮「解释而非调工具」白耗 17 秒）：
+                    #   解释空转最多 1 次，第 2 次直接把解释文本当最终回答收笔，不再喂下去
+                    _fc_explain_streak = 0
+                    # ★ A批A7: token账本 — 记FC轮次与注入体积
+                    try:
+                        from src.core.token_ledger import record as _tl_record
+                        _tl_record('fc_turns', tools=len(fc_tools), catalog_chars=len(_tool_catalog_text))
+                    except Exception:
+                        _tl_record = None
                     for _fc_round in range(_fc_max_rounds):
                         logger.info(f"[Engine] ★★★ FC第{_fc_round+1}轮调用, 消息数={len(all_messages)}, tools={len(fc_tools)}")
+                        # ★ #1212 心跳保活：FC 每轮都是非流式全文等待（6-10 秒零字节），
+                        #   先吐一条 thinking 占位，防手机端 SSE 长静默被网络层捏断
+                        yield ("thinking", f"🔎 第{_fc_round+1}轮查询中…")
                         try:
                             _fc_resp_gen = mm.generate_response(list(all_messages), stream=False, tools=fc_tools)
                             _fc_full = ""
@@ -3553,6 +5173,16 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
                                 'let me', "i'll", 'i will', 'i am going to', 'first,', 'i would',
                             ])
                             if _is_explaining and _fc_round < _fc_max_rounds - 1:
+                                _fc_explain_streak += 1
+                                if _fc_explain_streak >= 2:
+                                    # ★ #1212 空转收口：连解释 2 轮说明模型不会再调工具了，直接收笔（省 10-20 秒）
+                                    logger.info(f"[Engine] ★ FC第{_fc_round+1}轮解释空转第{_fc_explain_streak}次，提前收笔")
+                                    if _fc_full:
+                                        _fc_full = self._defuse_raw_json(_fc_full)
+                                        _fc_final = _fc_full
+                                        yield ("text", _fc_full)
+                                        _fc_done = True
+                                    break
                                 # AI在解释，不是总结 → 不加user消息（避免污染历史），直接继续循环
                                 logger.info(f"[Engine] ★ FC第{_fc_round+1}轮AI在解释而非调工具，继续循环（不污染历史）")
                                 # 只加assistant消息，不加user消息
@@ -3560,12 +5190,18 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
                                 continue
                             # 真的在总结 → 输出
                             logger.info(f"[Engine] ★ FC第{_fc_round+1}轮无工具调用，输出最终回答 ({len(_fc_full)}字)")
+                            # ★ 2026-10-11 #1086 缩进根治：收笔输出必须只在「无工具调用」分支内。
+                            #   原先 if _fc_full+break 写在分支外 → 无条件 break，工具执行段成死代码；
+                            #   GLM tool_calls+思考文本同返时（实锤 17:16 手机「找家人照片」），
+                            #   283 字英文推理被当最终回答 yield 并落库，工具从未执行。
                             if _fc_full:
+                                # ★ 2026-09-27 #886 B JSON回炉保底：外脑偷懒复读工具生 JSON 时本地翻译
+                                _fc_full = self._defuse_raw_json(_fc_full)
+                                _fc_final = _fc_full  # ★ #1075 留存最终回答
                                 yield ("text", _fc_full)
                                 _fc_done = True
                             break
-
-                        # 执行工具调用
+                        # 有 tool_calls → 不收笔，落到下方「执行工具调用」段，执行完继续下一轮
                         yield ("thinking", f"正在执行工具 (第{_fc_round+1}轮)...")
                         # 先加assistant消息（带tool_calls）
                         all_messages.append({"role": "assistant", "tool_calls": _fc_tcs})
@@ -3575,16 +5211,30 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
                             _tc_args = _fc_tc.get('function', {}).get('arguments', '{}')
                             _tc_id = _fc_tc.get('id', '')
                             logger.info(f"[Engine] ★ FC执行: {_tc_name}({_tc_args[:100]})")
+                            _fc_executed.append(_tc_name)  # ★ #1329 执行足迹
                             _tc_result = execute_tool_call(_tc_name, _tc_args)
 
                             # ★ 2026-08-15: 危险工具日志记录（协作模式也记录）
+                            # ★ 2026-10-20 FC慢治理#4: 降噪 — execute_command 每条都打
+                            #   warning 淹没日志（echo ver 都标危险实锤）；仅真高危参数才 warning
                             _DANGER_TOOLS_FC = {
                                 'delete_path', 'execute_command', 'email_send',
                                 'write_file', 'edit_file', 'install_package',
                                 'install_model', 'uninstall_model',
+                                'hub_install',  # ★ #1212: 装外部内容，确认卡把关
                             }
                             if _tc_name in _DANGER_TOOLS_FC:
-                                logger.warning(f"[Engine] ★★ 危险工具已执行: {_tc_name}({_tc_args[:100]}) — 协作模式={self._collab_mode_override}")
+                                _tc_args_l = (_tc_args or '').lower()
+                                _really_dangerous = _tc_name != 'execute_command' or any(
+                                    _kw in _tc_args_l for _kw in
+                                    ('rm -rf', 'format ', 'del /f', 'shutdown', 'reg delete',
+                                     'reg add', 'diskpart', 'taskkill /f', 'curl -o', 'wget',
+                                     'invoke-expression', 'iex ', 'dd if=')
+                                )
+                                if _really_dangerous:
+                                    logger.warning(f"[Engine] ★★ 危险工具已执行: {_tc_name}({_tc_args[:100]}) — 协作模式={self._collab_mode_override}")
+                                else:
+                                    logger.debug(f"[Engine] 工具已执行: {_tc_name}({_tc_args[:80]})")
 
                             # yield结果给用户
                             _tc_parsed = _tc_result
@@ -3595,15 +5245,44 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
                                 except:
                                     _tc_parsed = {}
                             if isinstance(_tc_parsed, dict):
+                                # ★ #1212（2026-10-25）hub_install 确认卡：不阻塞 FC 循环，
+                                #   先推 confirm_card 事件给前端弹卡，用户点头后走
+                                #   POST /api/hub/install/confirm 才真下载安装（pending 10分钟 TTL）
+                                if _tc_parsed.get('confirm_card'):
+                                    yield ("confirm_card", _tc_parsed['confirm_card'])
+                                # ★ #925 根治目录式工具死锁（2026-09-27 runtime.log 实锤）：
+                                #   智谱只能调 tools 参数里带上的工具；模型按目录提示先调
+                                #   tool_schema 拿定义，但查到的定义从未合并进 fc_tools →
+                                #   下一轮依然发不出正式调用 → GLM 死循环查 schema（实锤连查
+                                #   5 次 search_images 参数）后放弃去翻磁盘。修法：查到什么
+                                #   工具，下一轮 tools 就带上什么。
+                                if _tc_name == 'tool_schema':
+                                    try:
+                                        _have = {d['function']['name'] for d in fc_tools}
+                                        _add = [d for d in (_tc_parsed.get('tools') or [])
+                                                if isinstance(d, dict)
+                                                and d.get('function', {}).get('name')
+                                                and d['function']['name'] not in _have]
+                                        if _add:
+                                            fc_tools = list(fc_tools) + _add
+                                            logger.info(f"[Engine] ★ #925 tool_schema 合并 {len(_add)} 个工具进下一轮: "
+                                                        f"{[d['function']['name'] for d in _add]}，总数={len(fc_tools)}")
+                                    except Exception as _merge_e:
+                                        logger.debug(f"[Engine] tool_schema 合并失败: {_merge_e}")
+                                # ★ 2026-09-21 #829: 工具过程改独立事件 tool_log（不再混入正文）
+                                #   根因：原来 yield ("text", "📋 ...执行结果：{JSON}") 会把工具
+                                #   原始 JSON 当正文发出去 —— 手机中转/电脑前端都直接拼进气泡，
+                                #   用户看到大段 JSON。改为 tool_log 后：电脑前端渲染成折叠卡，
+                                #   手机中转只收 text/content 天然干净。
                                 if _tc_parsed.get('success') and _tc_parsed.get('message'):
-                                    yield ("text", f"\n📋 **{_tc_name}** 执行结果：\n{_tc_parsed['message']}\n")
+                                    yield ("tool_log", f"📋 {_tc_name} 执行成功：{_tc_parsed['message']}")
                                 elif _tc_parsed.get('success'):
                                     import json as _json_fc
                                     _fc_str = _json_fc.dumps(_tc_parsed, ensure_ascii=False, indent=2)
                                     if len(_fc_str) > 3000: _fc_str = _fc_str[:3000] + "\n...(已截断)"
-                                    yield ("text", f"\n📋 **{_tc_name}** 执行结果：\n{_fc_str}\n")
+                                    yield ("tool_log", f"📋 {_tc_name} 执行成功：\n{_fc_str}")
                                 elif _tc_parsed.get('error'):
-                                    yield ("text", f"\n❌ **{_tc_name}** 失败：{_tc_parsed['error'][:200]}\n")
+                                    yield ("tool_log", f"❌ {_tc_name} 失败：{_tc_parsed['error'][:200]}")
 
                             # ★ 2026-08-14: tool消息用JSON格式，AI能看懂
                             import json as _json_tool
@@ -3611,19 +5290,68 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
                                 _tc_content = _tc_result  # 已经是字符串
                             else:
                                 _tc_content = _json_tool.dumps(_tc_result, ensure_ascii=False)
+                            # ★ A批A4(2026-09-13): 工具结果瘦身 — 进历史截断1000字符，全文落盘 data/tool_results/
+                            try:
+                                from src.core.builtin_tools import slim_tool_result as _slim
+                                _tc_content = _slim(_tc_content, tool_name=_tc_name or 'tool')
+                            except Exception as _slim_e:
+                                logger.debug(f"[Engine] 工具结果瘦身失败(不影响主流程): {_slim_e}")
+                            if _tl_record:
+                                _tl_record('fc_rounds', round=_fc_round + 1, tool=_tc_name)
                             all_messages.append({
                                 "role": "tool",
                                 "tool_call_id": _tc_id,
                                 "content": _tc_content
                             })
+                            # ★ 2026-10-20 FC慢治理#4: 失败统计（本轮任一工具失败计连败）
+                            _tc_ok = bool(_tc_parsed.get('success')) if isinstance(_tc_parsed, dict) else True
+                            if not _tc_ok:
+                                _fc_fail_streak += 1
+                            else:
+                                _fc_fail_streak = 0  # 成功即重置连败
+
+                        # ★ 连败收口：连续2轮全失败 → 注入提示让外脑基于已有结果直接总结
+                        #   （最坏5轮烧到3轮收口，省 20~40 秒）
+                        if (_fc_fail_streak >= 2 and not _fc_fail_hinted
+                                and _fc_round < _fc_max_rounds - 1):
+                            all_messages.append({"role": "user", "content": (
+                                "（系统提示：工具已连续失败多次，可能是命令语法或环境问题。"
+                                "请基于已获得的结果直接总结回答用户，不要继续重试类似命令。）"
+                            )})
+                            _fc_fail_hinted = True
+                            logger.warning(f"[Engine] ★ FC连败{_fc_fail_streak}轮，注入收口提示（第{_fc_round+1}轮后）")
+
+                    if _fc_done:
+                        # ★ 2026-10-11 #1075 根治双答 bug：FC 循环已输出最终回答，这里收笔
+                        #   落库后直接 return。原先控制流 fall-through 到主流式分支，把模型
+                        #   二次调用一遍（实锤：手机「找家人照片」回答出现两份、库只有一份）
+                        # ★ #1518：FC 收笔出口也附垂直入口提示（协作OFF拦下的场景）
+                        _vb_hint_fc = _vb_take_hint() if (_vertical_blocked and _fc_final) else ''
+                        if _vb_hint_fc:
+                            _fc_final += _vb_hint_fc
+                            yield ("text", _vb_hint_fc)
+                            logger.info(f"[Engine] #1518 FC收笔已附垂直入口提示: {_vertical_blocked}")
+                        _src_fc = getattr(self, "_reply_source", "")
+                        save_message(self.conversation_id, "assistant", _fc_final,
+                                     metadata=({"source": _src_fc} if _src_fc else None))
+                        self.history.append({"role": "user", "content": user_message})
+                        self.history.append({"role": "assistant", "content": _fc_final})
+                        logger.info(f"[Engine] #1075 FC 收笔入库: {len(_fc_final)} 字（不再二次作答）")
+                        yield ("done", None)
+                        return
 
                     if not _fc_done:
-                        # 循环结束但还没输出最终回答，流式输出（传tools让AI还能调）
-                        # ★ 2026-08-15: 加提示让AI总结，避免返回空
-                        # ★ 2026-08-16: i18n — 按用户消息语言要求总结
-                        _sum_lang_hint = "请用中文总结刚才执行的操作结果。" if _has_cjk else "Please summarize in English what you just did and the results."
+                        # 循环结束但还没输出最终回答（★ #1329：轮次用尽）
+                        # 原先带着 tools 再调 → 模型刚拿到工具结果还想接着调（finish=tool_calls）
+                        # → 被空流重试白烧。改：收尾调用【不传 tools】强制总结，并把已执行足迹
+                        # 说给模型听，保证用户拿到「干到哪了」的真回答，而不是报错。
+                        from collections import Counter as _fc_Counter
+                        _fc_footprint = '、'.join(f'{k}×{v}' for k, v in _fc_Counter(_fc_executed).most_common()) if _fc_executed else '无'
+                        _sum_lang_hint = (
+                            f"工具调用轮次已达上限。已执行的工具：{_fc_footprint}。"
+                            + ("请用中文总结刚才执行的操作结果，如实说明哪些完成了、哪些还没做——不要再调任何工具。" if _has_cjk else "Summarize in English what was done so far — do NOT call any more tools."))
                         all_messages.append({"role": "user", "content": _sum_lang_hint})
-                        response_gen = mm.generate_response(all_messages, stream=True, tools=fc_tools)
+                        response_gen = mm.generate_response(all_messages, stream=True, tools=None)
                         raw_stream = self._adapt_mm_stream(response_gen)
                     elif full_response:
                         # 没有工具调用，直接输出非流式结果
@@ -3709,6 +5437,8 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
                             try:
                                 from src.core.tool_executor import execute_python_code
                                 for _fc_code in _fc_code_blocks:
+                                    # ★ #1315 先剥围栏语言标记再执行（GLM 复读 python 行 NameError 实锤）
+                                    _fc_code = self._strip_fence_lang(_fc_code)
                                     if len(_fc_code.strip()) < 10:
                                         continue
                                     _fc_result = execute_python_code(_fc_code, timeout=30)
@@ -3803,6 +5533,11 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
                             except Exception as _hc_ex:
                                 logger.debug(f"[Engine] 幻觉tool_calls解析失败: {_hc_ex}")
 
+                        # ★ #1518：FC 非流式直出出口也附垂直入口提示
+                        _vb_hint_fs = _vb_take_hint() if (_vertical_blocked and full_response) else ''
+                        if _vb_hint_fs:
+                            full_response += _vb_hint_fs
+                            logger.info(f"[Engine] #1518 FC非流式已附垂直入口提示: {_vertical_blocked}")
                         yield ("text", full_response)
                         yield ("done", None)
                         return
@@ -3816,20 +5551,12 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
                     raw_stream = self._adapt_mm_stream(response_gen)
             except Exception as e:
                 logger.error(f"[Engine] 外部模型调用失败: {e}")
-                if self._query_mode == "direct":
-                    # ★ direct 模式：连接失败 → 报错停止，不回落
-                    err_msg = f"❌ 外部大模型（{model_label}）连接不成功\n\n错误详情：{str(e)[:500]}\n\n请检查「设置 → 模型管理」中的 API Key 和网络配置。"
-                    yield ("error", err_msg)
-                    return  # 直接结束，不用本地顶替
-                else:
-                    # ★ 2026-07-07: auto模式已取消，此处不会到达（direct模式已在上面return）
-                    fallback_msg = f"⚠️ 外脑（{model_label}）连接不成功，已使用本地模型"
-                    yield ("notification", {
-                        "type": "foreign_model_fallback",
-                        "message": fallback_msg,
-                    })
-                    yield ("thinking", f"⚠️ 外脑回落本地 · {fallback_msg}")
-                    use_external = False
+                # ★ 2026-09-27 开发者死命令（#891 阵营原则延伸到主聊天）：外脑失败 → 直接报错停止，
+                # 绝不回落本地。用外脑还是本地由用户阵营选择决定，路由进来必是 direct；
+                # 很多用户没有本地模型，偷顶等于替用户做主
+                err_msg = f"❌ 外部大模型（{model_label}）连接不成功\n\n错误详情：{str(e)[:500]}\n\n请检查「设置 → 模型管理」中的 API Key 和网络配置。"
+                yield ("error", err_msg)
+                return  # 直接结束，不用本地顶替
             finally:
                 # ★ 关键修复：无论成功还是失败，恢复 current_model
                 mm.current_model = old_model
@@ -3838,45 +5565,243 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
             if raw_stream is not None:
                 try:
                     first_check = next(iter(raw_stream))
-                    if isinstance(first_check, str) and first_check.startswith("[错误]"):
-                        logger.warning(f"[Engine] 外部模型返回错误: {first_check}")
-                        if self._query_mode == "direct":
-                            err_msg = f"❌ 外部大模型（{model_label}）返回错误\n\n{first_check[:300]}\n\n请检查模型配置或尝试其他外部模型。"
-                            yield ("error", err_msg)
-                            return
-                        else:
-                            fallback_msg = f"⚠️ 外脑（{model_label}）返回错误，已使用本地模型"
-                            yield ("notification", {
-                                "type": "foreign_model_fallback",
-                                "message": fallback_msg,
-                            })
-                            yield ("thinking", f"⚠️ 外脑回落本地 · {fallback_msg}")
-                            raw_stream = None
-                            use_external = False
-                    else:
-                        import itertools
-                        raw_stream = itertools.chain([first_check], raw_stream)
                 except StopIteration:
                     logger.warning("[Engine] 外部模型返回空流")
-                    if self._query_mode == "direct":
-                        err_msg = f"❌ 外部大模型（{model_label}）无响应\n\n模型服务端可能暂时不可用，请稍后重试或检查网络。"
-                        yield ("error", err_msg)
-                        return
-                    else:
-                        fallback_msg = f"⚠️ 外脑（{model_label}）无响应，已使用本地模型"
-                        yield ("notification", {
-                            "type": "foreign_model_fallback",
-                            "message": fallback_msg,
-                        })
-                        yield ("thinking", f"⚠️ 外脑回落本地 · {fallback_msg}")
-                        raw_stream = None
-                        use_external = False
+                    # ★ 2026-09-27 开发者死命令：无响应直接报错停止，不回落本地
+                    err_msg = f"❌ 外部大模型（{model_label}）无响应\n\n模型服务端可能暂时不可用，请稍后重试或检查网络。"
+                    yield ("error", err_msg)
+                    return
+                except Exception as _fs_e:
+                    logger.warning(f"[Engine] 外部模型流首检异常: {_fs_e}")
+                    # ★ 2026-09-27 开发者死命令：流异常直接报错停止，不回落本地
+                    err_msg = f"❌ 外部大模型（{model_label}）响应异常\n\n{str(_fs_e)[:300]}\n\n请检查模型配置，或稍后重试。"
+                    yield ("error", err_msg)
+                    return
+                if isinstance(first_check, str) and first_check.startswith("[错误]"):
+                    logger.warning(f"[Engine] 外部模型返回错误: {first_check}")
+                    # ★ 2026-09-27 开发者死命令：报错直接停，不回落本地
+                    err_msg = f"❌ 外部大模型（{model_label}）返回错误\n\n{first_check[:300]}\n\n请检查模型配置，或切换其他外脑，或点 🏠本地 用本地模型。"
+                    yield ("error", err_msg)
+                    return
+                else:
+                    import itertools
+                    raw_stream = itertools.chain([first_check], raw_stream)
 
         # ── 本地通用模型调用（优先 → llama-cpp 回退）──
         if not use_external or raw_stream is None:
+            # ═══ ★ #1497（2026-11-13）本地FC前置轮：A护栏 + B打通 ═══
+            #   外脑有 FC 循环，本地此前是哑巴工具。此处先探测应答模型：
+            #   有 tools 能力（Ollama /api/show）→ /api/chat+tools 真调工具收笔；
+            #   无 tools 能力 + FC 域意图（邮件等）→ 如实护栏，不让模型瞎编。
+            #   两种情况都不命中 → ('skip') 原有链路零变化。
+            try:
+                _fc_engine = self
+                _sel_1497 = (getattr(self.model, 'model', '') or '')
+                from src.core.multi_model_manager import get_multi_model_manager as _gmm_1497
+                _sel_1497 = _sel_1497 or (_gmm_1497().current_model or '')
+            except Exception:
+                _sel_1497 = getattr(self.model, 'model', '') or ''
+            _fc_model = ''
+            _fc_label = ''
+            if _sel_1497 == 'harveneye':
+                # HarvenEye 文字分流的实际应答模型：钉选通道 → 出厂 understand 通道
+                _eye_model = ''
+                try:
+                    from src.core.vision_link import resolve_pinned_channel as _rpch_1497
+                    _pch_1497 = _rpch_1497() or {}
+                    if _pch_1497.get('provider') == 'ollama':
+                        _eye_model = _pch_1497.get('model', '')
+                        _fc_label = f"👁️ HarvenEye · {_pch_1497.get('label') or _eye_model}（Ollama）"
+                except Exception:
+                    _pch_1497 = {}
+                if not _eye_model:
+                    try:
+                        from src.vision import config as _vcfg_1497
+                        from src.vision.installer import engine_status as _est_1497
+                        _u_1497 = _vcfg_1497.ENGINES.get('understand', {})
+                        if (_u_1497.get('provider') == 'ollama' and _u_1497.get('model')
+                                and bool(_est_1497().get('ready'))):
+                            _eye_model = _u_1497['model']
+                            _fc_label = f"👁️ HarvenEye · {_eye_model}（本地）"
+                    except Exception:
+                        pass
+                _fc_model = _eye_model
+            else:
+                # 普通本地模型：模型名直接探（非 Ollama 名探测会 False → skip/护栏）
+                _fc_model = _sel_1497
+                _fc_label = f"🏠 {_fc_model}"
+            if _fc_model and not getattr(self, '_web_search_this_query', False):
+                _fc_events = []
+                try:
+                    _st, _pl = _fc_engine._local_fc_preround(
+                        list(all_messages), _fc_model, user_message,
+                        notify=lambda k, c: _fc_events.append((k, c)))
+                except Exception as _fc_pre_e:
+                    logger.warning(f"[Engine] #1497 前置轮异常(走原链路): {_fc_pre_e}")
+                    _st, _pl = 'skip', None
+                if _st in ('guard', 'done'):
+                    yield ("model_source", {"model": _fc_model,
+                                            "label": _fc_label or _fc_model,
+                                            "is_external": False, "mode": "local"})
+                    for _ev_k, _ev_c in _fc_events:
+                        yield (_ev_k, _ev_c)
+                    _final_1497 = _pl or ''
+                    if _st == 'guard':
+                        _final_1497 = _pl
+                    elif not _final_1497:
+                        _final_1497 = '⚙️ 工具已执行，但没能生成总结，请把想看的具体内容再问一次。'
+                    # ★ #1518：#1497 前置轮收笔出口也附垂直入口提示
+                    _vb_hint_1497 = _vb_take_hint() if (_vertical_blocked and _final_1497) else ''
+                    if _vb_hint_1497:
+                        _final_1497 += _vb_hint_1497
+                        logger.info(f"[Engine] #1518 前置轮收笔已附垂直入口提示: {_vertical_blocked}")
+                    yield ("text", _vb_hint_1497)
+                    try:
+                        save_message(self.conversation_id, "assistant", _final_1497,
+                                     metadata={"source": _fc_label or _fc_model})
+                    except Exception:
+                        pass
+                    self.history.append({"role": "assistant", "content": _final_1497})
+                    logger.info(f"[Engine] #1497 本地前置轮收笔({_st}): {len(_final_1497)}字")
+                    return
+                # ('skip') → 落到下方原有链路，行为零变化
+            # ═══ #1497 前置轮结束 ═══
+            # ★ #1291（2026-10-29）HarvenEye 文字分流（A′，定版拍板）：
+            #   选 HarvenEye 发纯文字 → 只认钉选的理解槽大脑；没钉选如实报错。
+            #   绝不顶号——chat_local 四级兜底曾借 Ollama 模型挂 HarvenEye 牌子
+            #   （身份冒用实锤，开发者 10-29 裁决）。带图场景走 _vision_reply 不受影响。
+            # ★ #1296（2026-10-29）判定反转：本地模式优先界面真实选择 self.model.model，
+            #   mm.current_model 是全局槽位（可能残留外脑 deepseek，会把 harveneye 判定短路掉）。
+            try:
+                from src.core.multi_model_manager import get_multi_model_manager as _gmm_eye
+                _sel_eye = (getattr(self.model, 'model', '') or _gmm_eye().current_model or '')
+            except Exception:
+                _sel_eye = getattr(self.model, 'model', '') or ''
+            if _sel_eye == 'harveneye':
+                from src.core import eye_client as _eyecli_e
+                try:
+                    from src.core.vision_link import resolve_pinned_channel as _rpch_e
+                    _pch = _rpch_e()
+                except Exception:
+                    _pch = {}
+                if _pch:
+                    # 有钉选大脑 → 用钉的模型答（标注真实名字，铁律 0 合规）
+                    if _pch.get('provider') == 'api':
+                        _elabel = f"👁️ HarvenEye · {_pch.get('api_model', '')}（外脑视觉大脑）"
+                        _emid = _pch.get('api_model', 'vision')
+                    elif _pch.get('provider') == 'ollama':
+                        _elabel = f"👁️ HarvenEye · {_pch.get('label') or _pch.get('model', '')}（Ollama）"
+                        _emid = _pch.get('model', 'vision')
+                    else:
+                        from pathlib import Path as _Pth2
+                        _elabel = f"👁️ HarvenEye · {_Pth2(_pch['gguf']).stem}（本地直载）"
+                        _emid = _Pth2(_pch['gguf']).stem
+                    self._reply_source = _elabel
+                    yield ("model_source", {"model": _emid, "label": _elabel,
+                                            "is_external": _pch.get('provider') == 'api',
+                                            "mode": "vision"})
+                    _efull, _egot = [], False
+                    try:
+                        for piece in _eyecli_e.chat_stream(all_messages, timeout=150.0):
+                            _egot = True
+                            _efull.append(str(piece or ''))
+                            yield ("text", piece)
+                    except RuntimeError as _ere:
+                        yield ("error", f"❌ {_ere}")
+                        return
+                    except Exception as _eee:
+                        yield ("error", f"❌ HarvenEye 大脑回答失败: {_eee}")
+                        return
+                    if _egot:
+                        save_message(self.conversation_id, "assistant", ''.join(_efull),
+                                     metadata={"source": _elabel})
+                        self.history.append({"role": "assistant", "content": ''.join(_efull)})
+                    return
+                # ★ #1418（2026-11-04）三件套齐 = 出厂自带大脑（已定版：产品默认配置，非 AI 代选）：
+                #   钉选为空时，只要底座（yolox+clip）就绪 + 出厂 understand 通道可解析且模型
+                #   真实存在（full 捆的 qwen3-vl 等），直接用它答（真实模型名标注）；
+                #   任何档位（lite/standard/full）通用——三件套齐就是本地通用大脑。
+                #   任一不满足才走分层报错。
+                _base_ok = False
+                try:
+                    from src.vision.installer import engine_status as _est_e
+                    _base_ok = bool(_est_e().get('ready'))
+                except Exception:
+                    _base_ok = False
+                _fch = {}
+                try:
+                    from pathlib import Path as _Pth3
+                    from src.vision import config as _vcfg_e
+                    _u = _vcfg_e.ENGINES.get("understand", {})
+                    _prov = _u.get("provider", "")
+                    if _prov == "ollama" and _u.get("model"):
+                        # 校验 ollama 里模型真实存在（没拉的机器不硬闯，留给分层报错引导）
+                        import requests as _req_e
+                        _base_url = (_u.get("base_url") or "http://127.0.0.1:11434").rstrip("/")
+                        _tags = _req_e.get(f"{_base_url}/api/tags", timeout=3).json()
+                        _names = [m.get("name", "") for m in _tags.get("models", [])]
+                        if any(n == _u["model"] or n.split(":")[0] == _u["model"].split(":")[0]
+                               for n in _names):
+                            _fch = {"provider": "ollama", "model": _u["model"],
+                                    "label": _u["model"]}
+                    elif _prov == "llama_cpp" and _u.get("gguf") and _Pth3(_u["gguf"]).is_file():
+                        _fch = {"provider": "llama_cpp", "gguf": _u["gguf"],
+                                "mmproj": _u.get("mmproj", "")}
+                except Exception:
+                    _fch = {}
+                if _fch and _base_ok:
+                    from pathlib import Path as _Pth4
+                    if _fch.get("provider") == "ollama":
+                        _elabel = f"👁️ HarvenEye · {_fch['model']}（本地）"
+                        _emid = _fch["model"]
+                    else:
+                        _elabel = f"👁️ HarvenEye · {_Pth4(_fch['gguf']).stem}（本地直载）"
+                        _emid = _Pth4(_fch['gguf']).stem
+                    self._reply_source = _elabel
+                    yield ("model_source", {"model": _emid, "label": _elabel,
+                                            "is_external": False, "mode": "vision"})
+                    _efull, _egot = [], False
+                    try:
+                        for piece in _eyecli_e.chat_stream(all_messages, timeout=150.0,
+                                                           channel=_fch):
+                            _egot = True
+                            _efull.append(str(piece or ''))
+                            yield ("text", piece)
+                    except RuntimeError as _ere:
+                        yield ("error", f"❌ {_ere}")
+                        return
+                    except Exception as _eee:
+                        yield ("error", f"❌ HarvenEye 大脑回答失败: {_eee}")
+                        return
+                    if _egot:
+                        save_message(self.conversation_id, "assistant", ''.join(_efull),
+                                     metadata={"source": _elabel})
+                        self.history.append({"role": "assistant", "content": ''.join(_efull)})
+                    return
+                # 三件套不齐 → 按「卡在哪层」分层报错（每条至少三条出路，不给死胡同）
+                if not _base_ok:
+                    yield ("error",
+                           "❌ HarvenEye 还没安装（本机没有它的视觉底座文件）。\n\n"
+                           "出路：\n"
+                           "① 到「视觉」页面一键安装（约 800MB，普通电脑即可，CPU 也能跑）\n"
+                           "② 在 设置→模型管理 换一个本地模型\n"
+                           "③ 点对话区 🤖 按钮切换外脑模式")
+                else:
+                    yield ("error",
+                           "❌ HarvenEye 底座已装，但三件套里的通用大脑还没就位，没法对话。\n\n"
+                           "出路：\n"
+                           "① 到「视觉」页面下载/钉选通用模型当它的大脑\n"
+                           "② 电脑配置有限？在「视觉」页面把外脑视觉模型（如 GLM 看图）设为大脑，本机零负担\n"
+                           "③ 换其他本地模型或切 🤖 外脑模式")
+                return
+
             # ═══ 模型能力检测：非语言模型不参与对话 ═══
             # P1-2: 统一使用模块级常量 _NONCHAT_KEYWORDS
+            # ★ 2026-08-25: 类型守护——list/dict 一律安全化，避免 .lower() 崩溃
             _current_model = getattr(self.model, 'model', '') or ''
+            if not isinstance(_current_model, str):
+                logger.warning(f"[Engine] 本地模型名类型异常({type(_current_model).__name__})，已忽略")
+                _current_model = ''
             _model_lower = _current_model.lower()
             _is_nonchat = any(kw in _model_lower for kw in _NONCHAT_KEYWORDS)
             if _is_nonchat:
@@ -3970,6 +5895,12 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
         chunk_meta_count = 0  # 统计非内容 chunk（仅元数据，无实际文本）
         try:
             for chunk in raw_stream:
+                # ★ 2026-10-10 #1052: 停止门——用户点了停止立即收笔（半截保留入库）
+                if is_stopped(self.conversation_id):
+                    logger.info(f"[Engine] #1052 用户停止：已出 {chunk_count} 块/{len(full_response)} 字，中断生成")
+                    full_response += "\n\n（已停止）"
+                    yield ("text", "\n\n（已停止）")
+                    break
                 chunk_meta_count += 1
                 if isinstance(chunk, str) and chunk.startswith("[错误]"):
                     yield ("error", chunk)
@@ -3987,7 +5918,8 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
 
         # 诊断：模型没有返回任何文本内容
         # ★ 2026-06-26 加固：空响应优先用简化 prompt 重试，不直接报错
-        if chunk_count == 0:
+        # ★ 2026-10-10 #1052: 空流重试加停止守卫——用户刚点了停止就不能再触发生成
+        if chunk_count == 0 and not is_stopped(self.conversation_id):
             logger.warning(f"[Engine] 模型返回空流！chunk_count=0, meta_chunks={chunk_meta_count}. model={self.model.model if hasattr(self.model, 'model') else '?'}")
             
             # ★ 尝试用简化 prompt 重试（移除超长的 system_prompt 和 enhanced_context）
@@ -4029,10 +5961,33 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
                     yield ("error", f"模型重试失败: {retry_e}")
                 return
 
+        # ★ #1518：协作OFF拦下的垂直Skill——回答末尾附入口提示（消息不再被吞）
+        if _vertical_blocked and full_response:
+            _vb_hint = _vb_take_hint()
+            if _vb_hint:
+                full_response += _vb_hint
+                yield ("text", _vb_hint)
+                logger.info(f"[Engine] #1518 已附垂直入口提示: {_vertical_blocked}")
+
+        # ★ 2026-10-10 #1052: 用户停止 → 跳过代码兜底执行/自动扫描等重后处理，直接收笔入库
+        #（否则半截回复里的代码块还会被兜底执行，停止按钮按了还要白等几十秒）
+        if is_stopped(self.conversation_id):
+            _src_stop = getattr(self, "_reply_source", "")
+            save_message(self.conversation_id, "assistant", full_response,
+                         metadata=({"source": _src_stop} if _src_stop else None))
+            self.history.append({"role": "user", "content": user_message})
+            self.history.append({"role": "assistant", "content": full_response})
+            logger.info(f"[Engine] #1052 已停止收笔入库: {len(full_response)} 字")
+            clear_stop(self.conversation_id)
+            yield ("done", None)
+            return
+
         # 清洗模型可能输出的后台任务 JSON 块（action/tool_calls）
         # 这类 JSON 块是给后台任务调度器的，不应该展示给用户
         try:
             import re as _re
+            # ★ 2026-09-13: 先初始化（修复：全权模式跳过清洗块时 _had_code 未定义；无代码回复被误标 True）
+            _had_code = False
             # ★ 2026-07-24: 全权模式下关闭代码过滤器（允许模型写代码执行）
             _full_mode = False
             try:
@@ -4046,6 +6001,8 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
                 _code_blocks = _re.findall(r'```(?:python|py)?\s*\n([\s\S]*?)```', full_response)
                 _exec_results = []
                 for _code in _code_blocks:
+                    # ★ #1315 先剥围栏语言标记再执行（GLM 复读 python 行 NameError 实锤）
+                    _code = self._strip_fence_lang(_code)
                     if len(_code.strip()) < 10:
                         continue
                     try:
@@ -4086,8 +6043,10 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
                                 _had_code = True
                         except Exception:
                             _had_code = True
+                    elif _code_blocks:
+                        _had_code = True   # ★ 有```代码块但兜底执行失败 → 才算"代码被过滤"
                     else:
-                        _had_code = True
+                        _had_code = False  # ★ 2026-09-13 修复：既无代码块也无裸代码 → 清白，不再误标 True（误判"哈文正常"这类纯文本回复）
 
                     # 标记但不显示FC误导警告
                     if _re.search(r'```(?:python|py|bash|sh|json|javascript|js|ruby|go|rust|java|c|cpp)?\s*[\s\S]*?```', full_response):
@@ -4256,8 +6215,20 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
         except Exception as _e:
             logger.debug(f"[Engine] 忽略错误: {_e}")
 
-        # 保存AI回复
-        save_message(self.conversation_id, "assistant", full_response)
+        # 保存AI回复（★ 2026-09-14 来源持久化：metadata.source 记录本次回答方）
+        _src = getattr(self, "_reply_source", "")
+        save_message(self.conversation_id, "assistant", full_response,
+                     metadata=({"source": _src} if _src else None))
+
+        # ★ 2026-09-16 对话即录入·主聊天默录钩子（异步/默认开/本地模型/失败静默）
+        # 内部先走孩子对话归档（其独立开关默认关），再做家庭域默录（动词触发+域关键词+低置信度待确认）
+        # ★ 2026-09-27 修谎报记账：images 传进默录链（此前只传文本，发图记账时抽取链拿不到图，
+        #   静默跳过 → 主聊天模型凭视觉转述自由发挥谎称"已记上"）
+        try:
+            from src.core.panel_assist import maybe_home_record
+            maybe_home_record(self.conversation_id, user_message, full_response, images=images)
+        except Exception as _kid_e:
+            logger.debug(f"[Engine] 档案归档钩子跳过: {_kid_e}")
 
         # 触发消息发送事件（Hooks）
         get_event_bus().emit(Events.MESSAGE_SENT, self.conversation_id, full_response)
@@ -4475,22 +6446,575 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
     # ═══════════════════════════════════════════════════════════════
 
     # 危险工具列表（需要确认）
+    # ★ A批A1(2026-09-13): 删除6个幽灵名（install_software/uninstall_software/clean_disk/
+    #   fix_network/change_wallpaper/delete_file —— 注册表里根本不存在这些工具），现在与实际键全等
     _DANGER_TOOLS = {
-        'install_software', 'uninstall_software', 'clean_disk',
-        'fix_network', 'change_wallpaper', 'install_package',
-        'install_model', 'uninstall_model', 'write_file', 'edit_file',
-        'execute_command', 'delete_path', 'email_send', 'delete_file',
+        'install_package', 'install_model', 'uninstall_model',
+        'write_file', 'edit_file', 'execute_command',
+        'delete_path', 'email_send',
     }
+
+    def _vision_reply(self, user_message, images, stream=True, query_mode=None):
+        """★ 2026-09-15 A方案：聊天看图 — 图片随消息发送，自动路由视觉模型
+
+        ★ 2026-09-24 路由改造（定版拍板 A方案）：识别方跟随用户当前模式，不再强制本地——
+        · 🤖外脑模式 → 图片发给当前外脑识别（须支持视觉；不支持给提示，不偷偷换本地）
+        · 🏠本地模式 → 当前模型本身能看图就直接用；否则找本地视觉模型（HarvenEye 优先，自动探测已装视觉模型）；
+          都没有 → 提示二选一（装视觉模型如 qwen3-vl:8b-instruct / 切外脑），不再只有 pull 一条路
+        标签透明化：「🏠 本地看图 · X」/「🤖 外脑看图 · X」，用户一眼看到图发给了谁（隐私自己掌控）。
+
+        images: dataURL（SPA 前端）或本地路径列表。
+        """
+        import base64 as _b64
+        import os as _os
+        import re as _re
+        import tempfile as _tmp
+
+        text = (user_message or '').strip() or '请描述这张图片的内容。'
+        tmp_paths = []
+        try:
+            # 1. 图片落地：dataURL → 临时文件；本地路径直接用
+            for idx, img in enumerate(images[:4]):  # 最多 4 张，防滥用
+                if not isinstance(img, str) or not img:
+                    continue
+                m = _re.match(r'^data:image/[a-zA-Z+]+;base64,(.+)$', img, _re.S)
+                if m:
+                    fd, p = _tmp.mkstemp(suffix='.png', prefix=f'hv_img_{idx}_')
+                    with _os.fdopen(fd, 'wb') as f:
+                        f.write(_b64.b64decode(m.group(1)))
+                    tmp_paths.append(p)
+                elif _os.path.exists(img):
+                    tmp_paths.append(img)
+            if not tmp_paths:
+                yield ("error", "❌ 图片处理失败，请重新选择图片再发")
+                return
+
+            # ★ #918（2026-09-27）聊天发图自动入统一图库：根治"发完即走"——
+            #   图不再看完就没，进 images_index 总账（描述=用户随图原话 → 自动分类）；
+            #   后续默录链/表单存同一张图时 sha 去重自动合并面板关联。失败绝不挡看图。
+            try:
+                from src.core import img_store as _istore
+                _reg_ids = []
+                for p in tmp_paths:
+                    _reg = _istore.register(image_data=Path(p).read_bytes(), source='chat',
+                                            note=(user_message or '')[:200])
+                    if _reg and _reg.get('id'):
+                        _reg_ids.append(_reg['id'])
+                logger.info(f'[Engine] 聊天发图已入图库 {len(tmp_paths)} 张')
+            except Exception as _ie:
+                _reg_ids = []
+                logger.debug(f'[Engine] 聊天图入图库跳过: {_ie}')
+
+            # ★ 2026-09-23 大图归一化（实测实锤）：相机原图 4MB+ Ollama 会静默丢图，
+            # minicpm-v 表现为「抱歉，我无法提供图片中的单词」。看图前统一压缩到安全区。
+            from src.core.image_processor import normalize_image_for_vision
+            tmp_paths = [normalize_image_for_vision(p) for p in tmp_paths]
+
+            # ── ★ A1 人脸先遣队（2026-11-12）：发图先跑本地 SFace 毫秒级认人 ──
+            #   实锤：聊天看图只走 VLM，「这是谁」全靠模型瞎猜（SFace 引擎从不被调用）。
+            #   现在认出的家人名字注入提问上下文，下游视觉模型（外脑/理解槽/Eye/Ollama
+            #   四分支全受益）只管描述场景，身份靠人脸引擎——数据提取本地毫秒级，
+            #   语言理解交给模型，回归哈文架构原则。置信度门槛 SFace 自带
+            #   （sim≥threshold 才认，否则标「访客」，宁可保守不标错人）。
+            #   失败/未录家人绝不挡看图。
+            _face_hint = ''
+            try:
+                from src.vision.engines.face_engine import FaceEngine as _FE
+                if _FE.models_ready():
+                    _fe = _FE()
+                    _fe.load()
+                    _names, _visitors = set(), 0
+                    for _fp in tmp_paths:
+                        try:
+                            _fd = getattr(_fe.infer(_fp), 'data', None) or {}
+                            _names.update(_fd.get('matched_names') or [])
+                            _visitors += sum(1 for _f in (_fd.get('faces') or [])
+                                             if not _f.get('matched'))
+                        except Exception:
+                            continue
+                    if _names:
+                        _face_hint = (f"\n\n〔系统参考·本地人脸识别：图中识别出家人 "
+                                      f"{'、'.join(sorted(_names))}"
+                                      + (f"；另有 {_visitors} 张未录入面孔（请称访客，勿猜身份）〕"
+                                         if _visitors else "〕"))
+                    elif _visitors:
+                        _face_hint = ("\n\n〔系统参考·本地人脸识别：图中有面孔但均非已录入家人，"
+                                      "请勿猜测具体身份〕")
+            except Exception as _fhe:
+                logger.debug(f'[Engine] 人脸先遣队跳过: {_fhe}')
+
+            # ── ★ 2026-09-24 路由决策：跟随用户当前模式 ──
+            _mode = query_mode if query_mode is not None else self._query_mode
+            use_external = False
+            ext_label, ext_id = '', ''
+            _fall_understand = False
+            if _mode == 'direct':
+                _ue, _lb, _mid, _err = self._route_model_for_query('direct')
+                if _err:
+                    yield ("error", f"❌ {_err}")
+                    return
+                use_external = bool(_ue)
+                ext_label, ext_id = _lb, _mid
+                # ★ #1310（1c 换槽知情）看图链同款：自动换槽必须带出
+                if getattr(self, '_slot_switch_notice', None):
+                    yield ("thinking", self._slot_switch_notice)
+                    self._slot_switch_notice = None
+
+            # ★ #1287（2026-10-29）外脑 vision 能力位守卫：无位外脑不准硬发图——
+            #   DeepSeek 等纯文本外脑会把图静默忽略后乱答（全面检测实锤：发图问「图里是什么」
+            #   答「域名被注册」，比报错更坑）。有位（GLM/Qwen）照旧直发；无位落理解槽。
+            if use_external:
+                try:
+                    from src.core.vision_link import _provider_has_vision as _phv
+                    if not _phv(ext_id):
+                        use_external = False
+                        _fall_understand = True
+                except Exception:
+                    pass
+
+            # 2. 保存用户消息（存档用原话，不带人脸 hint，防污染历史上下文）
+            save_message(self.conversation_id, "user", f"[图片×{len(tmp_paths)}] {text}")
+            self.history.append({"role": "user", "content": f"[图片×{len(tmp_paths)}] {text}"})
+            # ★ A1：发给视觉模型的提问 = 原话 + 人脸识别参考（四个看图分支共用）
+            _ask = text + _face_hint if _face_hint else text
+            # ★ 2026-11-12 反吹牛补丁：看图直答链无执行权——明示模型不许谎称已归档，
+            #   并附照片真实所在相册。实锤：HarvenEye 谎称「已归类至老谭相册、
+            #   存储位置 data\media\family\221.jpg」（目录根本不存在），照片实际在生活照。
+            try:
+                _real_albums = []
+                if _reg_ids:
+                    from src.core import img_store as _ist2
+                    for _rid in _reg_ids:
+                        _info = _ist2.get(_rid) or {}
+                        _ra = str(_info.get('album') or '').strip()
+                        if _ra and _ra not in _real_albums:
+                            _real_albums.append(_ra)
+                _ask += ("\n\n〔系统规则·必读：你没有执行归档/移动/删除照片的权限，"
+                         "绝不许声称「已归类/已保存/已同步/已存到某位置」。"
+                         "用户想归类照片时，告诉他直接说「分到XX相册」即可自动归档，"
+                         "或到图片库手动移相册。"
+                         + (f"本批照片当前真实所在相册：{'、'.join(_real_albums)}。" if _real_albums else "")
+                         + "〕")
+            except Exception:
+                pass
+
+            if use_external:
+                # ═══ 🤖 外脑看图分支 ═══
+                # ★ 2026-09-26 零门槛直发（定版拍板）：删关键词预判——能不能看图由外脑自己说，
+                #   哈文不做裁判（GLM-5.3-Flash 曾被关键词表误判为纯文本）。报错时转译人话+给建议。
+                try:
+                    from src.core.multi_model_manager import get_multi_model_manager as _gmm
+                    _mm = _gmm()
+                    _mname = (_mm.config.get('models', {}).get(ext_id, {}) or {}).get('model_name', '') or ''
+                except Exception:
+                    _mm, _mname = None, ''
+
+                label = f"🤖 外脑看图 · {ext_label}"
+                self._reply_source = label
+                yield ("model_source", {"model": ext_id, "label": label,
+                                        "is_external": True, "mode": "vision"})
+                yield ("thinking", f"☁️ 图片将发送给 {ext_label} 识别…")
+
+                # OpenAI 视觉消息格式（image_url + dataURL）→ mm.generate_response 自动路由
+                vision_content = [{"type": "text", "text": _ask}]
+                for p in tmp_paths:
+                    with open(p, 'rb') as _f:
+                        _b = _b64.b64encode(_f.read()).decode()
+                    vision_content.append({"type": "image_url",
+                                           "image_url": {"url": f"data:image/png;base64,{_b}"}})
+                messages = [
+                    {"role": "system", "content": "你是哈文，本地AI助手。用户发来了图片，请用中文、口语化地回答关于图片的问题。"},
+                    {"role": "user", "content": vision_content},
+                ]
+                # ★ #1265（2026-10-29）：模型显式传参，不再临时换血 mm.current_model
+                #   （旧写法流式消费窗口内全局状态被换，并发批改读到临时值实锤）
+                full_response = ""
+                for piece in self._adapt_mm_stream(
+                        _mm.generate_response(messages, stream=stream, model=ext_id)):
+                    if piece.startswith('[错误]'):
+                        # ★ 2026-09-26 报错转译：技术报错说人话+给出路，不干巴巴甩原文
+                        from src.core.image_processor import translate_vision_error
+                        yield ("text", translate_vision_error(piece[4:], ext_label, _mname or ext_id))
+                        yield ("model_source", {"model": ext_id, "label": f"⚠️ {ext_label} 看不了这张图",
+                                                "is_external": True, "mode": "vision"})
+                        return
+                    full_response += piece
+                    yield ("text", piece)
+
+                save_message(self.conversation_id, "assistant", full_response,
+                             metadata={"source": label})
+                self.history.append({"role": "assistant", "content": full_response})
+                return
+
+            # ═══ 🏠 本地看图分支 ═══
+            # ★ #1204（2026-10-25 开发者死命令）：只准用用户选的本地主模型，严禁扫描代选；
+            #   不能看图 → 如实报错+列已装可选项（信息告知，换不换用户自己定）
+            from src.core.image_processor import build_image_message, model_supports_vision, installed_vision_models
+            # ★ #1267（2026-10-29）：主模型=HarvenEye → 直走 Eye 视觉通道（流式）——
+            #   Eye 底座 qwen3-vl 就是通用视觉模型，选谁给谁；不按模型名字面误判「不支持看图」
+            from src.core import eye_client as _eyecli
+
+            # ★ #1287（2026-10-29）理解槽兜底分支：外脑无 vision 位 → 图落理解槽
+            #   （v1.3 场景④：钉选 > 出厂 ollama 通道，回复方如实标注，铁律 0 合规）
+            if _fall_understand:
+                _ch = {}
+                try:
+                    from src.core import vision_link as _vl
+                    _ch = _vl.resolve_understand_channel()
+                except Exception:
+                    _ch = {}
+                if not _ch:
+                    yield ("error", "❌ 当前模型看不了图，也还没配置视觉模型。请到 设置→模型管理 钉选视觉模型，或安装 HarvenEye 视觉引擎")
+                    return
+                if _ch.get('provider') == 'api':
+                    _ulabel = f"🤖 外脑看图 · {_ch.get('api_model', '')}"
+                elif _ch.get('provider') == 'ollama':
+                    _ulabel = f"🏠 本地看图 · {_ch.get('label') or _ch.get('model', '')} (Ollama)"
+                else:
+                    from pathlib import Path as _Pth
+                    _ulabel = f"🏠 本地看图 · {_Pth(_ch['gguf']).stem}"
+                self._reply_source = _ulabel
+                yield ("model_source", {"model": _ch.get('api_model') or _ch.get('model') or 'vision',
+                                        "label": _ulabel, "is_external": _ch.get('provider') == 'api',
+                                        "mode": "vision"})
+                yield ("thinking", "🖼️ 视觉模型正在看图…")
+                import base64 as _b64f
+                _imgs = []
+                for _p in (tmp_paths or []):
+                    with open(_p, 'rb') as _f:
+                        _imgs.append(_b64f.b64encode(_f.read()).decode())
+                _msgs = [
+                    {"role": "system", "content": "你是哈文，本地AI助手。用户发来了图片，请用中文、口语化地回答关于图片的问题。"},
+                    {"role": "user", "content": _ask, "images": _imgs},
+                ]
+                _full, _got = [], False
+                try:
+                    for piece in _eyecli.chat_stream(_msgs, timeout=150.0):
+                        _got = True
+                        _full.append(str(piece or ''))
+                        yield ("text", piece)
+                except RuntimeError as _re:
+                    yield ("error", f"❌ {_re}")
+                    return
+                except Exception as _ee:
+                    yield ("error", f"❌ 视觉模型看图失败: {_ee}")
+                    return
+                if _got:
+                    save_message(self.conversation_id, "assistant", ''.join(_full),
+                                 metadata={"source": _ulabel})
+                    self.history.append({"role": "assistant", "content": ''.join(_full)})
+                return
+
+            if _eyecli.is_selected():
+                _label = "🏠 本地看图 · HarvenEye"
+                self._reply_source = _label
+                yield ("model_source", {"model": "harveneye", "label": _label,
+                                        "is_external": False, "mode": "vision"})
+                yield ("thinking", "🖼️ HarvenEye 正在看图…")
+                import base64 as _b64m
+                _imgs = []
+                for _p in (tmp_paths or []):
+                    with open(_p, 'rb') as _f:
+                        _imgs.append(_b64m.b64encode(_f.read()).decode())
+                _msgs = [
+                    {"role": "system", "content": "你是哈文，本地AI助手。用户发来了图片，请用中文、口语化地回答关于图片的问题。"},
+                    {"role": "user", "content": _ask, "images": _imgs},
+                ]
+                _full, _got = [], False
+                try:
+                    for piece in _eyecli.chat_stream(_msgs, timeout=150.0):
+                        _got = True
+                        _full.append(str(piece or ''))
+                        yield ("text", piece)
+                except RuntimeError as _re:
+                    yield ("error", f"❌ {_re}")
+                    return
+                except Exception as _ee:
+                    yield ("error", f"❌ HarvenEye 看图失败: {_ee}")
+                    return
+                if _got:
+                    save_message(self.conversation_id, "assistant", ''.join(_full),
+                                 metadata={"source": _label})
+                    self.history.append({"role": "assistant", "content": ''.join(_full)})
+                else:
+                    yield ("error", "❌ HarvenEye 返回了空回答，请把图片重新发一次")
+                return
+            _base = getattr(self.model, 'base_url', 'http://localhost:11434')
+            vision_model = (getattr(self.model, 'model', '') or '').strip()
+            try:
+                if not vision_model or not model_supports_vision(vision_model, base_url=_base):
+                    vision_model = None
+            except Exception:
+                vision_model = None
+            if not vision_model:
+                # ★ #1356（2026-11-01）：发图预检引导卡——按硬件体检分流推荐
+                #   （显存够→推本地档位自选；不够→只推外脑，绝不忽悠装跑不动的），
+                #   卡片生成失败降级回 #1204 原版话术，永不炸聊天。
+                _cur = (getattr(self.model, 'model', '') or '').strip() or '（未选）'
+                try:
+                    from src.core.image_processor import vision_guide_card as _vgc
+                    _card = _vgc(_base)
+                except Exception:
+                    _card = ''
+                if _card:
+                    yield ("text",
+                           f"⚠️ 当前本地模型「{_cur}」不支持看图。\n\n{_card}")
+                else:
+                    try:
+                        _hint = ' / '.join(installed_vision_models(base_url=_base)[:4])
+                    except Exception:
+                        _hint = ''
+                    yield ("text",
+                           f"⚠️ 当前本地模型「{_cur}」不支持看图。\n\n"
+                           "1️⃣ 到 **设置 → 模型中心** 自己换一个能看图的本地模型"
+                           f"（已装可选：{_hint or '还没有，需要先安装一个'}）\n"
+                           "2️⃣ 或切到 🤖 外脑模式，选一个支持看图的外脑（图片会发到云端识别）\n\n"
+                           "换好后把图片重新发一次即可。")
+                yield ("model_source", {"model": "none", "label": "⚠️ 当前模型不能看图", "is_external": False, "mode": "vision"})
+                return
+
+            label = f"🏠 本地看图 · {vision_model}"
+            self._reply_source = label
+            yield ("model_source", {"model": vision_model, "label": label,
+                                    "is_external": False, "mode": "vision"})
+            yield ("thinking", f"🖼️ {vision_model} 正在看图…")
+
+            # 3. 多模态消息 → Ollama（OpenAI 兼容接口，流式）
+            messages = [
+                {"role": "system", "content": "你是哈文，本地AI助手。用户发来了图片，请用中文、口语化地回答关于图片的问题。"},
+                build_image_message(_ask, tmp_paths),
+            ]
+            response = self.model.client.chat.completions.create(
+                model=vision_model, messages=messages, stream=stream, max_tokens=2048,
+            )
+            full_response = ""
+            if stream:
+                for chunk in response:
+                    if chunk.choices and chunk.choices[0].delta.content:
+                        piece = chunk.choices[0].delta.content
+                        full_response += piece
+                        yield ("text", piece)
+            else:
+                full_response = response.choices[0].message.content or ""
+                yield ("text", full_response)
+
+            # 4. 回答持久化（带来源，历史对话也能看到是谁答的）
+            save_message(self.conversation_id, "assistant", full_response,
+                         metadata={"source": label})
+            self.history.append({"role": "assistant", "content": full_response})
+        except Exception as e:
+            logger.error(f"[Engine] 看图回答失败: {e}", exc_info=True)
+            yield ("error", f"❌ 看图失败：{e}")
+        finally:
+            for p in tmp_paths:
+                try:
+                    if 'hv_img_' in str(p):
+                        _os.remove(p)
+                except Exception:
+                    pass
+
+    @staticmethod
+    def _strip_assist_context(msg: str) -> str:
+        """★ 2026-09-16 快车道防误触发（实测实锤bug）：助手小窗自由对话把
+        "（用户此刻在「XX」面板…）"前缀和【背景补充】页面上下文拼进消息原文，
+        快车道若对拼接文本做关键词匹配，上下文里的"目录/应用/设置"等词会跟
+        用户一句"打开家庭生活"拼出误触发 → 转给 Computer Ops 答非所问。
+        快车道只应匹配用户原话。"""
+        try:
+            import re as _re_ctx
+            s = _re_ctx.sub(r'【背景补充（供参考，不用复述）】[\s\S]*$', '', msg or '').strip()
+            s = _re_ctx.sub(r'^（用户此刻在[^）]*）\s*', '', s).strip()
+            return s or (msg or '')
+        except Exception:
+            return msg or ''
+
+    @staticmethod
+    def _match_nav_target(msg: str):
+        """★ 2026-09-16 导航兜底（B路线后端版）：祈使"打开/进入/切换 XX"且 XX 命中
+        已装面板名或出厂分类 → 返回 (path, name)；否则 None（照旧走原快车道/模型）。
+        刻意保守：≤24字、无问号、目标词精确（原词优先逐级剥后缀，互含≤2字），
+        与前端 A 路线（spa/src/navCommands.js）同一套闸门。
+        只认面板名+出厂分类+面板管理页 —— 与电脑操作零冲突；"设置"等内置页
+        与"打开Windows设置"撞车，刻意不在此兜底。"""
+        try:
+            import re as _re_nav
+            t = (msg or '').strip()
+            if not t or len(t) > 24 or _re_nav.search(r'[？?]', t):
+                return None
+            m = _re_nav.match(
+                r'^(?:请|麻烦|帮我|劳驾)?(?:帮我)?(?:打开|进入|切换到|切换|带我去|跳转到|跳转|去(?:看看|一下|下)?|查看|看看)\s*(.{1,16}?)\s*(?:面板|页面|空间|界面|的页|页)?[吧呗哈哦啦]?$',
+                t)
+            if not m:
+                return None
+            kw = (m.group(1) or '').strip()
+            if not kw:
+                return None
+            cands = [kw]
+            cur = kw
+            for _ in range(3):
+                nxt = _re_nav.sub(r'(面板|页面|空间|中心|界面|工具|记录页|的页|页|库)$', '', cur).strip()
+                if not nxt or nxt == cur:
+                    break
+                cands.append(nxt)
+                cur = nxt
+            targets = []  # (name, path)
+            try:
+                from src.core.panel_manager import get_panel_manager as _gpm_nav
+                for _p in (_gpm_nav().get_all_panels() or []):
+                    if _p.get('id') and _p.get('name'):
+                        targets.append((_p['name'], '/panel/' + _p['id']))
+            except Exception:
+                pass
+            targets += [('家庭模板', '/space/family'), ('公司模板', '/space/company'),
+                        ('创作模板', '/space/create'), ('面板中心', '/panels')]
+            for cand in cands:
+                hits = []
+                for name, path in targets:
+                    if cand == name:
+                        hits.append((path, name))
+                    elif (cand in name and len(name) - len(cand) <= 2) or (name in cand and len(cand) - len(name) <= 2):
+                        hits.append((path, name))
+                if len(hits) == 1:
+                    return hits[0]
+                if len(hits) > 1:
+                    return ('/panels', '面板管理')
+            # 常用别名（与前端 navCommands.js PANEL_ALIAS 同步维护）：别名 → 面板ID
+            _panel_ids = set()
+            for _nm, _pt in targets:
+                if _pt.startswith('/panel/'):
+                    _panel_ids.add(_pt.rsplit('/', 1)[-1])
+            _NAV_ALIAS = [
+                ('孩子成长档案', 'kid_archive'), ('成长档案', 'kid_archive'), ('成长', 'kid_archive'), ('孩子档案', 'kid_archive'),
+                ('食物库存', 'fridge_stock_1'), ('冰箱', 'fridge_stock_1'),
+                ('记账账本', 'accounting_daily_1'), ('记账', 'accounting_daily_1'), ('账本', 'accounting_daily_1'),
+                ('车辆保养', 'car_maintenance_1'), ('车辆', 'car_maintenance_1'), ('汽车', 'car_maintenance_1'),
+                ('宠物', 'pet_care_1'),
+                ('绿植', 'plants_1'), ('花草', 'plants_1'), ('浇花', 'plants_1'),
+                # ★ 2026-10-11 #1099 健康中枢：体检指针改 health_file（旧 health_checkup_1 早已退役），补健身/成长
+                ('健康档案', 'health_file'), ('体检', 'health_file'), ('体检报告', 'health_file'), ('复查', 'health_file'),
+                ('健身记录', 'fitness_log'), ('健身', 'fitness_log'), ('运动记录', 'fitness_log'),
+                ('孩子成长', 'child_growth'), ('接种', 'child_growth'), ('视力', 'child_growth'),
+                ('家庭日历', 'home_calendar'), ('日历', 'home_calendar'), ('日程', 'home_calendar'),
+                ('物品存放', 'home_items'), ('物品', 'home_items'), ('东西在哪', 'home_items'),
+                ('老人关怀', 'elder_care'), ('老人', 'elder_care'), ('用药', 'elder_care'),
+                ('家庭药箱', 'med_cabinet'), ('药箱', 'med_cabinet'), ('吃药', 'med_cabinet'),
+                ('证件保单', 'home_docs'), ('证件', 'home_docs'), ('保单', 'home_docs'),
+                ('水电气', 'home_utilities'), ('缴费', 'home_utilities'),
+                ('全家待办', 'family_todo'),
+                ('人情往来', 'home_favors'), ('人情', 'home_favors'), ('随礼', 'home_favors'),
+                ('家庭维修', 'home_repair'), ('维修', 'home_repair'),
+            ]
+            for cand in cands:
+                for alias, pid in _NAV_ALIAS:
+                    if cand != alias:
+                        continue
+                    if pid in _panel_ids:
+                        return ('/panel/' + pid, alias)
+                    return ('/panels', '面板管理')  # 面板未装 → 打开面板页
+            return None
+        except Exception:
+            return None
 
     def _try_smart_route(self, user_message: str, stream: bool = True):
         """★ 2026-08-13: 智能关键词组合路由 — 不漏词，不依赖FC"""
         try:
             from src.core.agent_runner import run_script_agent
+            # ★ 2026-09-16 防御纵深：即使调用方忘了剥离小窗上下文，快车道也只匹配用户原话
+            #   （顺带保护 computer_use 的路径提取不被【背景补充】里的假路径污染）
+            user_message = self._strip_assist_context(user_message)
             msg = user_message.lower().strip()
+
+            # ★ #1154（2026-10-16）L1 冰箱一句话直录 —— 零风险确定性动作，优先级最高。
+            #   「娃娃菜2颗放冰箱」直写库秒回执，零确认零 token；解析不出自动回退原路由。
+            try:
+                from src.core.fridge_hub import try_quick_fridge_add as _tqfa
+                _fr_out = _tqfa(user_message)
+                if _fr_out:
+                    logger.info(f"[Engine] L1 冰箱直录命中: {user_message[:30]}")
+                    if stream:
+                        yield ("text", _fr_out)
+                    return _fr_out
+            except Exception as _fre:
+                logger.debug(f"[Engine] 冰箱直录快车道异常(回退原路由): {_fre}")
 
             # ★ 2026-08-14: 复杂操作信号词 — 含这些词时不拦截，让FC处理
             # ★ 2026-08-14: 去掉"删除""游戏"等误拦截词，改为更精确的复合词
             # ★ 2026-08-16: i18n — 增加英文信号词（英文指令同样跳过B方案走FC）
+            # ★ 2026-10-20 高频本地操作快车道（速度实锤反馈：清空回收站走 FC 要
+            #   外脑 9s 首轮 + Clear-RecycleBin 本身 38~66s；本地直执行省掉外脑轮）
+            _quick_ops = [
+                ('清空回收站', '倒垃圾', '清空垃圾', '清空废纸篓'),
+                ('打开下载', '打开下载文件夹'),
+                ('打开桌面', ), ('打开文档', '打开我的文档'), ('打开图片', '打开图片文件夹'),
+                ('打开音乐', ), ('打开视频', '打开视频文件夹'),
+            ]
+            # ★ 2026-11-11 方案B修复①：直执行守卫（打桩探针危险级 2 例实锤）——
+            #   问句/犹豫句/条件句绝不直执行：「清空回收站之前我想先看看…」「清空回收站的文件
+            #   还能恢复吗」曾被五个字劫持直接 Clear-RecycleBin。含疑问/条件标记一律不进直执行。
+            _QUICKOP_BLOCKERS = ('？', '?', '吗', '呢', '吧', '么', '怎么', '怎样', '如何',
+                                 '能不能', '可不可以', '会不会', '是不是', '之前', '以后',
+                                 '的时候', '先别', '还是', '要不要', '该不该')
+            for _ops in (_quick_ops if not any(k in msg for k in _QUICKOP_BLOCKERS) else []):
+                if any(k in msg for k in _ops):
+                    try:
+                        import subprocess as _sp
+                        if '回收' in _ops[0] or '垃圾' in _ops[0]:
+                            # PowerShell COM 清空（比 Clear-RecycleBin 少驱动器枚举开销；
+                            # 三盘并行意义不大，单调用即可；-Force 免确认）
+                            _cmd = 'powershell -NoProfile -Command "Clear-RecycleBin -Force -ErrorAction SilentlyContinue; Write-Output done"'
+                            _r = _sp.run(_cmd, capture_output=True, text=True, shell=True, timeout=180,
+                                         encoding='utf-8', errors='replace')
+                            _out = "🗑 回收站已清空。"
+                            logger.info(f"[Engine] 快车道·清空回收站 rc={_r.returncode}")
+                        else:
+                            _folder_map = {'下载': 'Downloads', '桌面': 'Desktop', '文档': 'Documents',
+                                           '图片': 'Pictures', '音乐': 'Music', '视频': 'Videos'}
+                            _fold = next((v for k, v in _folder_map.items() if k in msg), None)
+                            if _fold:
+                                _sp.Popen(f'explorer.exe shell:{_fold}', shell=True)
+                                _out = f"📁 已打开{_fold} 文件夹。"
+                                logger.info(f"[Engine] 快车道·打开文件夹: {_fold}")
+                            else:
+                                continue
+                        _out = ("⚡ 本地快车道 · " if False else "") + _out + "\n\n（本地直接执行，未经过大模型）"
+                        if stream:
+                            yield ("text", _out)
+                        return _out
+                    except Exception as _qo_e:
+                        logger.warning(f"[Engine] 快车道本地操作失败(回退FC): {_qo_e}")
+                        break
+
+            # ★ #1509（2026-11-13）：用户自定义口令（config custom_keywords，追加式）——
+            #   命中即 0 token 直出 reply / 打开 open 路径；同样过疑问句守卫，防「XX吗」误触发
+            #   守卫=快车道疑问词+复杂信号疑问词（哪里/什么/为什么等），「工作文件在哪里」不误开
+            _ckw_blockers = _QUICKOP_BLOCKERS + ('哪里', '哪个', '哪些', '什么', '为什么', '为啥', '多久', '几')
+            if not any(k in msg for k in _ckw_blockers):
+                for _ck in _load_custom_keywords():
+                    _trig = str(_ck.get('trigger') or '').strip()
+                    if not _trig or _trig not in user_message:
+                        continue
+                    try:
+                        _out = ''
+                        _open = str(_ck.get('open') or '').strip()
+                        if _open:
+                            import os as _os
+                            _os.startfile(_os.path.normpath(_open))
+                            _out = str(_ck.get('reply') or '').strip() or f"📂 已打开：{_open}"
+                        else:
+                            _out = str(_ck.get('reply') or '').strip()
+                        if _out:
+                            logger.info(f"[Engine] 自定义口令命中: {_trig}")
+                            yield ("model_source", {
+                                "model": "custom_kw", "label": "⚡ 自定义口令 · 本地直出",
+                                "is_external": False, "mode": "fastlane",
+                            })
+                            if stream:
+                                yield ("text", _out)
+                            return _out
+                    except Exception as _ck_e:
+                        logger.warning(f"[Engine] 自定义口令执行失败({_ck.get('trigger')}): {_ck_e}")
+                        continue
+
             _COMPLEX_SIGNALS = [
                 # 中文
                 '并删除', '并卸载', '并清理', '并找出', '并分析', '并对比',
@@ -4509,38 +7033,78 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
                 'delete all', 'remove all', 'uninstall all', 'everything',
             ]
             _is_complex = any(k in msg for k in _COMPLEX_SIGNALS)
+            # ★ 2026-10-20 FC慢治理#5: 疑问句排除 — 「为什么…慢」被「为什么」误判复杂
+            #   导致三连装载 FC 全套后快车道又跳过（预处理白做实锤）；纯疑问句=咨询
+            #   不是操作，回 B 方案/快车道正常路由。含明确祈使动作词的不算纯疑问
+            if _is_complex:
+                _q_start = msg.strip().startswith(('为什么', '怎么', '怎样', '什么', '为啥', 'why ', 'what ', 'how '))
+                _q_end = msg.strip().endswith(('？', '?', '吗', '么'))
+                _has_imperative = any(_kw in msg for _kw in (
+                    '帮我', '给我', '请帮我', '删掉', '删除', '清理', '卸载', '打开', '关闭',
+                    '设置', '安装', '停用', '批量', '找出并', '检查并'))
+                if (_q_start or _q_end) and not _has_imperative:
+                    _is_complex = False
+                    logger.info(f"[Engine] 疑问句排除复杂信号词，正常路由: {user_message[:50]}")
             if _is_complex:
                 logger.info(f"[Engine] 检测到复杂操作信号词，跳过B方案，让FC处理: {user_message[:50]}")
+                # ★ #1330（2026-10-30）：置位信号——若后续路由到本地通道（无 FC），
+                #   send 主链会据此给用户诚实提示，不再静默降级成纯聊天光说不练
+                self._fc_signal_pending = True
                 return None
 
+            # ★ 2026-09-16 导航兑底：祈使"打开/进入 + 面板名/分类名"不进 Computer Ops，
+            #   输出 [NAVIGATE:] 标记由前端/web_app.py 提取后跳转（web_app.py L1135 同一套）
+            _nav_hit = self._match_nav_target(user_message)
+            if _nav_hit:
+                _path, _name = _nav_hit
+                _nav_out = f"🧭 已为你打开「{_name}」～\n[NAVIGATE:{_path}]"
+                logger.info(f"[Engine] 快车道导航兑底: {user_message[:30]} → {_path}")
+                if stream:
+                    yield ("text", _nav_out)
+                return _nav_out
+
             # computer_use 触发：关键词组合匹配
+            # ★ 2026-11-11 方案B修复②（打桩探针 5 例劫持实锤）两道闸：
+            #   闸1 疑问守卫：知识问句不劫持（内存条怎么选/截图快捷键是什么/进程和线程的区别…）
+            #   闸2 外脑放行：外脑在线时知识型词交还模型（FC 理解力成熟，词匹配只兜本地模型）；
+            #       确定性动作（打开盘/文件夹/应用名/列出磁盘）仍走快车道零 token 直执行
+            _q_markers = ('怎么', '怎样', '如何', '什么', '为什么', '为啥', '区别')
+            _pure_question = ((any(k in msg for k in _q_markers)
+                               or msg.endswith(('？', '?', '吗', '呢', '么', '吧')))
+                              and not any(k in msg for k in ('帮我', '给我', '请')))
+            try:
+                from src.core.multi_model_manager import is_local_model as _isl_b
+                _ext_online = not _isl_b(getattr(getattr(self, 'model', None), 'current_model', None))
+            except Exception:
+                _ext_online = False
+            _kw_allowed = not _pure_question and not _ext_online
             computer_use_triggers = False
-            # 截图
-            if any(k in msg for k in ['截图', '截屏', 'screenshot']):
+            # 截图（知识型 → 受两道闸）
+            if _kw_allowed and any(k in msg for k in ['截图', '截屏', 'screenshot']):
                 computer_use_triggers = True
-            # 打开+盘/目录/文件夹（不含"思路""文件"等抽象词）
-            if any(k in msg for k in ['打开', 'open']) and any(k in msg for k in ['盘', '目录', '文件夹', 'folder', 'directory', 'drive']) and not any(k in msg for k in ['思路', '文件', '方式', '方法']):
+            # 打开+盘/目录/文件夹（确定性动作；仅疑问守卫，不含"思路""文件"等抽象词）
+            if not _pure_question and any(k in msg for k in ['打开', 'open']) and any(k in msg for k in ['盘', '目录', '文件夹', 'folder', 'directory', 'drive']) and not any(k in msg for k in ['思路', '文件', '方式', '方法']):
                 computer_use_triggers = True
-            # 查看内存/进程
-            if any(k in msg for k in ['内存', 'memory', 'ram']) or any(k in msg for k in ['进程', 'process', '查看进程']):
+            # 查看内存/进程（知识型 → 受两道闸）
+            if _kw_allowed and (any(k in msg for k in ['内存', 'memory', 'ram']) or any(k in msg for k in ['进程', 'process', '查看进程'])):
                 computer_use_triggers = True
-            # 整理桌面
-            if any(k in msg for k in ['整理桌面', '整理文件', 'clean desktop', 'organize desktop', 'tidy desktop']):
+            # 整理桌面（知识型 → 受两道闸）
+            if _kw_allowed and any(k in msg for k in ['整理桌面', '整理文件', 'clean desktop', 'organize desktop', 'tidy desktop']):
                 computer_use_triggers = True
-            # 窗口控制
-            if any(k in msg for k in ['最大化', '最小化', 'maximize', 'minimize']):
+            # 窗口控制（知识型 → 受两道闸）
+            if _kw_allowed and any(k in msg for k in ['最大化', '最小化', 'maximize', 'minimize']):
                 computer_use_triggers = True
-            # 打开+应用名（组合匹配，不漏词）
-            if '打开' in msg and any(k in msg for k in ['设置', '浏览器', '记事本', '计算器', '画图', '资源管理器', '任务管理器', '终端', 'cmd', '控制面板', '应用']):
+            # 打开+应用名（确定性动作；仅疑问守卫）
+            if not _pure_question and '打开' in msg and any(k in msg for k in ['设置', '浏览器', '记事本', '计算器', '画图', '资源管理器', '任务管理器', '终端', 'cmd', '控制面板', '应用']):
                 computer_use_triggers = True
-            # ★ 2026-08-16: 英文 open+应用名
-            if 'open' in msg and any(k in msg for k in ['settings', 'browser', 'edge', 'chrome', 'notepad', 'calculator', 'mspaint', 'paint', 'explorer', 'task manager', 'terminal', 'cmd', 'control panel', 'control panel']):
+            # ★ 2026-08-16: 英文 open+应用名（确定性动作）
+            if not _pure_question and 'open' in msg and any(k in msg for k in ['settings', 'browser', 'edge', 'chrome', 'notepad', 'calculator', 'mspaint', 'paint', 'explorer', 'task manager', 'terminal', 'cmd', 'control panel', 'control panel']):
                 computer_use_triggers = True
-            # 列出磁盘
-            if any(k in msg for k in ['列出', '查看', 'list']) and any(k in msg for k in ['盘', '磁盘', 'drive', 'disk']):
+            # 列出磁盘（确定性动作）
+            if not _pure_question and any(k in msg for k in ['列出', '查看', 'list']) and any(k in msg for k in ['盘', '磁盘', 'drive', 'disk']):
                 computer_use_triggers = True
-            # 输入文字
-            if any(k in msg for k in ['输入文字', '打字', 'type text']):
+            # 输入文字（确定性动作）
+            if not _pure_question and any(k in msg for k in ['输入文字', '打字', 'type text']):
                 computer_use_triggers = True
 
             if computer_use_triggers:
@@ -4552,16 +7116,9 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
                 return output
 
             # system_ops 触发
+            # ★ 2026-09-19 (#794): 拆除危险动词分支 — 装软件/安装/卸载/uninstall/清理/clean
+            #   全部移交 FC 走确认门（破坏性操作必须确认铁律）。快车道只保留零风险安全分支。
             system_ops_triggers = False
-            if any(k in msg for k in ['装软件', '安装软件', '装个', '装一']) and not any(k in msg for k in ['思路', '想法', '方案', '办法']):
-                system_ops_triggers = True
-            # ★ 2026-08-16: 英文装软件（无"思路"类排除词，用复合词防误伤）
-            if any(k in msg for k in ['install software', 'install app', 'install application', 'install a program']):
-                system_ops_triggers = True
-            if any(k in msg for k in ['卸软件', '卸载', 'uninstall']):
-                system_ops_triggers = True
-            if any(k in msg for k in ['清理磁盘', '清理垃圾', 'clean', 'disk cleanup', 'cleanup']):
-                system_ops_triggers = True
             if any(k in msg for k in ['网络修复', '修网络', '网络 fix', 'flushdns', 'fix network', 'repair network', 'network repair']):
                 system_ops_triggers = True
             if any(k in msg for k in ['查配置', '系统配置', 'system info', '电脑配置', 'system information', 'pc specs', 'my specs']):
@@ -4714,7 +7271,9 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
             from src.core.agent_runner import run_script_agent
 
             # 获取工具定义
-            tool_defs = get_tool_definitions()
+            # ★ 方案A 联网授权制（2026-10-05 定版拍板）：联网工具按🌐开关注入
+            tool_defs = get_tool_definitions(
+                allow_web_search=bool(getattr(self, '_web_search_this_query', False)))
             if not tool_defs:
                 return None
 
@@ -4838,101 +7397,100 @@ _engine_instance = None
 # ═══════════════════════════════════════════════════════════════
 
 def _try_skill_trigger_match(user_message):
-    """★ 2026-08-08: 只检测匹配，不执行（用于流式执行前）"""
+    """★ 2026-07-17: 只检测匹配，不执行（用于流式执行前）
+    ★ 2026-09-26 修复（已批准A方案）：
+      ① 触发词改正确正则语义——'记账.*元' 以前被当死字符串找子串，永远不命中
+      ② 返回 (skill_name, action)：action 按消息意图从技能动作表选真实值
+        （以前执行点硬编码 'main'，accounting 等动作表无 main → 必报'不支持的操作'）
+      ③ 数据写型动作（add/delete 等）不自动执行——参数给不了，瞎跑会记废账，
+        交回正常管线（智能拆分/确认卡接管）；只放行查询型与生成/执行型
+    """
+    import re as _re_trig
     try:
         from src.core.scripts_runner import list_skill_scripts
         from pathlib import Path
         skills = list_skill_scripts()
         if not skills:
             return None
-        msg_lower = user_message.lower()
         for skill in skills:
             skill_name = skill.get('skill_name', '')
             skill_md = Path(__file__).parent.parent.parent / 'data' / 'skills' / skill_name / 'SKILL.md'
             if not skill_md.exists():
                 continue
             content = skill_md.read_text(encoding='utf-8')
+            if not content.startswith('---'):
+                continue
+            end = content.find('---', 3)
+            if end <= 0:
+                continue
             triggers = ''
-            if content.startswith('---'):
-                end = content.find('---', 3)
-                if end > 0:
-                    for line in content[3:end].split('\n'):
-                        line = line.strip()
-                        if line.startswith('trigger:'):
-                            triggers = line.split(':', 1)[1].strip()
-                            break
+            semantic_actions = []
+            _in_actions = False
+            for line in content[3:end].split('\n'):
+                _ls = line.strip()
+                if _ls.startswith('trigger:'):
+                    triggers = _ls.split(':', 1)[1].strip()
+                    _in_actions = False
+                elif _ls.startswith('actions:'):
+                    _in_actions = True
+                elif _in_actions and _ls.startswith('- '):
+                    semantic_actions.append(_ls[2:].strip())
+                elif _ls and not _ls.startswith('-'):
+                    _in_actions = False
             if not triggers:
                 continue
-            trigger_words = [t.strip().lower() for t in triggers.split('|') if t.strip()]
-            if any(tw in msg_lower for tw in trigger_words):
-                return skill_name
+            # ① 正则语义匹配（含元字符的触发词按正则，其余按子串；非法正则退回子串）
+            hit = False
+            for tw in [t.strip() for t in triggers.split('|') if t.strip()]:
+                if any(c in tw for c in '.*+?[](){}|^$\\'):
+                    try:
+                        if _re_trig.search(tw, user_message, _re_trig.I):
+                            hit = True
+                            break
+                    except _re_trig.error:
+                        pass
+                if not hit and tw.lower() in user_message.lower():
+                    hit = True
+                    break
+            if not hit:
+                continue
+            logger.info(f"[Engine] Skill触发词匹配: {skill_name} (触发词: {triggers})")
+            # ②③ action 选择
+            file_actions = [a.get('name', '') for a in skill.get('actions', [])]
+            try:
+                _script = Path(__file__).parent.parent.parent / skill.get('entry_point', '')
+                _src = _script.read_text(encoding='utf-8', errors='ignore') if _script.exists() else ''
+            except Exception:
+                _src = ''
+            # 直跑型：脚本根本不读 action 参数（music-gen/code_audit）→ 文件动作即可
+            _cares = any(k in _src for k in ('HARVEN_SKILL_ACTION', 'args.action', 'sys.argv', "'--action'", '"--action"'))
+            if not _cares:
+                return (skill_name, file_actions[0] if file_actions else 'run')
+            if semantic_actions:
+                _is_query = bool(_re_trig.search(r'查|多少|汇总|总结|账单|余额|报表|统计|状态|报告|列表|月结|数据', user_message))
+                if _is_query:
+                    # 汇总/总结/月结 → summary 类优先；其余查询 → query 优先
+                    if _re_trig.search(r'汇总|总结|月结', user_message):
+                        _order = ('summary', 'monthly', 'report', 'query', 'status', 'list', 'view', 'get')
+                    else:
+                        _order = ('query', 'summary', 'report', 'status', 'list', 'monthly', 'view', 'get')
+                    for cand in _order:
+                        if cand in semantic_actions:
+                            return (skill_name, cand)
+                # 生成/执行型动作放行（song_production 的 full 等）
+                for cand in ('full', 'generate', 'run', 'main', 'produce', 'start'):
+                    if cand in semantic_actions:
+                        return (skill_name, cand)
+            # 理会 action 但无语义表 / 只剩数据写型 → 不瞎跑，交回正常管线
+            return None
         return None
     except Exception as e:
         logger.error(f"[Engine] Skill匹配检测失败: {e}")
         return None
 
 
-def _try_skill_trigger(user_message, return_name=False):
-    """检测用户消息是否匹配Skill触发词，匹配则自动执行脚本
-
-    Returns:
-        str or tuple: 脚本输出结果（None表示没有匹配）
-        如果return_name=True，返回(skill_name, output)元组
-    """
-    try:
-        from src.core.scripts_runner import list_skill_scripts, run_skill_script
-        from pathlib import Path
-
-        skills = list_skill_scripts()
-        if not skills:
-            return (None, None) if return_name else None
-
-        msg_lower = user_message.lower()
-
-        for skill in skills:
-            skill_name = skill.get('skill_name', '')
-            skill_md = Path(__file__).parent.parent.parent / 'data' / 'skills' / skill_name / 'SKILL.md'
-            if not skill_md.exists():
-                continue
-
-            content = skill_md.read_text(encoding='utf-8')
-            triggers = ''
-            if content.startswith('---'):
-                end = content.find('---', 3)
-                if end > 0:
-                    yaml_part = content[3:end]
-                    for line in yaml_part.split('\n'):
-                        line = line.strip()
-                        if line.startswith('trigger:'):
-                            triggers = line.split(':', 1)[1].strip()
-                            break
-
-            if not triggers:
-                continue
-
-            trigger_words = [t.strip().lower() for t in triggers.split('|') if t.strip()]
-            matched = any(tw in msg_lower for tw in trigger_words)
-
-            if matched:
-                logger.info(f"[Engine] Skill触发词匹配: {skill_name} (触发词: {triggers})")
-                actions = skill.get('actions', [])
-                action = actions[0]['name'] if actions else 'main'
-                result = run_skill_script(skill_name, action, {}, timeout=120)
-                if result.get('success'):
-                    output = result.get('output', '')
-                    logger.info(f"[Engine] Skill {skill_name} 执行成功，输出 {len(output)} 字符")
-                    return (skill_name, output) if return_name else output
-                else:
-                    error = result.get('stderr', '') or result.get('error', '未知错误')
-                    logger.error(f"[Engine] Skill {skill_name} 执行失败: {error}")
-                    err_out = f"脚本执行失败: {error}"
-                    return (skill_name, err_out) if return_name else err_out
-
-        return (None, None) if return_name else None
-    except Exception as e:
-        logger.error(f"[Engine] Skill触发检测失败: {e}")
-        return (None, None) if return_name else None
-        return None
+# ★ 2026-09-26：_try_skill_trigger（非流式版）已删除——无任何调用点的死代码，
+#   且 actions[0]['name'] 写法对字符串列表必抛 TypeError（从未跑通过）。执行统一走流式版。
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -4968,13 +7526,86 @@ def _try_smart_split(user_message, conversation_id):
     """
     import re as _re_split
 
+    # ★ 2026-10-15 A. 明确时间线索词（提醒直设门闸）——
+    #   没有任何线索（"提醒我喝水""一会儿提醒我"）不设模糊提醒，回问具体时间；
+    #   注意"马上/一会儿/等下"是模糊词，故意不算（会变成当天09:00垃圾提醒）
+    _TIME_CUE_PAT = _re_split.compile(
+        r'每天|每日|天天|每周|每星期|每月|隔天|今天|今晚|明天|后天|大后天|'
+        r'周[一二三四五六日天]|星期[一二三四五六日天]|'
+        r'\d+\s*天后|\d{1,2}\s*月\d{1,2}[日号]|'
+        # ★ 2026-10-17 B. 补相对时长词——「5分钟后提醒我接孩子」曾被门闸拦下反问
+        #   （parse_reminder_text 本身会解「N分钟后」，实锤：解析出 =now+5min），门闸却放不了行
+        r'\d+\s*分钟后|\d+\s*个?小时后|\d+\s*分半后|'
+        r'\d{1,2}[点时]|早晨|早上|上午|中午|下午|晚上|傍晚|凌晨|半夜|'
+        r'\d{1,2}:\d{2}')
+
+    # ★ 2026-09-26 防误判加固（已定案A）：只看用户原话——
+    #   浮窗聊天会把面板目录等【背景补充】拼在消息后，模板文案"多久没打电话了、该帮爸妈办
+    #   什么事…聊了什么"曾被 `该(.+?)了` 正则误捕成假提醒（09-26 实锤）。先切掉再跑正则
+    _cut = user_message.find('【背景补充')
+    if _cut > -1:
+        user_message = user_message[:_cut].strip()
+    if user_message.startswith('（用户此刻在'):
+        _pend = user_message.find('）')
+        if 0 < _pend < 40:
+            user_message = user_message[_pend + 1:].strip()
+
     # 检测是否包含多个操作（至少2个金额或2个操作词）
     amounts = _re_split.findall(r'(\d+(?:\.\d+)?)\s*元', user_message)
+    # ★ 2026-09-17 放宽：句尾无单位纯数字也算金额（实锤"模拟飞行1200"聊天模式没记上，
+    #   模型还嘴硬说"已经记录了"）。守卫：数字后跟量词/日期/分数/倍数不算
+    #   （3个/5斤/90分/8岁/30度/9月15日/5万/13点）
+    _bare_amounts = _re_split.findall(
+        r'(?<![\d.:：])([1-9]\d{2,5}(?:\.\d+)?)(?![\d元块个只斤克次人天号日月点岁折成分度万亿千：:])(?=\s*[，。,.!！?？\s]|$)',
+        user_message)
+    # ★ 疑问句守卫："iPhone 7999值得买吗"/"多少钱"不是记账
+    _is_question = bool(_re_split.search(r'[?？]|多少|几块|几元|值不值|好不好', user_message))
+    if _is_question:
+        _bare_amounts = []
     remind_words = _re_split.findall(r'该(.+?)了|记得(.+?)|提醒我(.+?)', user_message)
 
+    # ★ 2026-09-26 甲：金额在前语序（实测实锤"47.6 今天中文韩式炸酱面"快记没接住，
+    #   掉进外脑FC查了4轮工具说明书——慢30秒+烧5倍token）。段首数字+空格+描述
+    #   也算记账，走同一条待确认队列："47.6 今天炸酱面"/"50 买菜"/"47.6 炸酱面，35 晚饭"
+    _lead_ops = []
+    if not _is_question:
+        # 注意：分隔符类不含英文句点——"47.6"的小数点不能被切（09-26 实测踩坑：切完变"6 今天…"金额错成6.0）
+        for _seg in _re_split.split(r'[，。,!！?？\n]', user_message):
+            _seg = _seg.strip()
+            _lm = _re_split.match(
+                r'(\d{1,5}(?:\.\d+)?)\s+([\u4e00-\u9fa5A-Za-z][\u4e00-\u9fa5A-Za-z0-9]*)$', _seg)
+            if not _lm:
+                continue
+            _amt_s, _item = _lm.group(1), _lm.group(2)
+            # 量词守卫："5 斤苹果"/"100 米跑步"不是记账
+            if _item[0] in '个只斤克吨次人天号日月点岁折成分度万亿千百块元碗瓶包双条张件岁步单米':
+                continue
+            # 年份守卫："2026 年度计划"不是记账
+            if _re_split.fullmatch(r'(19|20)\d{2}', _amt_s) and ('年' in _item or '月' in _item):
+                continue
+            try:
+                _amt = float(_amt_s)
+            except ValueError:
+                continue
+            if _amt <= 0 or len(_item) < 2:
+                continue
+            _lead_ops.append({'type': '记账', 'item': _item, 'amount': _amt, 'category': '其他'})
+
     # 少于2个操作 → 不拆分
-    if len(amounts) < 1 and len(remind_words) < 1:
+    if len(amounts) + len(_bare_amounts) + len(_lead_ops) < 1 and len(remind_words) < 1:
         return None
+
+    # ★ #1218（2026-10-25 深夜）运动/健身域让路——拆分器把混合句劫走只存提醒、健身部分被丢弃
+    #   实锤：「今天健身练腿10月28号提醒我健身练胸」→ 拆分器接管只设提醒，
+    #   「练腿」无人处理，FC（add_panel_record 进健身面板）根本没机会跑。
+    #   规则：消息含运动特征词 且 无任何记账金额特征 → 拆分器让位，整句放行 FC
+    #   （FC 提示词条 2.5：健身→add_panel_record 进面板台账；提醒→add_inbox_note，各落各家）
+    if not (amounts or _bare_amounts or _lead_ops):
+        _FIT_PAT = (r'健身|练[腿胸背肩臂腰腹核心]|跑步|撸铁|俯卧撑|仰卧起坐|深蹲|'
+                    r'引体向上|有氧|无氧|拉伸|游泳|骑行|跳绳|瑜伽|平板支撑|波比跳')
+        if _re_split.search(_FIT_PAT, user_message):
+            logger.info('[Engine] 智能拆分让路：运动域消息放行 FC（#1218）')
+            return None
 
     # 拆分操作
     operations = []
@@ -5008,53 +7639,138 @@ def _try_smart_split(user_message, conversation_id):
                 'category': category,
             })
 
+    # ★ 2026-09-17 无单位尾随数字："模拟飞行1200"/"酒店订金500。"
+    #   项目名取末段（按 去/到/搜/买 切开取最后一段），分类交由落库口 acc_categories 兣底
+    _bare_pat = (r'([\u4e00-\u9fa5A-Za-z]{2,}?)\s*([1-9]\d{2,5}(?:\.\d+)?)'
+                 r'(?![\d元块个只斤克次人天号日月点岁折成分度万亿千：:])'
+                 r'(?=\s*[，。,.!！?？\s]|$)')
+    for _bm in (_re_split.finditer(_bare_pat, user_message) if not _is_question else []):
+        # 时间守卫：数字紧邻冒号（13:20）跳过
+        if _bm.start() > 0 and user_message[_bm.start() - 1] in ':：':
+            continue
+        item, amount_str = _bm.group(1), _bm.group(2)
+        try:
+            amount = float(amount_str)
+        except ValueError:
+            continue
+        _segs = [s for s in _re_split.split(r'[去到搜买]', item) if s]
+        if _segs and len(_segs[-1]) >= 2:
+            item = _segs[-1].strip()  # "去酷航避避暑搜模拟飞行"→"模拟飞行"；"买菜"不拆（拆出单字"菜"）
+        if not item or not amount:
+            continue
+        operations.append({'type': '记账', 'item': item, 'amount': amount, 'category': '其他'})
+
+    # ★ 2026-09-26 甲：金额在前的记账项并入同一条流（同样走去重+待确认队列）
+    operations.extend(_lead_ops)
+
+    # ★ 2026-09-16 跨模式去重：多个正则独立扫描同一句话，会各报一笔（实锤
+    #   "买水果花了35元"报出"今天买水果"+"水果花了"两笔）。同一金额的多条记账，
+    #   若项目名互为包含（或归一化动词尾巴后相同），只保留最短项目名那条
+    for op in operations:
+        if op['type'] == '记账':
+            op['item'] = _re_split.sub(r'(?:花了|花费|支出|用|买了|买)$', '', str(op['item'])).strip() or op['item']
+    _accs = [op for op in operations if op['type'] == '记账']
+    _drop = set()
+    for i, a in enumerate(_accs):
+        for j, b in enumerate(_accs):
+            if i >= j or a['amount'] != b['amount']:
+                continue
+            x, y = a['item'], b['item']
+            if x == y or (x and y and (x in y or y in x)):
+                _drop.add(j if len(y) >= len(x) else i)  # 丢项目名更长的
+    if _drop:
+        _kept_accs = [a for k, a in enumerate(_accs) if k not in _drop]
+        _others = [op for op in operations if op['type'] != '记账']
+        operations = _kept_accs + _others
+
     # 匹配提醒项
-    remind_pattern = r'该(.+?)了|记得(.+?)|提醒我(.+?)|别忘了(.+?)'
-    remind_matches = _re_split.findall(remind_pattern, user_message)
-    for match in remind_matches:
-        task = ''.join([g for g in match if g])
-        if task:
-            operations.append({'type': '提醒', 'task': task})
+    # ★ 2026-09-26 防误判加固（已定案A）：问句不设提醒（"永智农场怎么样？"曾被当提醒）；
+    #   task 限长 30 字且禁含括号/冒号——面板 schema 文案特征，正常口说提醒不会带
+    if not _is_question:
+        # ★ 2026-11-13 实锤修复：「发送邮件给38552540@qq.com 先测试一下应该成功了」
+        #   被「该(.+?)了」抠出 task=「成功」→ 假提醒 + 整条消息被确认卡短路（邮件没进 FC）。
+        #   ①「该」前邻「应/不」（应该X了/不该X了）不算提醒口吻（lookbehind 排除）；
+        #   ② 邮件动作域（发送邮件/发邮件…）是明确的工具意图，跳过提醒匹配
+        if not any(k in user_message for k in ('发送邮件', '发邮件', '发个邮件', '邮件给')):
+            # ★ #1509：用户自定义提醒触发词（config custom_keywords remind:true）追加进正则
+            _rem_extra = [str(c.get('trigger')).strip() for c in _load_custom_keywords()
+                          if c.get('remind') and str(c.get('trigger') or '').strip()]
+            _rem_alt = '|'.join(f'{_re_split.escape(w)}(.+)' for w in _rem_extra) if _rem_extra else ''
+            # ★ #1509 顺手修：记得/提醒我/别忘了 改贪婪(.+)——原非贪婪(.+?)只抓 1 个字
+            #   （「记得交房租」task='交' 实锤截断）；「该X了」保留非贪婪（了是后缀）
+            remind_pattern = r'(?<![应不])该(.+?)了|记得(.+)|提醒我(.+)|别忘了(.+)' + (('|' + _rem_alt) if _rem_alt else '')
+            remind_matches = _re_split.findall(remind_pattern, user_message)
+            for match in remind_matches:
+                task = ''.join([g for g in match if g]).strip()
+                if task and len(task) <= 30 and not _re_split.search(r'[（(：:]|[（(]$', task):
+                    operations.append({'type': '提醒', 'task': task})
 
     if not operations:
         return None
 
-    # 执行记账操作
+    # 执行识别（★ 2026-09-26 模式分开·已定案A：凡进面板库必过确认——
+    #   记账不再直接入库（无确认卡悄悄进账本的根因），改存待确认队列，用户点📥才入账）
     results = []
     recorded = 0
+    _reminder_done = False  # ★ 2026-10-15 A. 同句多提醒只建一次
     for op in operations:
         if op['type'] == '记账':
             try:
-                import sqlite3 as _sqlite_split
-                import os as _os_split
-                db_path = _os_split.path.join(
-                    _os_split.path.dirname(_os_split.path.dirname(_os_split.path.dirname(_os_split.path.abspath(__file__)))),
-                    'data', 'sqlite', 'lingzhi.db'
-                )
-                conn = _sqlite_split.connect(db_path)
-                conn.execute(
-                    "INSERT INTO skill_accounting (type, amount, category, date, note) VALUES (?, ?, ?, date('now'), ?)",
-                    ('支出', op['amount'], op['category'], op['item'])
-                )
-                conn.commit()
-                conn.close()
-                results.append(f"✅ {op['item']} {op['amount']}元（{op['category']}）")
+                from datetime import date as _date_split
+                from src.core.panel_assist import add_pending as _pa_add
+                _rec = {'日期': _date_split.today().isoformat(),
+                        '项目': op.get('item', ''),
+                        '金额': op.get('amount', 0)}
+                _pa_add('accounting_daily_1', 'accounting', [_rec],
+                        source_text=user_message[:200])
+                results.append(f"✅ {op['item']} {op['amount']}元（待确认，还没入账）")
                 recorded += 1
             except Exception as e:
                 results.append(f"❌ {op['item']} 记录失败: {e}")
         elif op['type'] == '提醒':
-            results.append(f"🔔 提醒：{op['task']}（待办）")
+            # ★ 2026-10-15 A. 聊天直接设提醒（定版拍板：杀踢皮球+删旧浮窗误导文案）
+            #   同句多个提醒只建一次——parse_reminder_text 单次只解析一个时间，
+            #   且整句传参才能保住时间词（task 片段已被正则吃掉"明天下午3点"）
+            if _reminder_done:
+                continue
+            _reminder_done = True
+            try:
+                from src.core.home_reminder import create_from_text, describe_info
+                if not _TIME_CUE_PAT.search(user_message):
+                    results.append(f"🔔 想设提醒：{op['task']}")
+                    results.append("   👉 请告诉我具体时间，比如「明天晚上7点提醒我交物业费」")
+                    continue
+                # ★ #1219（2026-10-25）拆分器直设提醒也带域归属——之前 module 空，
+                #   健身提醒全标成杂项，面板「相关提醒」看不到（id=51 实锤）
+                _m_guess = '通用'
+                if _re_split.search(r'健身|练[腿胸背肩臂腰腹核心]|跑步|撸铁|俯卧撑|仰卧起坐|深蹲|引体|有氧|无氧|拉伸|游泳|骑行|跳绳|瑜伽', user_message):
+                    _m_guess = 'fitness'
+                elif _re_split.search(r'过期|冰箱|食材|保鲜|牛奶|酸奶|剩菜', user_message):
+                    _m_guess = 'fridge'
+                elif _re_split.search(r'晾晒|换季|保养|换洗|收纳|物品', user_message):
+                    _m_guess = 'items'
+                elif _re_split.search(r'孩子|作业|接送|上课|下课|学习|考试|家长', user_message):
+                    _m_guess = 'kid'
+                elif _re_split.search(r'开会|会议|日程|预约|缴费', user_message):
+                    _m_guess = 'calendar'
+                _rid, _info, _err = create_from_text(user_message, module=_m_guess, source='chat')
+                if _err or not _rid:
+                    results.append(f"❌ 提醒没设上：{_err or '解析失败'}")
+                else:
+                    results.append(f"✅ 已设提醒：{describe_info(_info).replace(chr(10), ' ')}")
+                    results.append("   （到点我会叫你；说「取消提醒 xxx」可撤销）")
+            except Exception as e:
+                results.append(f"❌ 提醒设置失败: {e}")
 
     # 生成汇总
     total = sum(op['amount'] for op in operations if op['type'] == '记账')
-    summary = f"📋 已处理{len(operations)}项操作：\n\n"
+    summary = f"📋 识别到 {len(operations)} 项操作：\n\n"
     for r in results:
         summary += f"  {r}\n"
-    summary += f"\n💰 本次共记账{recorded}笔，合计{total:.1f}元"
-    if any(op['type'] == '提醒' for op in operations):
-        summary += "\n🔔 提醒已记录"
-
-    logger.info(f"[Engine] 智能拆分: {len(operations)}项操作")
+    if recorded:
+        summary += f"\n💰 {recorded}笔记账已放进待确认队列（合计{total:.1f}元），还没入账："
+        summary += "\n👉 点右下角哈文助手顶上的 📥 逐条确认入库；不想要的点「忽略」即可"
+    logger.info(f"[Engine] 智能拆分: {len(operations)}项操作（待确认制）")
     return summary
 
 
@@ -5063,6 +7779,28 @@ def _try_quick_command(user_message):
     import re as _re_qc
     import os as _os_qc
     msg = user_message.lower().strip()
+
+    # ── 取消/删除提醒 ★ 2026-10-15 A.（聊天直设提醒配套的撤销闭环）──
+    _m_cancel = _re_qc.match(r'^(取消提醒|撤销提醒|删掉提醒|删除提醒)\s*[：:]?\s*(.*)$', user_message.strip())
+    if _m_cancel:
+        from src.core.home_reminder import list_reminders, delete_reminder
+        _kw = _m_cancel.group(2).strip()
+        _pend = list_reminders(pending_only=True)
+        if _kw:
+            _hit = [r for r in _pend if _kw in r['title']]
+            if len(_hit) == 1:
+                delete_reminder(_hit[0]['id'])
+                return f"✅ 已取消提醒：{_hit[0]['title']}（原定 {_hit[0]['remind_at']}）"
+            if len(_hit) > 1:
+                _lines = "\n".join(f"  {i+1}. {_r['title']}｜{_r['remind_at']}"
+                                   for i, _r in enumerate(_hit[:5]))
+                return f"找到 {len(_hit)} 条相关提醒，说「取消提醒 + 更完整的名字」可指定：\n{_lines}"
+            return f"没找到名字带「{_kw}」的待提醒。说「取消提醒」可看全部待提醒列表"
+        if not _pend:
+            return "当前没有待提醒的提醒。"
+        _lines = "\n".join(f"  {i+1}. {_r['title']}｜{_r['remind_at']}"
+                           for i, _r in enumerate(_pend[:8]))
+        return f"当前待提醒有 {len(_pend)} 条：\n{_lines}\n👉 说「取消提醒 + 名字」即可撤销"
 
     # ── 下载/安装模型 ──
     if ('下载' in user_message or '安装' in user_message or '帮我' in user_message) and ('模型' in user_message or '华佗' in user_message or 'huatuo' in msg or 'qwen' in msg or 'deepseek' in msg or 'llama' in msg):
@@ -5178,8 +7916,11 @@ def get_conversation_engine():
     """获取或创建对话引擎单例（用于模块间共享）"""
     global _engine_instance
     if _engine_instance is None:
-        from src.core.model_manager import ModelManager
-        mm = ModelManager()
+        # ★ 2026-10-04 P1 修复：裸 ModelManager() 不带模型名 → 400「model is required」
+        #   （手机远程 22:00/22:04 日志实锤）。改 create_from_config：与 web_app.get_mm
+        #   同源读 config ollama.default_model。
+        from src.core.model_manager import create_from_config
+        mm = create_from_config()
         _engine_instance = ConversationEngine(
             model_manager=mm,
             conversation_id="__system__",

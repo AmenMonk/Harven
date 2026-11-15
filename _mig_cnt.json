@@ -1,0 +1,70 @@
+{
+ "panel_daily_todo_1": {
+  "count": 0,
+  "cols": [
+   "id",
+   "日期",
+   "事项",
+   "优先级",
+   "状态",
+   "备注",
+   "member",
+   "created_at",
+   "updated_at"
+  ]
+ },
+ "panel_family_todo": {
+  "count": 0,
+  "cols": [
+   "id",
+   "事项",
+   "负责人",
+   "截止日期",
+   "截止时间",
+   "优先级",
+   "状态",
+   "备注",
+   "member",
+   "created_at",
+   "updated_at"
+  ]
+ },
+ "panel_user_0918162906": {
+  "count": 0,
+  "cols": [
+   "id",
+   "书名",
+   "日期",
+   "页数",
+   "感想",
+   "member",
+   "created_at",
+   "updated_at"
+  ]
+ },
+ "kid_reading": {
+  "count": 0,
+  "cols": [
+   "id",
+   "child_id",
+   "date",
+   "book_name",
+   "minutes",
+   "pages",
+   "rating",
+   "comment",
+   "notes",
+   "created_at"
+  ]
+ },
+ "children": [
+  [
+   6,
+   "谭毅航"
+  ],
+  [
+   7,
+   "谭毅霖"
+  ]
+ ]
+}

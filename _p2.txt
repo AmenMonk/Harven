@@ -1,0 +1,18 @@
+﻿status=200
+cache=no-cache, no-store, must-revalidate
+len=10649
+has_Acc_new=False
+has_old_generic=True
+head=<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>记账账本 · 家庭财务中枢</title>
+<link rel="stylesheet" href="/static/panel-api.css">
+<link rel="stylesheet" href="/panel/accounting_daily_1/panel.css">
+</head>
+<body class="panel-body">
+<div class="panel-container">
+  <div class="panel-header">
+    <h2>�

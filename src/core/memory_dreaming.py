@@ -187,12 +187,20 @@ class MemoryDreamEngine:
             short_threshold = 30  # 少于30字符的算短记忆
             short_memories = [m for m in memories 
                               if len(m.get("content", "")) < short_threshold 
-                              and m.get("id") not in removed_ids]
+                              and m.get("id") not in removed_ids
+                              and m.get("category") not in ("distilled", "consolidated")]
             
             if len(short_memories) >= 3 and self._llm_fn:
-                combined = self._light_merge_with_llm(short_memories)
-                if combined:
+                combined, merged_ids = self._light_merge_with_llm(short_memories)
+                if combined and merged_ids:
                     session.merged_pairs += 1
+                    # ★ #1510（2026-11-13）根修「合并只加不删」死循环：合并产物落库 ≥1 条后，
+                    #   原短记忆全部删除——否则下轮原样捞出再合并，每小时空转唤醒大模型
+                    #   （11-13 日志实锤：01:00 与 03:00 两次深/轻梦输入 10 条完全一样）。
+                    #   无损合并（概括不丢主题），删原件安全；LLM 失败/零落库则一条不删。
+                    for m in short_memories:
+                        removed_ids.append(m.get("id"))
+                    session.removed_count += len(short_memories)
             
             # 删除冗余记忆
             if removed_ids:
@@ -215,11 +223,11 @@ class MemoryDreamEngine:
         
         return session
     
-    def _light_merge_with_llm(self, short_memories: List[Dict]) -> Optional[str]:
-        """用 LLM 合并相关短记忆"""
+    def _light_merge_with_llm(self, short_memories: List[Dict]):
+        """用 LLM 合并相关短记忆。★ #1510：返回 (合并文本, 新落库条目 id 列表)，失败 (None, [])"""
         try:
             if not self._llm_fn:
-                return None
+                return None, []
             
             texts = "\n".join(f"- {m.get('content', '')}" for m in short_memories[:10])
             prompt = f"""以下是从对话中提取的简短记忆片段，请将它们合并成 2-3 条概括性记忆：
@@ -235,20 +243,24 @@ class MemoryDreamEngine:
 合并结果："""
             result = self._llm_fn(prompt)
             if result and len(result.strip()) > 5:
-                # 存储合并结果
+                # 存储合并结果（★ #1510：记录新条目 id，供上层删原件判据）
+                new_ids = []
                 for line in result.strip().split("\n"):
                     line = line.strip()
                     if line.startswith("- "):
                         content = line[2:].strip()
                         if len(content) > 5:
                             try:
-                                self.memory_store.store(content, category="consolidated", 
+                                nid = self.memory_store.store(content, category="consolidated", 
                                                         source="light_dream")
+                                if nid and nid > 0:
+                                    new_ids.append(nid)
                             except Exception as _e: logger.debug(f"[memory_dreaming] 忽略: {_e}")
-                return result
+                if new_ids:
+                    return result, new_ids
         except Exception as e:
             logger.warning(f"Light Dream LLM 合并失败: {e}")
-        return None
+        return None, []
     
     # ─── Deep Dream: 语义蒸馏 ───
     
@@ -286,8 +298,15 @@ class MemoryDreamEngine:
                 return session
             
             # 按重要性排序，取高重要性记忆进行蒸馏
+            # ★ #1510：排除已蒸馏过的条目（state.distilled_ids 防重）——否则每晚 3 点
+            #   把同一批反复蒸馏成重复 distilled 空话，只加不删越滚越多（日志实锤）
+            done_ids = set(self.state.get("distilled_ids") or [])
+            # ★ #1510：蒸馏/合并产物（加工品）不再回炉——否则蒸馏产物 importance>0.3
+            #   又成下轮原料，反复蒸馏越滚越多（隔离测试实锤：二轮把首轮产物再蒸一遍）
             high_importance = sorted(
-                [m for m in memories if m.get("importance", 0) > 0.3],
+                [m for m in memories
+                 if m.get("importance", 0) > 0.3 and m.get("id") not in done_ids
+                 and m.get("category") not in ("distilled", "consolidated")],
                 key=lambda x: x.get("importance", 0), reverse=True
             )[:50]
             
@@ -296,8 +315,11 @@ class MemoryDreamEngine:
                 batch_size = 15
                 for i in range(0, len(high_importance), batch_size):
                     batch = high_importance[i:i + batch_size]
-                    self._deep_distill_batch(batch)
-                    session.output_count += 1
+                    if self._deep_distill_batch(batch):
+                        done_ids.update(m.get("id") for m in batch)
+                        session.output_count += 1
+                # 上限 2000 防状态文件无限膨胀
+                self.state["distilled_ids"] = list(done_ids)[-2000:]
             
             session.finish()
             self.state["last_deep_dream"] = time.time()
@@ -313,8 +335,8 @@ class MemoryDreamEngine:
         
         return session
     
-    def _deep_distill_batch(self, batch: List[Dict]) -> Optional[str]:
-        """蒸馏一批记忆"""
+    def _deep_distill_batch(self, batch: List[Dict]) -> bool:
+        """蒸馏一批记忆。★ #1510：返回是否成功（成功才计入防重名单）"""
         try:
             items = "\n".join(
                 f"{i+1}. [{m.get('category', '?')}] {m.get('content', '')}"
@@ -340,10 +362,10 @@ class MemoryDreamEngine:
                                 source="deep_dream"
                             )
                         except Exception as _e: logger.debug(f"[memory_dreaming] 忽略: {_e}")
-                return result
+                return True
         except Exception as e:
             logger.warning(f"Deep Dream 蒸馏失败: {e}")
-        return None
+        return False
     
     # ─── REM Dream: 跨领域关联 ───
     
@@ -485,38 +507,59 @@ class MemoryDreamEngine:
 # ─── 定时任务集成 ───
 
 def register_dreaming_scheduler(scheduler):
-    """在定时任务系统中注册记忆梦境"""
+    """在定时任务系统中注册记忆梦境
+
+    ★ #1104 修复「越禁越活」bug：add_task 内部用 INSERT OR REPLACE 整行覆盖，
+    enabled 按新 task 对象（默认 1）写回 → 开发者禁用的任务每次启动被强制复活。
+    现改为：任务已存在 DB 时跳过注册——TaskScheduler._init_scheduler() 启动时
+    已按 DB enabled 状态把任务恢复进内存调度器，此处只需补首次创建。
+    """
     try:
-        from src.core.scheduler import ScheduledTask, get_scheduler
-        
-        # Light Dream — 每小时
-        get_scheduler().add_task(ScheduledTask(
-            task_id="dream_light",
-            name="记忆轻度梦（去重合并）",
-            prompt="执行 Memory Dreaming Light Dream",
-            schedule_type="cron",
-            schedule_config={"hour": "*", "minute": "0"},
-        ))
-        
-        # Deep Dream — 每天凌晨 3 点
-        get_scheduler().add_task(ScheduledTask(
-            task_id="dream_deep",
-            name="记忆深度梦（语义蒸馏）",
-            prompt="执行 Memory Dreaming Deep Dream",
-            schedule_type="cron",
-            schedule_config={"hour": "3", "minute": "0"},
-        ))
-        
-        # REM Dream — 每 3 天凌晨 4 点
-        get_scheduler().add_task(ScheduledTask(
-            task_id="dream_rem",
-            name="记忆 REM 梦（跨领域关联）",
-            prompt="执行 Memory Dreaming REM Dream",
-            schedule_type="cron",
-            schedule_config={"hour": "4", "minute": "0", "day_of_week": "*/3"},
-        ))
-        
-        logger.info("[Dreaming] 已注册梦境定时任务")
+        from src.core.scheduler import ScheduledTask, get_scheduler, _get_conn
+
+        # 查已存在任务（任何原因查不到就当全空，走原创建路径）
+        existing = set()
+        try:
+            conn = _get_conn()
+            existing = {r[0] for r in conn.execute(
+                "SELECT task_id FROM scheduled_tasks").fetchall()}
+            conn.close()
+        except Exception as _e:
+            logger.debug(f"[Dreaming] 查询已有任务失败（按全新建处理）: {_e}")
+
+        jobs = [
+            # Light Dream — 每小时
+            ScheduledTask(
+                task_id="dream_light",
+                name="记忆轻度梦（去重合并）",
+                prompt="执行 Memory Dreaming Light Dream",
+                schedule_type="cron",
+                schedule_config={"hour": "*", "minute": "0"},
+            ),
+            # Deep Dream — 每天凌晨 3 点
+            ScheduledTask(
+                task_id="dream_deep",
+                name="记忆深度梦（语义蒸馏）",
+                prompt="执行 Memory Dreaming Deep Dream",
+                schedule_type="cron",
+                schedule_config={"hour": "3", "minute": "0"},
+            ),
+            # REM Dream — 每 3 天凌晨 4 点
+            ScheduledTask(
+                task_id="dream_rem",
+                name="记忆 REM 梦（跨领域关联）",
+                prompt="执行 Memory Dreaming REM Dream",
+                schedule_type="cron",
+                schedule_config={"hour": "4", "minute": "0", "day_of_week": "*/3"},
+            ),
+        ]
+        for task in jobs:
+            if task.task_id in existing:
+                logger.debug(f"[Dreaming] 任务 {task.task_id} 已存在，跳过（保留 enabled 状态）")
+                continue
+            get_scheduler().add_task(task)
+
+        logger.info("[Dreaming] 已注册梦境定时任务（幂等，不覆盖已有状态）")
     except Exception as e:
         logger.warning(f"[Dreaming] 注册定时任务失败: {e}")
 

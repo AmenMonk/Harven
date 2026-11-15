@@ -814,6 +814,25 @@ function escHtml(s) {
     return d.innerHTML;
 }
 
+// ★ 2026-11-15 (#1520): 消息内的音频文件路径自动渲染为内嵌播放器+下载链接
+//   背景：ACE-Step 出歌后模型只会给文字路径（还常包反引号），用户点不了
+//   安全：仅认 /data/media/ 前缀 + 受限文件名字符（无引号/尖括号/实体可能），src 由本函数自行构造
+function _chatAudioBox(url) {
+    return '<div class="chat-audio-box" style="margin:6px 0;">' +
+        '<audio controls preload="metadata" src="' + url + '" ' +
+        'style="width:100%;max-width:440px;height:36px;display:block;margin-bottom:2px;"></audio>' +
+        '<a href="' + url + '" download style="font-size:12px;">⬇️ 下载音频</a></div>';
+}
+function embedChatAudio(html) {
+    if (!html || html.indexOf('/data/media/') === -1) return html;
+    // 第一遍：吃掉整个 <code>路径</code>（模型爱用反引号包路径）
+    html = html.replace(/<code>\s*(\/data\/media\/[A-Za-z0-9_\-\u4e00-\u9fa5.]+\.(?:wav|mp3|m4a|ogg|flac))\s*<\/code>/g,
+        function (m, p) { return _chatAudioBox(p); });
+    // 第二遍：裸路径。负向断言 (?<!["'=\w]) 避免命中第一遍产出的 src="..."/href="..." 及普通属性
+    return html.replace(/(?<!["'=\w])(\/data\/media\/[A-Za-z0-9_\-\u4e00-\u9fa5.]+\.(?:wav|mp3|m4a|ogg|flac))/g,
+        function (m, p) { return _chatAudioBox(p); });
+}
+
 function renderMd(text) {
     if (!text) return '';
     try {
@@ -827,9 +846,9 @@ function renderMd(text) {
                 return hljs.highlightAuto(code).value;
             }
         });
-        return marked.parse(text);
+        return embedChatAudio(marked.parse(text));
     } catch {
-        return escHtml(text).replace(/\n/g, '<br>');
+        return embedChatAudio(escHtml(text).replace(/\n/g, '<br>'));
     }
 }
 

@@ -53,6 +53,11 @@ class CollabManager:
             self._mode = 'cloud_local'
         else:
             self._mode = 'off'
+        # ★ 2026-09-16 已定案：本地协作(local_dual) 已被协作流水线完全取代（超集且更灵活），删除该模式
+        #   旧配置读到 local_dual 自动迁移为 cloud_local（智能协作），引擎/界面统一不再出现该分支
+        if self._mode == 'local_dual':
+            logger.info("[Collab] 检测到旧模式 local_dual → 自动迁移为 cloud_local（智能协作）")
+            self._mode = 'cloud_local'
         self._foreign_model = self._config.get('collab_foreign_model', 'doubao')
         self._privacy_level = self._config.get('collab_privacy_level', 'full')
         self.deep_search = self._config.get('collab_deep_search', False)

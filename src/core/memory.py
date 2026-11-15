@@ -124,24 +124,18 @@ JSON:"""
                 except Exception as model_e:
                     logger.debug(f"[Memory] 引擎模型调用失败: {model_e}")
 
-            # 兜底：尝试本地 Ollama
+            # ★ 2026-09-19 (#796) 本地兜底：统一本地推理入口（进程内GGUF→Ollama→按需GGUF），不再裸调 11434
             if not full_text:
                 try:
-                    import requests as _r
-                    _r.get("http://localhost:11434/api/tags", timeout=2)
-                    _ollama_resp = _r.post("http://localhost:11434/api/chat", json={
-                        "model": "qwen2.5:14b",
-                        "messages": [{"role": "user", "content": prompt}],
-                        "stream": False
-                    }, timeout=30)
-                    if _ollama_resp.status_code == 200:
-                        _ollama_data = _ollama_resp.json()
-                        full_text = _ollama_data.get("message", {}).get("content", "")
-                        used_model = "ollama-local"
+                    from src.core.local_infer import chat_local
+                    _text, _backend, _err = chat_local(prompt, timeout=60, temperature=0.4)
+                    if _text:
+                        full_text = _text
+                        used_model = f"local:{_backend}"
                     else:
-                        logger.debug(f"[Memory] Ollama API返回 {_ollama_resp.status_code}")
-                except Exception as ollama_e:
-                    logger.debug(f"[Memory] Ollama 不可用: {ollama_e}")
+                        logger.debug(f"[Memory] 本地兜底失败: {_err}")
+                except Exception as local_e:
+                    logger.debug(f"[Memory] 本地兜底不可用: {local_e}")
 
             if not full_text:
                 logger.debug("[Memory] AI 提取：无可用模型，回退规则提取")

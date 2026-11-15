@@ -53,7 +53,9 @@ def _init_crypto():
 
 def _load_privacy_password() -> Optional[str]:
     """从 config.yaml 加载隐私库密码。
-    优先级：privacy_password > remote_password（合并为一个密码）
+    优先级：privacy_password > remote_password > admin_password
+    ★ 2026-09-23 修：回退链加 admin_password 兜底（实测实锤：只设了管理员密码的
+    新装用户隐私库写入直接 RuntimeError 崩溃、记录悄悄丢失）。一把锁原则。
     """
     try:
         import yaml
@@ -65,7 +67,8 @@ def _load_privacy_password() -> Optional[str]:
             with open(config_path, "r", encoding="utf-8") as f:
                 config = yaml.safe_load(f) or {}
             sec = config.get("security") or {}
-            pwd = sec.get("privacy_password") or sec.get("remote_password") or None
+            pwd = (sec.get("privacy_password") or sec.get("remote_password")
+                   or sec.get("admin_password") or None)
             return pwd
     except Exception as _e: logger.debug(f"[isolated_db] 忽略: {_e}")
     return None

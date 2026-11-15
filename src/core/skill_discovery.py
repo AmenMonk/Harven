@@ -42,7 +42,7 @@ INTENT_KEYWORDS = {
     "excel": "excel spreadsheet formula",
     "ppt": "presentation slide design",
     "会议": "meeting notes minutes",
-    "邮件": "email writing",
+    # "邮件" 已移除（#1498）：聊邮件=收发邮件，不是想装 email writing 技能；且会触发后台乱搜刷报错
     "报告": "report generation",
     "可视化": "data visualization chart",
     "简历": "resume cv career",

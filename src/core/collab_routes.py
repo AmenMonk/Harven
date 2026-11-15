@@ -26,6 +26,13 @@ def get_collab_status():
         if cfg_path.exists():
             cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
         cm = get_collab_manager(cfg)
+        # ★ 2026-09-16 local_dual 迁移落盘：旧配置一次写回 cloud_local，重启后不再重复迁移
+        if cfg.get('collab_mode') == 'local_dual':
+            try:
+                _save_to_config({'mode': 'cloud_local'})
+                logger.info("[Collab] local_dual 旧配置已迁移落盘为 cloud_local")
+            except Exception as me:
+                logger.warning(f"[Collab] local_dual 迁移落盘失败（不影响本次运行）: {me}")
         return jsonify({"success": True, "data": cm.to_dict()})
     except Exception as e:
         logger.error(f"[Collab] 获取状态失败: {e}")
@@ -167,6 +174,198 @@ def get_privacy_levels():
     return jsonify({"success": True, "data": PRIVACY_LEVELS})
 
 
+# ═══ 2026-09-14 V1：协作流水线（对话站+执行站编排） ═══
+
+def _default_pipeline(cfg: dict) -> list:
+    """未配置时的默认管线 = 经典两步（等价旧行为）"""
+    fm = cfg.get('collab_foreign_model', 'deepseek')
+    return [{"type": "chat", "participant": fm}, {"type": "chat", "participant": "local"}]
+
+
+def _validate_pipeline(steps) -> tuple:
+    """校验管线。返回 (cleaned_steps, None) 或 (None, 错误信息)"""
+    if not isinstance(steps, list) or not (2 <= len(steps) <= 4):
+        return None, "流水线需要 2~4 站"
+    cleaned = []
+    for idx, st in enumerate(steps):
+        if not isinstance(st, dict) or st.get('type') not in ('chat', 'tool'):
+            return None, f"第{idx+1}站类型无效（须为 chat/tool）"
+        if st['type'] == 'chat':
+            pid = str(st.get('participant', '')).strip()
+            if not pid:
+                return None, f"第{idx+1}站没选参与者"
+            if pid == 'local':
+                pass  # 当前选中的本地模型，运行时解析
+            elif pid == 'harveneye':
+                # ★ 2026-11-15（老谭定版）：含通用大脑的 HarvenEye 才能当站——
+                # 门禁=视觉大脑通道就绪（models_ready），没配大脑的 HarvenEye 不进流水线
+                try:
+                    from src.core import eye_client as _ec
+                    _mr = _ec.models_ready()
+                    if not _mr.get('ready'):
+                        return None, f"第{idx+1}站 HarvenEye 视觉大脑未就绪（先去模型中心装/钉选视觉大脑）"
+                except Exception as e:
+                    return None, f"第{idx+1}站 HarvenEye 门禁校验失败: {e}"
+            elif pid.startswith('ollama:'):
+                # ★ 2026-09-16：本地站可选指定 Ollama 模型
+                if pid[7:] not in _ollama_installed_models():
+                    return None, f"第{idx+1}站本地模型「{pid[7:]}」未安装或 Ollama 未启动"
+            elif pid.startswith('gguf:'):
+                # ★ 2026-09-16：本地站可选 GGUF 垂直模型（llama-cpp，不经过 Ollama）
+                try:
+                    from src.core.vertical_api import _get_all_models
+                    if not any(x.get('id') == pid[5:] and x.get('engine') == 'llama_cpp'
+                               for x in _get_all_models()):
+                        return None, f"第{idx+1}站 GGUF 模型「{pid[5:]}」不存在"
+                except Exception as e:
+                    return None, f"第{idx+1}站 GGUF 模型校验失败: {e}"
+            else:
+                try:
+                    from src.core.multi_model_manager import get_multi_model_manager
+                    mm = get_multi_model_manager()
+                    if pid not in (mm._get_all_providers() or {}):
+                        return None, f"第{idx+1}站外脑「{pid}」不存在"
+                except Exception as e:
+                    return None, f"第{idx+1}站外脑校验失败: {e}"
+            cleaned.append({"type": "chat", "participant": pid})
+        else:
+            mid = str(st.get('model', '')).strip()
+            try:
+                from src.core.vertical_api import _get_all_models
+                m = next((x for x in _get_all_models()
+                          if x.get('id') == mid and x.get('engine') == 'tool_executor'), None)
+            except Exception as e:
+                return None, f"第{idx+1}站垂直模型校验失败: {e}"
+            if not m:
+                return None, f"第{idx+1}站「{mid}」不是可执行的垂直工具模型（画图/作曲/语音类）"
+            cleaned.append({"type": "tool", "model": mid})
+    if cleaned[-1]['type'] != 'chat':
+        return None, "最后一站必须是对话站（负责整合作答）"
+    return cleaned, None
+
+
+@BP.route('/pipeline', methods=['GET', 'POST'])
+def collab_pipeline():
+    """获取/保存协作流水线编排"""
+    config_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "config.yaml"
+    )
+    if request.method == 'GET':
+        try:
+            cfg = {}
+            if os.path.exists(config_path):
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    cfg = yaml.safe_load(f) or {}
+            steps = cfg.get('collab_pipeline') or _default_pipeline(cfg)
+            return jsonify({"success": True, "data": {"pipeline": steps}})
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)}), 500
+
+    # POST: 保存编排
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        steps = data.get('pipeline')
+        cleaned, err = _validate_pipeline(steps)
+        if err:
+            return jsonify({"success": False, "error": err}), 400
+        if not _save_to_config({"pipeline": cleaned}):
+            return jsonify({"success": False, "error": "保存到 config.yaml 失败"}), 500
+        logger.info(f"[Collab] 流水线已保存: {cleaned}")
+        return jsonify({"success": True, "data": {"pipeline": cleaned}})
+    except Exception as e:
+        logger.error(f"[Collab] 保存流水线失败: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@BP.route('/participants', methods=['GET'])
+def collab_participants():
+    """流水线可选参与者：chat=对话站（外脑+本地模型列表），tool=生成站（画图/作曲/语音）"""
+    # ★ 2026-09-16 已定案：本地 ≠ Ollama 一种 —— 本地站可选全部本地模型（Ollama 已装 + GGUF 垂直模型）
+    chat = [{"id": "local", "name": "🏠 本地（当前选中的）", "kind": "local", "has_key": True}]
+    # ★ 2026-11-15（老谭定版）：含通用大脑的 HarvenEye = 本地通用模型能力升级版，进本地站下拉，
+    # 名字就叫 HarvenEye；没配大脑的（models_ready=False）不进——与模型中心同款门禁
+    try:
+        from src.core import eye_client as _eye_cli
+        _eye_ready = _eye_cli.models_ready()
+        if _eye_ready.get('ready'):
+            chat.append({"id": "harveneye", "name": "🏠 HarvenEye", "kind": "local", "has_key": True})
+    except Exception as e:
+        logger.debug(f"[Collab] HarvenEye 门禁探测跳过: {e}")
+    try:
+        from src.core.multi_model_manager import get_multi_model_manager
+        mm = get_multi_model_manager()
+        providers = mm._get_all_providers() or {}
+        for pid, info in providers.items():
+            if pid == 'ollama':
+                # ★ 2026-09-16 已定案：UI 不出现 Ollama 字样、本地≠Ollama——
+                #   这个笼统的 "Ollama (本地)" 外脑条目由下方逐模型本地清单（ollama:xxx）取代
+                continue
+            model_cfg = mm.config.get('models', {}).get(pid, {})
+            has_key = bool(model_cfg.get('api_key')) or not info.get('needs_key', False)
+            chat.append({"id": pid, "name": info.get('name', pid), "kind": "external", "has_key": has_key})
+        chat.sort(key=lambda x: (x['kind'] != 'external' or not x['has_key'], x['name']))
+    except Exception as e:
+        logger.warning(f"[Collab] 外脑参与者加载失败: {e}")
+
+    # 本地模型清单：Ollama 已装模型（全名，如 qwen2.5:14b / huatuo:latest）
+    try:
+        for name in _ollama_installed_models():
+            chat.append({"id": f"ollama:{name}", "name": f"🏠 本地 {name}", "kind": "local", "has_key": True})
+    except Exception as e:
+        logger.warning(f"[Collab] 本地 Ollama 模型清单加载失败: {e}")
+
+    # GGUF 垂直对话模型（llama-cpp 引擎，不经过 Ollama）
+    try:
+        from src.core.vertical_api import _get_all_models
+        for m in _get_all_models():
+            if m.get('engine') == 'llama_cpp' and m.get('model_path'):
+                chat.append({"id": f"gguf:{m.get('id')}", "name": f"🏠 本地 {m.get('name', m.get('id'))}",
+                             "kind": "gguf", "has_key": True})
+    except Exception as e:
+        logger.warning(f"[Collab] GGUF 模型清单加载失败: {e}")
+
+    tool = []
+    est_map = {
+        'image_generation': '约20秒~2分钟',
+        'music_generation': '约2~8分钟',
+        'speech_synthesis': '约10~60秒',
+    }
+    try:
+        from src.core.vertical_api import _get_all_models
+        for m in _get_all_models():
+            if m.get('engine') != 'tool_executor':
+                continue
+            tool.append({
+                "id": m.get('id'), "name": m.get('name'), "icon": m.get('icon', '🧩'),
+                "description": m.get('description', ''),
+                "estimate": est_map.get(m.get('type'), '约1~5分钟'),
+            })
+    except Exception as e:
+        logger.warning(f"[Collab] 垂直工具参与者加载失败: {e}")
+
+    return jsonify({"success": True, "data": {"chat": chat, "tool": tool}})
+
+
+def _ollama_installed_models() -> list:
+    """Ollama 已装模型全名清单（禁代理直连本机，失败=空列表不骗人）
+
+    ★ 2026-11-15：过滤 hv-pin-* 钉选注册件（#1324 视觉钉选链路的 Ollama 内部件）——
+    /api/ollama/models 与 /api/models/local-all 均有同款过滤，本接口此前漏了，
+    导致协作流水线本地站下拉露出 hv-pin-<哈希> 内部名（老谭 11-15 截图实锤）。
+    """
+    import json as _json
+    import urllib.request
+    try:
+        req = urllib.request.Request('http://127.0.0.1:11434/api/tags')
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(req, timeout=2) as resp:
+            return [m.get('name') for m in _json.loads(resp.read().decode('utf-8')).get('models', [])
+                    if m.get('name') and not str(m.get('name')).startswith('hv-pin-')]
+    except Exception:
+        return []
+
+
 def _save_to_config(data: dict) -> bool:
     """将协作配置持久化到 config.yaml。返回 True/False"""
     config_path = os.path.join(
@@ -193,10 +392,29 @@ def _save_to_config(data: dict) -> bool:
             cfg['collab_privacy_level'] = data['privacy_level']
         if 'deep_search' in data:
             cfg['collab_deep_search'] = data['deep_search']
+        if 'pipeline' in data:
+            cfg['collab_pipeline'] = data['pipeline']
 
         with open(config_path, 'w', encoding='utf-8') as f:
             yaml.dump(dict(cfg), f, allow_unicode=True, default_flow_style=False)
-        logger.info("[Collab] 配置已持久化到 config.yaml")
+        # ★ 2026-11-15 根治「保存成功但执行还是旧流水线」：写文件成功后把本次改动同步进内存单例。
+        # 实锤（18:28 保存 ace-step 生成站 → 18:32 执行仍跑旧三对话站）：
+        #   保存/展示两端读写 config.yaml 文件，唯独执行端 engine._run_collab_pipeline
+        #   读 get_config() 内存快照（启动时加载）→ 不重启永不生效。
+        # 只同步本次改动的 6 个键（不全量覆盖，避免冲掉内存里尚未落盘的其它运行时改动）
+        try:
+            from src.utils.config import get_config as _gc
+            _mem = _gc()
+            _KEYMAP = {'pipeline': 'collab_pipeline', 'mode': 'collab_mode',
+                       'enabled': 'collab_enabled', 'foreign_model': 'collab_foreign_model',
+                       'privacy_level': 'collab_privacy_level', 'deep_search': 'collab_deep_search'}
+            for _k, _v in data.items():
+                _ck = _KEYMAP.get(_k)
+                if _ck is not None:
+                    _mem[_ck] = _v
+        except Exception as _e:
+            logger.warning(f"[Collab] 内存配置同步失败（文件已保存，重启后生效）: {_e}")
+        logger.info("[Collab] 配置已持久化到 config.yaml + 内存单例已同步")
         return True
     except Exception as e:
         logger.error(f"[Collab] 保存配置失败: {e}")

@@ -62,7 +62,9 @@ class ConversationArchiver:
                 return False, "对话不存在"
 
             messages = conn.execute(
-                "SELECT * FROM messages WHERE conversation_id = ? ORDER BY timestamp",
+                # ★ 2026-09-20 修复: messages 表时间列实为 created_at（旧写 timestamp 导致
+                # 启动报 no such column: timestamp，自动归档一直失败）
+                "SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at",
                 (conv_id,),
             ).fetchall()
         finally:

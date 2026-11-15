@@ -40,7 +40,7 @@
     <div class="login-box">
         <div class="logo">🏠</div>
         <h1>Harven AI</h1>
-        <p class="sub">远程访问需要密码<br>密码在桌面端 设置→安全隐私 查看</p>
+        <p class="sub">远程访问需要密码<br>就是你登录电脑哈文时用的那个密码<br><b style="color:#cbd5e1">默认 harven2026（改过就用改过的）</b><br><span style="font-size:12px">想改密码？电脑端 设置→安全隐私</span></p>
         <form id="loginForm" onsubmit="return doLogin(event)">
             <input type="password" id="password" placeholder="输入远程密码" autofocus>
             <button type="submit">登录</button>
@@ -63,7 +63,9 @@
             var d = await r.json();
             if (d.success) {
                 var next = new URLSearchParams(location.search).get('next') || '/';
-                location.href = next;
+                // ★ 2026-10-10 APP WebView 缓存修复：跳转加时间戳参数，绕开被缓存的 302 重定向
+                // （症状：APP 内输对密码后"输入框清空无反应"，就是命中了未登录时的缓存 302 又弹回登录页）
+                location.href = next + (next.indexOf('?') >= 0 ? '&' : '?') + '_=' + Date.now();
             } else {
                 err.style.display = 'block';
                 err.textContent = '❌ ' + (d.error || '密码错误');

@@ -63,6 +63,18 @@
                 <span id="statusQwen" style="font-size:11px;color:#888;">⏳...</span>
             </div>
             <input type="password" id="setQwenKey" class="form-input" placeholder="sk-xxxxxxxxxxxxxxxx" style="width:100%;box-sizing:border-box;font-family:monospace;margin-top:6px;">
+            <div style="display:flex;gap:6px;margin-top:4px;align-items:center;">
+                <span style="font-size:11px;color:#888;">模型:</span>
+                <input type="text" id="setQwenModel" list="qwenModelList" onchange="saveApiKeys()" style="flex:1;font-size:11px;" placeholder="输入或选择模型名" value="qwen-plus">
+                <datalist id="qwenModelList">
+                    <option value="qwen3.7-plus">qwen3.7-plus (最新·推荐)</option>
+                    <option value="qwen3.7-max">qwen3.7-max (最新·最强)</option>
+                    <option value="qwen-plus">qwen-plus (稳定版·均衡)</option>
+                    <option value="qwen-turbo">qwen-turbo (最快)</option>
+                    <option value="qwen-max">qwen-max (最强)</option>
+                    <option value="qwen-long">qwen-long (长文本)</option>
+                </datalist>
+            </div>
             <div style="font-size:11px;color:#666;margin-top:4px;">📝 dashscope.aliyun.com → API-KEY管理 → 创建 → 复制粘贴</div>
         </div>
 
@@ -75,6 +87,15 @@
                 <span id="statusKimi" style="font-size:11px;color:#888;">⏳...</span>
             </div>
             <input type="password" id="setKimiKey" class="form-input" placeholder="sk-xxxxxxxxxxxxxxxx" style="width:100%;box-sizing:border-box;font-family:monospace;margin-top:6px;">
+            <div style="display:flex;gap:6px;margin-top:4px;align-items:center;">
+                <span style="font-size:11px;color:#888;">模型:</span>
+                <input type="text" id="setKimiModel" list="kimiModelList" onchange="saveApiKeys()" style="flex:1;font-size:11px;" placeholder="输入或选择模型名" value="moonshot-v1-32k">
+                <datalist id="kimiModelList">
+                    <option value="moonshot-v1-32k">moonshot-v1-32k (推荐)</option>
+                    <option value="moonshot-v1-8k">moonshot-v1-8k (短文本)</option>
+                    <option value="moonshot-v1-128k">moonshot-v1-128k (长文本)</option>
+                </datalist>
+            </div>
             <div style="font-size:11px;color:#666;margin-top:4px;">📝 platform.moonshot.cn → API Keys → 新建 → 复制粘贴</div>
         </div>
 
@@ -131,6 +152,15 @@
                 <span id="statusBaichuan" style="font-size:11px;color:#888;">⏳...</span>
             </div>
             <input type="password" id="setBaichuanKey" class="form-input" placeholder="sk-xxxxxxxxxxxxxxxx" style="width:100%;box-sizing:border-box;font-family:monospace;margin-top:6px;">
+            <div style="display:flex;gap:6px;margin-top:4px;align-items:center;">
+                <span style="font-size:11px;color:#888;">模型:</span>
+                <input type="text" id="setBaichuanModel" list="baichuanModelList" onchange="saveApiKeys()" style="flex:1;font-size:11px;" placeholder="输入或选择模型名" value="Baichuan4-Turbo">
+                <datalist id="baichuanModelList">
+                    <option value="Baichuan4-Turbo">Baichuan4-Turbo (推荐)</option>
+                    <option value="Baichuan4-Air">Baichuan4-Air (轻量)</option>
+                    <option value="Baichuan3-Turbo">Baichuan3-Turbo</option>
+                </datalist>
+            </div>
             <div style="font-size:11px;color:#666;margin-top:4px;">📝 platform.baichuan-ai.com → API Key → 创建</div>
         </div>
 
@@ -143,6 +173,15 @@
                 <span id="statusStepfun" style="font-size:11px;color:#888;">⏳...</span>
             </div>
             <input type="password" id="setStepfunKey" class="form-input" placeholder="sk-xxxxxxxxxxxxxxxx" style="width:100%;box-sizing:border-box;font-family:monospace;margin-top:6px;">
+            <div style="display:flex;gap:6px;margin-top:4px;align-items:center;">
+                <span style="font-size:11px;color:#888;">模型:</span>
+                <input type="text" id="setStepfunModel" list="stepfunModelList" onchange="saveApiKeys()" style="flex:1;font-size:11px;" placeholder="输入或选择模型名" value="step-2-mini">
+                <datalist id="stepfunModelList">
+                    <option value="step-2-mini">step-2-mini (推荐)</option>
+                    <option value="step-2-16k">step-2-16k (长文本)</option>
+                    <option value="step-1-flash">step-1-flash (极速)</option>
+                </datalist>
+            </div>
             <div style="font-size:11px;color:#666;margin-top:4px;">📝 platform.stepfun.com → API Key → 创建</div>
         </div>
 
@@ -151,7 +190,7 @@
             <label style="font-weight:600;" data-i18n="web.multimodel.label_1">🤖 当前使用的外脑</label>
             <div style="display:flex;align-items:center;gap:8px;margin-top:6px;">
                 <select id="setForeignModel" onchange="switchForeignModel()" style="flex:1;">
-                    <option value="" data-i18n="web.multimodel.option_9">🏠 不用外脑（纯本地）</option>
+                    <option value="" selected>未选择外脑模型</option>
                     <option value="deepseek">DeepSeek</option>
                     <option value="doubao" data-i18n="web.multimodel.option_10">豆包（火山引擎）</option>
                     <option value="qwen" data-i18n="web.multimodel.option_11">通义千问</option>
@@ -247,6 +286,10 @@ window.saveApiKeys = async function() {
         doubao:   document.getElementById('setDoubaoModel')?.value || 'doubao-seed-2-0-pro-260215',
         zhipu:    document.getElementById('setZhipuModel')?.value || 'glm-4-plus',
         yi:       document.getElementById('setYiModel')?.value || 'yi-lightning',
+        qwen:     document.getElementById('setQwenModel')?.value || 'qwen-plus',
+        kimi:     document.getElementById('setKimiModel')?.value || 'moonshot-v1-32k',
+        baichuan: document.getElementById('setBaichuanModel')?.value || 'Baichuan4-Turbo',
+        stepfun:  document.getElementById('setStepfunModel')?.value || 'step-2-mini',
     };
     try {
         var r = await fetch('/api/models/api-keys', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keys: keys, models: models})});
@@ -262,7 +305,18 @@ window.testApiConnection = async function() {
     try {
         var r = await fetch('/api/models/test-connect', {method:'POST'});
         var d = await r.json();
-        if (d.success) { var NAMES={deepseek:'DeepSeek',doubao:'豆包',qwen:'通义千问',kimi:'Kimi',zhipu:'智谱AI (GLM)',yi:'零一万物',baichuan:'百川',stepfun:'阶跃星辰'}; res.innerHTML = '<span style="color:#0f0;">✅ ' + (NAMES[d.model]||d.model) + '</span>'; }
+        var NAMES={deepseek:'DeepSeek',doubao:'豆包',qwen:'通义千问',kimi:'Kimi',zhipu:'智谱AI (GLM)',yi:'零一万物',baichuan:'百川',stepfun:'阶跃星辰'};
+        // ★ #1516：后端全量逐测返回 results——逐行渲染（当前外脑置顶带 📍 标记）
+        if (d.results && d.results.length) {
+            var lines = d.results.map(function(x){
+                var nm = NAMES[x.name] || x.name;
+                var cur = x.current ? ' 📍<span style="color:#94a3b8;">(当前使用)</span>' : '';
+                if (x.ok) return '<div style="color:#0f0;">✅ ' + nm + ' · ' + (x.ms||0) + 'ms' + cur + '</div>';
+                return '<div style="color:#f87171;">❌ ' + nm + ' · ' + (x.error||'连接失败') + cur + '</div>';
+            });
+            res.innerHTML = lines.join('');
+        }
+        else if (d.success) { res.innerHTML = '<span style="color:#0f0;">✅ ' + (NAMES[d.model]||d.model) + '</span>'; }
         else res.innerHTML = '<span style="color:#f00;" data-i18n="web.multimodel.span_7">❌ ' + (d.error||'连接失败') + '</span>';
     } catch(e) { res.innerHTML = '<span style="color:#f00;" data-i18n="web.multimodel.span_8">网络错误</span>'; }
     checkAllStatus();
@@ -331,6 +385,12 @@ window.addNewProvider = async function() {
 window.switchForeignModel = async function() {
     var model = document.getElementById('setForeignModel').value;
     var s = document.getElementById('foreignModelStatus');
+    // 2026-08-26 修复: 占位项不可作为目标
+    if (!model) {
+        s.innerHTML = '<span style="color:#f59e0b;">⚪ 未选择——请选择具体外脑模型</span>';
+        toast('请选择一个具体的外脑模型', 'error');
+        return;
+    }
     // ★ ID→中文名映射
     var NAMES = {deepseek:'DeepSeek',doubao:'豆包',qwen:'通义千问',kimi:'Kimi',zhipu:'智谱AI (GLM)',yi:'零一万物',baichuan:'百川',stepfun:'阶跃星辰'};
     var dispName = NAMES[model] || model || '纯本地';
@@ -383,19 +443,21 @@ window.loadForeignModelDropdown = async function() {
             {id:'stepfun', name:'阶跃星辰 (Step)'},
         ];
 
-        var html = '<option value="" data-i18n="web.multimodel.option_19">🏠 不用外脑（纯本地）</option>';
-        // 内置模型
+        var html = '<option value="" selected>未选择外脑模型</option>';
+        // 内置模型（★ 2026-08-25 P1: 未配置 Key 的灰选禁选，防止选了报错）
         for (var p of builtIn) {
             var configured = keys[p.id] && keys[p.id].configured;
-            var mark = configured ? ' ✅' : '';
-            html += '<option value="' + p.id + '">' + p.name + mark + '</option>';
+            var mark = configured ? ' ✅' : '（未配置）';
+            var dis = configured ? '' : ' disabled';
+            html += '<option value="' + p.id + '"' + dis + '>' + p.name + mark + '</option>';
         }
         // 自定义模型
         for (var pid in keys) {
             if (builtIn.find(function(b){return b.id===pid;})) continue;
             var info = keys[pid];
-            var mark = info.configured ? ' ✅' : '';
-            html += '<option value="' + pid + '" data-i18n="web.multimodel.option_20">' + (info.name||pid) + ' (自定义)' + mark + '</option>';
+            var mark = info.configured ? ' ✅' : '（未配置）';
+            var dis = info.configured ? '' : ' disabled';
+            html += '<option value="' + pid + '" data-i18n="web.multimodel.option_20"' + dis + '>' + (info.name||pid) + ' (自定义)' + mark + '</option>';
         }
         sel.innerHTML = html;
         // 恢复之前的选择
@@ -415,6 +477,12 @@ async function loadForeignModel() {
             var dispName = NAMES[d.model] || d.model;
             document.getElementById('foreignModelStatus').innerHTML =
                 '<span style="color:#0f0;">✅ ' + dispName + '</span>';
+        } else {
+            // 2026-08-26 修复: 服务器未选时重置下拉显示（旧代码静默，导致下拉残留
+            // 浏览器默认选中的 DeepSeek，用户再点选无变化 -> onchange 不触发 -> 切换失败）
+            document.getElementById('setForeignModel').value = '';
+            document.getElementById('foreignModelStatus').innerHTML =
+                '<span style="color:#f59e0b;">⚪ 未选择</span>';
         }
     } catch(e) {}
 }

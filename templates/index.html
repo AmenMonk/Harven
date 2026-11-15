@@ -33,10 +33,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Harven AI 哈文">
-    <link rel="apple-touch-icon" href="/static/icons/duck_180.png">
-    <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/duck_192.png">
-    <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/duck_32.png">
-    <link rel="icon" type="image/png" sizes="16x16" href="/static/icons/duck_16.png">
+    <link rel="apple-touch-icon" href="/static/icons/favicon_180.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/favicon_192.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon_32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/icons/favicon_16.png">
 
     <link rel="stylesheet" href="/static/css/style.css?v={{ build_id }}">
     <script src="/static/js/vendor/marked.min.js"></script>
@@ -246,7 +246,7 @@
     <!-- ★ 2026-08-10: 首次启动3步向导 -->
     <div id="firstRunWizard" style="display:none;position:fixed;inset:0;z-index:20000;background:rgba(0,0,0,0.8);align-items:center;justify-content:center;">
       <div style="background:var(--bg-secondary,#1a1a2e);border-radius:16px;padding:32px;max-width:480px;width:90%;border:1px solid var(--border);text-align:center;">
-        <div style="font-size:48px;margin-bottom:8px;">🦆</div>
+        <div style="margin-bottom:8px;"><img src="/static/icon-duck.png" alt="Harven AI" style="width:72px;height:72px;"></div>
         <h2 style="color:#a78bfa;margin-bottom:4px;">欢迎使用 Harven AI 哈文</h2>
         <p style="color:var(--text-secondary);margin-bottom:20px;" id="wizardStepTitle">第1步，共3步</p>
         <div id="wizardContent"></div>
@@ -410,10 +410,7 @@
                     <span class="qm-group">
                         <span class="qm-label" data-i18n="web.qm_direct">直答</span>
                         <button class="qm-btn" data-mode="direct" onclick="setQueryMode('direct')" data-i18n="web.qm_foreign">🤖外脑</button>
-                        <!-- ★ 2026-08-08: 多外脑切换下拉 -->
-                        <select id="quickForeignModelSelect" onchange="window.quickSwitchForeignModel&&window.quickSwitchForeignModel(this.value)" style="margin-left:4px;padding:2px 6px;border-radius:4px;border:0.5px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);font-size:11px;cursor:pointer;" data-i18n-title="web.qm_switch_foreign" title="切换外脑模型">
-                            <option value="" data-i18n="web.qm_current_foreign">当前外脑</option>
-                        </select>
+                        <!-- ★ 2026-08-25 P1: 删除顶栏外脑切换下拉（与设置→模型管理重复，统一到设置入口） -->
                     </span>
                     <span id="queryModeDebug" style="margin-left:8px;font-size:11px;color:var(--text-secondary);opacity:0.7;" data-i18n="web.qm_current_local">当前: 🏠本地</span>
                     <!-- ★ 2026-08-16: 中英快捷切换按钮已移除（改用设置→界面语言统一控制） -->
