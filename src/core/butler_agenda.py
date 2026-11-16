@@ -482,8 +482,11 @@ def _sleep_wake(decl, panel_id, today):
     if gap < sw['gap_days']:
         return None
     # ★ 2026-10-25 周频化：key 改 ISO 周标记，一周最多 1 条（治「每天一条沉睡提醒」）
-    iso = datetime.strptime(today, '%Y-%m-%d').isocalendar()
-    key = f'{panel_id}:sleep:{iso[0]}-W{iso[1]:02d}'
+    # ★ #1521（2026-11-16 实锤：账已 done 但每周一换钥匙又来一条）：key 去周化，
+    #   改「最后记录日期」当事件标识（同 #1266 silent_gap 思路）——同一段沉默期=同一事件=
+    #   终身 1 条：done/dismiss 后不再重发；用户记了新账 → last 变化 → 重新沉默满 N 天才起新事件。
+    #   open 状态下标题每天照常刷新天数（走 _add_item 的 UPDATE 分支）。
+    key = f'{panel_id}:sleep:{last[:10]}'
     title = sw['title'].format(n=gap)
     return (key, f'{title}（要继续用它就录一条；真用不上可以在面板中心隐藏它）', 'info', 0)
 
