@@ -153,25 +153,18 @@ NULL
 # === 规则修正：根目录测试脚本不进，tests/ 目录要进 ===
 /test_*.py
 
-# ★ #1524 数据主权：data 下用户数据/数据库永不入库（内置资产白名单外全挡）
-data/*.db
-data/*.db-*
-data/**/*.db
-data/**/*.db-*
-data/conversations/*
-data/archives/*
-data/collaborations/*
-data/evolution/*
-data/knowledge/*
-data/vault_logs.db*
-data/cloud_link.json
-data/device_binding*
-data/dream_state.json
-data/sqlite/
-data/uploads/
-!data/config/.gitkeep
-!data/conversations/.gitkeep
+# ★ #1524 数据主权：data 全目录默认不入库，仅白名单内置资产例外
+data/*
+!data/config/
+!data/conversations/
+!data/faiss/
+!data/fc_wrappers/
+!data/builtin_skills/
+!data/attributions.json
+data/faiss/*
 !data/faiss/.gitkeep
+data/conversations/*
+!data/conversations/.gitkeep
 # 一次性脚本/输出
 /_*.txt
 /_test_*.py
