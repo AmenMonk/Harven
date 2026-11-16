@@ -1,2 +1,0 @@
-﻿skill_accounting rows: 1
-{'id': 1, 'type': '鏀嚭', 'amount': 9000.0, 'category': '鍏朵粬', 'date': '2026-09-16', 'note': '浠婃棩绀句繚'}

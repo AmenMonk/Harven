@@ -1,7 +1,0 @@
-﻿
-## 定制页被 panel_manager 覆盖事故修复（23:13-23:30，#729）
-- 开发者重启后截图仍是旧模板页。探测活服务器发现：/panel/accounting_daily_1 返回"新标题+旧通用骨架"且引用已删除的panel.css → 磁盘index.html(22:30:47)被覆盖
-- **根因**：panel_manager._sync_generated_panel 对"panel.js首行=生成标记"的面板无条件重写index.html。时间线：重生成脚本先给accounting重生成了模板panel.js → 22:30 跑测试触发扫描→index.html被通用模板覆盖 → 之后我们才删panel.js/panel.css → 定制页已毁，页面引用不存在的panel.js永久"加载中"
-- **修复**：①重建 accounting index.html（acc-container/acc-header/acc-tabs/tabContent/modalRoot/toast + memberSelect + accounting.css/panel-assist + Acc.init()，不含panel.js引用）②_sync_generated_panel 加护栏：index.html 只许覆盖"生成品"（必引用 /panel/<id>/panel.js），定制页跳过并记日志
-- 无需再重启：面板文件实时读盘，开发者刷新即见新版；护栏下次重启生效。staging MD5 2/2
-- **教训**：升级定制面板时，先删/改 panel.js 首行标记再做文件操作，否则扫描器会当模板面板重写首页；任何"自动再生成"必须有生成品标记护栏

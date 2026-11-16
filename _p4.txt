@@ -1,7 +1,0 @@
-﻿compile_exit=0
-status=200
-cache=no-cache, no-store, must-revalidate
-has_acc_container=True
-has_accounting_js=True
-has_assist=True
-has_old_paneljs_ref=False

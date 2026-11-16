@@ -1,2 +1,0 @@
-﻿status: 200
-resp: {"inserted":1,"success":true}

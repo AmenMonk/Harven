@@ -1,5 +1,0 @@
-200 GET /api/panels/fridge/diet -> True 
-200 POST /api/panels/fridge/diet -> True 
-200 GET /api/panels/fridge/buylist -> True 
-200 GET /api/panels/fridge/recipe -> True 
-400 POST /api/panels/fridge/scan -> False 没有拿到照片

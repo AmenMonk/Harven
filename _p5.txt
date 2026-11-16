@@ -1,2 +1,0 @@
-﻿OK  src\core\panel_manager.py
-OK  data\panels\accounting_daily_1\index.html

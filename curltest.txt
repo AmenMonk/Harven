@@ -1,3 +1,0 @@
-﻿domain_https=200
-ip_https=200
-ip_http=403
