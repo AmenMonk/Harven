@@ -47,25 +47,50 @@
     <input id="addr" placeholder="电脑上显示的连接地址" autocapitalize="off" autocorrect="off" />
     <button id="go">进入哈文</button>
     <p class="tip">地址在哪看？打开电脑上的哈文 → 设置 →「手机连接」扫码或抄地址。<br />
-    在家自动直连家里哈文；出门自动走云端中转。<br />
+    在家自动直连家里哈文；出门自动走云端中转（自建云端用户填自己的云端地址即可，同样自动换线）。<br />
+    <b>第一次在家用：会要一次「远程密码」，就是你登录电脑哈文的那个密码</b>（默认 harven2026，改过就用改过的）。<br />
     <b>第一次出门用：云端页要输一次 6 位配对码</b>（电脑哈文 → 设置 →「手机与云端」里看）。<br />
     <b>页面卡住/报错？用手机的返回手势回到本页，会自动重新连线</b>（不用重装）。<br />
     长按上面鸭子图标 3 秒可重新填写地址。</p>
   </div>
   <script>
     // ═══ ★ D1 2026-09-23 自动切换（家里直连 / 出门走云端） ═══
-    // 在家：APP 直连 http://家里地址/spa/（完整版）
-    // 出门：直连探不通 → 自动落 https://harvenhub.com/phone?code=配对码（云端中转）
-    // ★ v0.4 2026-09-23 修 404：实测实锤——手机把云端页地址存成「家里地址」后，
-    //   探活见 harvenhub.com/health 通就误判家里在线，把云端页拼成 /spa/ → Hub 404。
-    //   规则：地址含 harvenhub.com 一律按云端通道走，绝不拼 /spa/。
+    // ★ v0.7 2026-10-03 统一轻页（老谭拍板方案 B）：在家出门同一个界面
+    // 在家：APP 直连 http://家里地址/phone（本地轻页，快）
+    // 出门：直连探不通 → 自动落 https://harvenhub.com/phone?code=配对码（云端中转，同款界面）
+    // 完整版 SPA 只归电脑；壳只负责换线，用户无感。
+    // ★ v0.4 2026-09-23 修 404 的规则保留：官方云地址一律按云端通道走。
+    // ★ v0.8 2026-11-16 自建云端（老谭拍板方案 B）：自家 Hub 地址也当云端用——
+    //   出门探不通时，存的是公网自家云地址就兜底跳它自己（不再瞎跳官方云）；
+    //   isHubAddr 收紧为官方域名精确匹配，自建域名带 harvenhub 字样不再误伤。
     var KEY = 'harven_server_addr'
     var KEYCODE = 'harven_pair_code'
     var CLOUD = 'https://harvenhub.com/phone'
-    function isHubAddr(u) { return /harvenhub\.com/i.test(u || '') }
+    function hubHost(u) { try { return new URL(u).hostname.toLowerCase() } catch (e) { return '' } }
+    function isHubAddr(u) {
+      if (!u) return false
+      var h = hubHost(u)
+      if (!h) { try { h = new URL('http://' + u).hostname.toLowerCase() } catch (e) { return false } }   // 裸域名兜底
+      return /(^|\.)harvenhub\.com$/.test(h)
+    }
+    function isLanHost(h) {
+      if (!h) return true
+      if (/^(localhost|127\.)/.test(h)) return true
+      var m = h.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/)
+      if (!m) return false   // 域名（DDNS / 自家云域名）→ 按自家云端处理
+      if (m[1] === '10' || (m[1] === '192' && m[2] === '168')) return true
+      if (m[1] === '172') { var n = +m[2]; return n >= 16 && n <= 31 }
+      return false           // 公网 IP → 按自家云端处理
+    }
+    function cloudFor(u) {
+      var h = hubHost(u)
+      if (h && !isLanHost(h) && !isHubAddr(u)) return u.replace(/\/$/, '')   // 自家云端：它本身就是手机页
+      return CLOUD
+    }
     var params = new URLSearchParams(location.search)
     var fromServer = params.get('server') || ''
     var fromCode = params.get('code') || ''
+    var isReset = params.get('reset') === '1'   // ★ v0.6 从错误页弹回来
     var saved = localStorage.getItem(KEY) || ''
     var savedCode = localStorage.getItem(KEYCODE) || ''
 
@@ -74,16 +99,21 @@
       if (!u) return ''
       if (!/^https?:\/\//i.test(u)) u = 'http://' + u
       u = u.replace(/^(http):\/\//i, 'http://')   // 协议头归一小写
-      /* ★ v0.5 2026-09-29 实锤修复：开发者抄完整地址 http://ip:7000/spa/ → 旧版又拼一次成 /spa/spa/
-         （在家靠 Flask 兜底路由碰巧能开，潜伏；出门暴露）。先把结尾所有 /spa 剥干净再统一拼一个 */
-      u = u.replace(/\/+$/, '').replace(/(\/spa)+$/i, '')
-      return u + '/spa/'
+      /* ★ v0.5 2026-09-29 实锤修复：老谭抄完整地址 http://ip:7000/spa/ → 旧版又拼一次成 /spa/spa/
+         （在家靠 Flask 兜底路由碰巧能开，潜伏；出门暴露）。先把结尾所有 /spa 剥干净再统一拼 */
+      /* ★ v0.7 统一轻页：结尾 /phone 或 /spa 都剥干净，统一拼本地轻页 /phone */
+      u = u.replace(/\/+$/, '').replace(/(\/spa)+$/i, '').replace(/\/phone$/i, '')
+      return u + '/phone'
     }
     function originOf(u) { try { return new URL(u).origin } catch (e) { return '' } }
 
     // 扫码直填（?server= 优先）→ 记住并直接进
     // ★ v0.3 2026-09-23：全部改 location.assign（原 replace 不留历史 → 安卓返回手势失效，卡死页只能重装）
-    if (fromServer) {
+    if (isReset) {
+      /* ★ v0.6 (#954)：从错误页自动弹回壳页——不自动重连（防「错误页↔壳页」循环），让人改好地址再进 */
+      document.getElementById('addr').value = saved
+      setErr('刚才连接出错了（地址不对，或不在家里 WiFi）。改好地址再点「进入哈文」；出门在外就把地址填 harvenhub.com')
+    } else if (fromServer) {
       localStorage.setItem(KEY, norm(fromServer))
       if (fromCode) localStorage.setItem(KEYCODE, fromCode)
       /* ★ v0.5 2026-09-29 实锤修复：扫码/带参进来原先是直接 location.assign 跳家里地址——
@@ -100,35 +130,38 @@
     function setErr(t) { document.getElementById('err').textContent = t }
 
     function autoRoute(u, code) {
-      // ★ v0.4：存的若是云端地址 → 不探测不拼 /spa/，直接按云端通道走
-      if (isHubAddr(u)) { toCloud(code || savedCode || ''); return }
+      // ★ v0.4：存的若是官方云地址 → 不探测，直接按云端通道走
+      if (isHubAddr(u)) { toCloud(code || savedCode || '', u); return }
       var origin = originOf(u)
       setStatus('正在找家里的哈文…')
       if (!origin) { go(u); return }
-      // 2.5 秒探测：能连上 = 在家，直连完整版；连不上 = 出门，走云端
+      // 2.5 秒探测：能连上 = 在家，直连；连不上 = 出门，走云端
       var done = false
-      var timer = setTimeout(function () { if (!done) { done = true; toCloud(code) } }, 2500)
+      var timer = setTimeout(function () { if (!done) { done = true; toCloud(code, u) } }, 2500)
       fetch(origin + '/health', { mode: 'no-cors', cache: 'no-store' })
         .then(function () { if (!done) { done = true; clearTimeout(timer); go(u) } })
-        .catch(function () { if (!done) { done = true; clearTimeout(timer); toCloud(code) } })
+        .catch(function () { if (!done) { done = true; clearTimeout(timer); toCloud(code, u) } })
     }
-    function toCloud(code) {
+    function toCloud(code, home) {
       /* ★ v0.5 2026-09-29 实锤修复：无配对码时原先是「显示错误+把家里地址填回输入框」，
-         开发者顺手点「进入哈文」就一头撞死在家里 IP（ERR_CONNECTION_TIMED_OUT 错误页实锤）。
-         现在无码也直接跳云端页——手机页自带 6 位配对码手输框，输一次即可绑定 */
-      setStatus('家里不在线（可能出门了），走云端中转…')
-      location.assign(CLOUD + (code ? '?code=' + encodeURIComponent(code) : ''))
+         老谭顺手点「进入哈文」就一头撞死在家里 IP（ERR_CONNECTION_TIMED_OUT 错误页实锤）。
+         现在无码也直接跳云端页——手机页自带 6 位配对码手输框，输一次即可绑定
+         ★ v0.8：home 是公网自家云地址（自建云端）→ 兜底跳它自己，不跳官方云 */
+      var target = cloudFor(home || saved || '')
+      setStatus(target === CLOUD ? '家里不在线（可能出门了），走云端中转…' : '家里不在线，走你自己的云端…')
+      location.assign(target + (code ? '?code=' + encodeURIComponent(code) : ''))
     }
 
     function go(u) {
       u = norm(u || document.getElementById('addr').value)
       if (!u) { setErr('先填电脑上的连接地址'); return }
-      // ★ v0.4：手动填的若是云端地址 → 记住原始输入但按云端通道走
+      // ★ v0.4：手动填的若是官方云地址 → 记住原始输入但按云端通道走
       if (isHubAddr(u)) {
         localStorage.setItem(KEY, u)
         location.assign(CLOUD + (savedCode ? '?code=' + encodeURIComponent(savedCode) : ''))
         return
       }
+      // ★ v0.8：手动填的是公网自家云地址 → 记为自建云端，出门兜底也走它（go 正常跳 /phone）
       localStorage.setItem(KEY, u)
       location.assign(u)
     }
