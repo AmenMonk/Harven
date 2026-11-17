@@ -4,6 +4,8 @@
 
 # Harven AI — Your Family's Local AI Hub · 家庭 AI 中台
 
+**English** | **[简体中文](README.zh-CN.md)**
+
 **Not another chat UI. A family AI hub: local brain thinks, external brain analyzes, vertical models execute. 29 practical panels (bills, fridge, health, butler agenda…) on one local data foundation. Your data never leaves home.**
 
 > 🇨🇳 **中文一句话**：装在你家电脑上的 AI 中台——聊天框听得懂人话，29 个面板管好记账/冰箱/健康/日程，**管家日常运行零 API 费**，所有数据只存在你自己硬盘上。解压双击即用，自带 Python 环境。
