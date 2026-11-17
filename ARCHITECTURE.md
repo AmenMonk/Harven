@@ -55,6 +55,7 @@ flowchart TB
         Local["🏠 本地: Ollama / GGUF<br/>deepseek-r1:14b / qwen3:8b"]
         Cloud["☁️ 外脑: DeepSeek / GLM / 豆包…<br/>按 current_model 阵营直连不回落"]
         Vision["👁️ 视觉: HarvenEye<br/>YoloX + CLIP + Qwen-VL"]
+        Face["👤 人脸引擎 (facex)<br/>YuNet 检测 + SFace 嵌入<br/>发图先遣队认家人/人脸归册"]
         Vertical["🎯 垂直模型: 医疗/音乐/语音/代码"]
     end
 
@@ -76,6 +77,7 @@ flowchart TB
     Engine --> Local
     Engine --> Cloud
     Engine --> Vision
+    Engine --> Face
     Panels --> Vertical
     Extract --> SQLite
     Engine --> Memory
@@ -144,7 +146,7 @@ flowchart TB
 
 ## 5️⃣ 技术栈一览
 
-`Python 3.13` · `Flask` · `Vue3 + Vite (SPA)` · `SQLite` · `FAISS` · `Ollama / llama-cpp-python` · `YOLO(ONNX)` · `CLIP` · `APScheduler` · `WebSocket`
+`Python 3.13` · `Flask` · `Vue3 + Vite (SPA)` · `SQLite` · `FAISS` · `Ollama / llama-cpp-python` · `YOLO(ONNX)` · `CLIP` · `YuNet + SFace (人脸)` · `APScheduler` · `WebSocket`
 
 ---
 
