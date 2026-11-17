@@ -87,13 +87,17 @@ User: "帮我加一个天气查询功能"
 *Single-model chatbots can't do this. Harven orchestrates multiple models like a team.*
 
 ### 4. 🎨 Vertical Model Orchestration (专业执行)
+
+> 💡 **All vertical models are optional** — packages ship with no models bundled. Download what fits your hardware and needs from the Model Center; skip them entirely and everything else works. HarvenEye's base VLM is swappable too (bigger = smarter, smaller = lighter on VRAM).
+
 | Model | Capability |
 |-------|-----------|
-| ACE-Step | Full-song generation (lyrics + style → WAV/MP3, auto-transcoded, in-chat player) |
-| Stable Diffusion | Image generation |
-| HarvenEye | YOLO detection + CLIP semantics + VLM understanding |
-| MiniCPM-V | Image understanding |
-| HuaTuo | Medical Q&A |
+| ACE-Step (optional) | Full-song generation (lyrics + style → WAV/MP3, auto-transcoded, in-chat player) |
+| Stable Diffusion (optional) | Image generation |
+| HarvenEye | Vision brain: YOLO detection + CLIP semantics + **swappable VLM base** + face engine; also a local general model that can handle general tasks (Q&A etc.) — capability scales with the base model |
+| Face Engine | YuNet detection + SFace embedding: recognize family members, auto-organize photo albums |
+| MiniCPM-V (optional) | Image understanding |
+| HuaTuo (optional) | Medical Q&A |
 
 *Vertical models execute independently — no knowledge base/skills/persona interference.*
 
@@ -102,7 +106,7 @@ User: "帮我加一个天气查询功能"
 ## 🗺️ Feature Panorama (25+ Features)
 
 ### 💬 Conversation & Reasoning
-- 🏠 **Local Mode** — Local model + knowledge base + skills + persona
+- 🏠 **Local Mode** — Local model + knowledge base + skills + persona, **all toggleable**: knowledge base has a master switch (off = embedding model never loads, faster first reply), skills trigger on-demand by keyword, persona is customizable or empty — a bare local model works fine
 - 🤖 **External Brain** — GPT/DeepSeek/GLM/Doubao + knowledge base + skills
 - 🎨 **Vertical Mode** — Music/image/voice/medical specialized execution
 - ⛓️ **Collaboration Pipeline** — Multi-model relay with drag-and-drop staging, save = live
@@ -136,6 +140,7 @@ User: "帮我加一个天气查询功能"
 
 ### 🌐 Connectivity
 - 📱 **Mobile Link** — Scan QR for remote chat
+- 📧 **Email** — Fetch/send/search mail once configured (4 built-in tools)
 - 💬 **IM Channels** — WeChat Work / DingTalk / Feishu
 - 🏠 **IoT Control** — MQTT/HTTP/WebSocket + **AI-generated drivers**
 - 🌍 **Public Network** — Access from phone anywhere
