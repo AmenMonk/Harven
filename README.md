@@ -142,7 +142,7 @@ User: "帮我加一个天气查询功能"
 ### 🎨 Customization
 - 🌗 **Themes** — Dark/Light/System
 - 📝 **Bilingual i18n** — 中文/English (853 keys, full coverage)
-- 🦆 **Brand Customization** — Custom name/icon/avatar
+- 🎨 **Brand Customization** — Custom name/icon/avatar
 - 💾 **Backup & Restore** — One-click data vault
 - 🛠️ **Fallback Mode** — Auto-recovery from failures
 
@@ -282,7 +282,7 @@ HarvenAI/
 
 **AmenMonk** · 📧 38552540@qq.com
 
-> 🦆 Harven AI — Your personal AI brain that lives on your computer, not in the cloud.
+> **Harven AI** — Your personal AI brain that lives on your computer, not in the cloud.
 > 
 > 哈文 — 住在电脑里的AI大脑，数据主权在你手里。
 
