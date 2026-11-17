@@ -1,13 +1,18 @@
-# 🦆 Harven AI — Personal AI Brain
+<div align="center">
+  <img src="docs/images/banner.svg" alt="Harven AI — Local-first Family AI Hub" width="100%"/>
+</div>
 
-**Not another chat UI. Multi-model collaboration: local brain thinks, external brain analyzes, vertical models execute. 5-layer memory never forgets. AI builds your UI panels.**
+# Harven AI — Your Family's Local AI Hub · 家庭 AI 中台
+
+**Not another chat UI. A family AI hub: local brain thinks, external brain analyzes, vertical models execute. 29 practical panels (bills, fridge, health, butler agenda…) on one local data foundation. Your data never leaves home.**
+
+> 🇨🇳 **中文一句话**：装在你家电脑上的 AI 中台——聊天框听得懂人话，29 个面板管好记账/冰箱/健康/日程，**管家日常运行零 API 费**，所有数据只存在你自己硬盘上。解压双击即用，自带 Python 环境。
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Platform: Windows/Linux/macOS](https://img.shields.io/badge/Platform-Windows%2FLinux%2FmacOS-green)](#downloads)
 [![Python: 3.13 built-in](https://img.shields.io/badge/Python-3.13%20built--in-orange)](#downloads)
 [![Bilingual: 中文/EN](https://img.shields.io/badge/i18n-中文%2FEN-yellow)](#bilingual)
-
-个人专属AI大脑 — 纯本地运行，隐私安全，永久免费。
+[![Architecture](https://img.shields.io/badge/ARCHITECTURE-whitepaper-8b5cf6)](ARCHITECTURE.md)
 
 ---
 
@@ -170,6 +175,18 @@ python web_app.py
 ---
 
 ## 🏗️ Technical Architecture
+
+> 📐 **Full whitepaper: [ARCHITECTURE.md](ARCHITECTURE.md)** — design decisions, data flow diagrams, code entry map. Why the Butler costs zero tokens, why data extraction is local-first, why models never get swapped behind your back.
+
+Three design laws run everything:
+
+| Law | Rule |
+|-----|------|
+| ① | **Language understanding → the model.** Only this step uses LLM. |
+| ② | **Data extraction → local code.** Regex/dictionary, milliseconds, offline, private. |
+| ③ | **Result assembly → the model.** LLM turns structured results into human speech. |
+
+### By the Numbers
 
 | Metric | Value |
 |--------|-------|
