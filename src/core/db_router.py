@@ -28,13 +28,29 @@ _EMBED_MODEL_LOCK = threading.Lock()
 
 
 def _resolve_embed_model() -> str:
-    """从用户已装模型里找嵌入模型（懒加载+缓存）。返回 '' 表示没有，语义分类禁用。"""
+    """从用户已装模型里找嵌入模型（懒加载+缓存）。返回 '' 表示没有，语义分类禁用。
+    ★ #1522（2026-11-18）口径统一：以 KnowledgeBase 嵌入单例为单一事实源
+    （本地 bge 优先 → Ollama 兜底）。日志实锤：旧逻辑只盯 Ollama，用户装了本地 bge
+    也报「未装嵌入模型、语义路由禁用」，与 KnowledgeBase「嵌入就绪」互相打架。
+    返回 'kb' 表示走进程内嵌入通道，非空模型名表示走 Ollama，'' 禁用。"""
     global _EMBED_MODEL, _EMBED_MODEL_RESOLVED
     if _EMBED_MODEL_RESOLVED:
         return _EMBED_MODEL
     with _EMBED_MODEL_LOCK:
         if _EMBED_MODEL_RESOLVED:
             return _EMBED_MODEL
+        # ① 进程内嵌入通道（KnowledgeBase：本地 bge → Ollama 兜底，模型启动时已预热）
+        try:
+            from src.core.knowledge_base import get_knowledge_base
+            kb = get_knowledge_base()
+            if kb is not None and kb._get_embedding_model() is not None:
+                _EMBED_MODEL = 'kb'
+                logger.info('[db_router] 语义路由使用进程内嵌入通道（KnowledgeBase 单例）')
+                _EMBED_MODEL_RESOLVED = True
+                return _EMBED_MODEL
+        except Exception as e:
+            logger.debug(f'[db_router] 进程内嵌入通道不可用: {e}')
+        # ② 兜底：直接问 Ollama（KnowledgeBase 整个不可用时才走到这）
         try:
             import requests as _r
             resp = _r.get(f"{_OLLAMA_BASE}/api/tags", timeout=3)
@@ -49,7 +65,7 @@ def _resolve_embed_model() -> str:
         if _EMBED_MODEL:
             logger.info(f"[db_router] 语义路由使用用户已装嵌入模型: {_EMBED_MODEL}")
         else:
-            logger.info("[db_router] 用户未装嵌入模型，语义路由禁用（走关键词分类，不内定模型）")
+            logger.info("[db_router] 无可用嵌入后端，语义路由禁用（走关键词分类，不内定模型）")
         return _EMBED_MODEL
 
 _OLLAMA_BASE = "http://localhost:11434"
@@ -117,12 +133,23 @@ _SEMANTIC_MIN_LENGTH = 15
 
 def _get_embedding(text: str, model: str = None) -> Optional[List[float]]:
     """
-    调用 Ollama Embeddings API 获取文本向量。
+    获取文本向量。
     ★ 2026-09-26 审计：model 为空时动态解析用户已装嵌入模型；解析不到返回 None（分类退关键词）。
+    ★ #1522（2026-11-18）：model='kb' 走 KnowledgeBase 进程内嵌入（本地 bge，毫秒级、零网络），
+      失败返回 None（分类退关键词）；其余模型名走 Ollama API（老路径保留）。
     """
     if model is None:
         model = _resolve_embed_model()
     if not model:
+        return None
+    if model == 'kb':
+        try:
+            from src.core.knowledge_base import get_knowledge_base
+            arr = get_knowledge_base()._embed_texts([text])
+            if arr is not None and len(arr) > 0:
+                return [float(x) for x in arr[0]]
+        except Exception as e:
+            logger.debug(f"[db_router] 进程内嵌入获取失败: {e}")
         return None
     try:
         import requests as _r

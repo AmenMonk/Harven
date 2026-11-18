@@ -167,14 +167,20 @@ def auto_place(img_id, img_path=None):
         return '', ''
 
 
-def reauto_place_all():
+def reauto_place_all(max_tries=3):
     """★ #1257 批4：存量重跑——对全部「未分类且 auto_placed=1」的图重跑三级瀑布。
-    词库建成后调用一次（重启后首次归位时自动跑，也可手动触发）。返回 (总数, 归位数)。"""
+    ★ #1522（2026-11-18）跑过即跳过：每张图自动尝试计入 auto_tried，满 max_tries 次
+    不再重跑（日志实锤：同一批 21 张每天重跑归位 0，纯空转）。用户手动归类或词库
+    升级后可调 reset_auto_tried() 给全部图重开机会。返回 (总数, 归位数)。"""
     ensure_table()
     c = _conn()
     rows = c.execute(
-        "SELECT id FROM images_index WHERE auto_placed=1 AND album IN ('', '未分类')"
-    ).fetchall()
+        "SELECT id FROM images_index WHERE auto_placed=1 AND album IN ('', '未分类') "
+        "AND IFNULL(auto_tried,0) < ?", (max_tries,)).fetchall()
+    if rows:
+        c.executemany('UPDATE images_index SET auto_tried=IFNULL(auto_tried,0)+1 WHERE id=?',
+                      [(r['id'],) for r in rows])
+        c.commit()
     c.close()
     moved = 0
     for r in rows:
@@ -186,6 +192,19 @@ def reauto_place_all():
             continue
     logger.info(f'[ImgStore] #1257 存量重跑完成: {len(rows)} 张候选，归位 {moved} 张')
     return len(rows), moved
+
+
+def reset_auto_tried():
+    """★ #1522 清零全部归位尝试计数（词库升级/CLIP 模型更换后调，给图重开自动归位机会）。
+    返回清零张数。"""
+    ensure_table()
+    c = _conn()
+    try:
+        c.execute('UPDATE images_index SET auto_tried=0')
+        c.commit()
+        return c.total_changes
+    finally:
+        c.close()
 
 
 def unprocessed_bills(limit=500):
@@ -329,6 +348,11 @@ def ensure_table():
                 c.execute('CREATE INDEX IF NOT EXISTS idx_img_group ON images_index(group_id)')
             # ★ #1491（2026-11-12）记忆相册按人翻回忆：人脸↔照片映射表（数据真家=lingzhi.db，
             #   与 images_index 同库好 join；人脸向量本体仍在 data/vision/face.db 不动）
+            # ★ #1522（2026-11-18）归位尝试计数：跑过即跳过——同一张图最多自动尝试 3 次
+            #   （日志实锤：21 张候选每天重跑归位 0，白烧 CLIP 调用；3 次归不了=词典/CLIP
+            #   都拿它没办法，静等用户手动归类或词库升级后 reset_auto_tried() 重开机会）
+            if 'auto_tried' not in cols:
+                c.execute('ALTER TABLE images_index ADD COLUMN auto_tried INTEGER DEFAULT 0')
             c.execute('''CREATE TABLE IF NOT EXISTS face_photo_map (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 img_id INTEGER NOT NULL,

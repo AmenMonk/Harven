@@ -813,6 +813,10 @@ def _loop():
             _briefing_if_due()
             today = datetime.now().strftime('%Y-%m-%d')
             if last_cleanup != today:
+                # ★ #1522（2026-11-18）守卫提前置位：先标记今天已跑、再执行日扫块。
+                #   旧写法块尾才置位，块内慢任务（账单视觉扫描）超 30s 时下一拍会重复进块
+                #   （日志实锤：ImgStore 存量重跑一天跑两遍）。子任务各自 try/except 不受影响。
+                last_cleanup = today
                 _cleanup_old()
                 # ★ #1376（2026-11-02 定版拍板）照片 30 天策略：每日顺手清一次消耗副本图
                 try:
@@ -842,7 +846,7 @@ def _loop():
                         logger.info(f'[Butler] #1452 照片归位兜底: {_tot} 张候选，补归位 {_moved} 张')
                 except Exception as _re:
                     logger.debug(f'[Butler] 照片归位兜底跳过: {_re}')
-                last_cleanup = today
+                # （★ #1522 last_cleanup 已在块首置位，此处不再重复赋值）
         except Exception as e:
             logger.debug(f'[Butler] 心跳异常: {e}')
         time.sleep(30)
@@ -851,6 +855,12 @@ def _loop():
 def ensure_butler_loop():
     global _butler_started
     if _butler_started:
+        return
+    # ★ #1522（2026-11-18）线程名防双开：_butler_started 布尔守卫在极端并发下
+    #   可能被穿透（日志实锤：日扫块一天跑两遍=两条心跳各跑一次），
+    #   按线程名再核一道，活着的 butler-agenda 线程存在就绝不再开。
+    if any(t.name == 'butler-agenda' for t in threading.enumerate()):
+        _butler_started = True
         return
     _butler_started = True
     threading.Thread(target=_loop, daemon=True, name='butler-agenda').start()
