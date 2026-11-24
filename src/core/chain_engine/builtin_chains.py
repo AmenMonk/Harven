@@ -98,6 +98,7 @@ def bills_chain_recipe() -> Recipe:
                 "sink": "管家中心待确认→记账面板 insert_records"},
         meta={"packed_executor": "bills_scan_pipeline",
               "icon": "static/icon-duck.png",
+              "user_facing": False,   # ★ #1537c 后台链：相册按钮/心跳自动触发，不占垂直页身份证
               "note": "复用 #1377 bills_scan 管线；试跑默认 dry，不写卡不打标记"},
     )
 

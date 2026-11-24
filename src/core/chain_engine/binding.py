@@ -37,18 +37,22 @@ def chain_entries() -> list[dict]:
 
 # ══ 组合 → 垂直模型页（动态适配器）════════════════════════════
 def sync_vertical_binding() -> dict:
-    """把启用的组合注册成垂直动态模型；停用/卸载的对账移除。幂等。"""
+    """把启用的组合注册成垂直动态模型；停用/卸载的对账移除。幂等。
+
+    #1537c 收紧：meta.user_facing=False 的后台链（如账单链，由相册按钮/心跳
+    触发）不注册身份证——垂直页只留用户侧组合，不再一堆重复条目。"""
     from src.core import vertical_api as va
     reg = get_registry()
     registered, removed = 0, 0
-    # 清掉已不存在的 chain:* 旧户口
-    live_ids = {f"chain:{c.id}" for c in reg.list_chains()}
+    # 该有户口的集合（启用 + 用户侧）；不在集合里的 chain:* 一律对账移除
+    reg_ids = {f"chain:{c.id}" for c in reg.list_chains()
+               if c.enabled and c.meta.get("user_facing", True)}
     for mid in list(va._dynamic_models.keys()):
-        if mid.startswith("chain:") and mid not in live_ids:
+        if mid.startswith("chain:") and mid not in reg_ids:
             va._dynamic_models.pop(mid, None)
             removed += 1
     for c in reg.list_chains():
-        if not c.enabled:
+        if not c.enabled or not c.meta.get("user_facing", True):
             continue
         mid = f"chain:{c.id}"
         caps = sorted(c.capabilities())
@@ -59,7 +63,11 @@ def sync_vertical_binding() -> dict:
             "icon": "🧩",
             "type": page_type,
             "canvas_type": "generic",
-            "description": f"[组合] {c.target or c.name}",
+            # ★ #1537c 说明文案：讲清这是流水线 + 日常已自动调用，别让用户摸不着头脑
+            "description": f"[组合] {c.target or c.name}\n"
+                           f"💡 这是多环节自动接力的流水线，不是聊天模型——"
+                           f"日常场景（拍照打标、账单分析等）已自动调用它，聊天框不用选；"
+                           f"想手动跑一次时，在这里附上图片/视频点执行。",
             "engine": _CHAIN_ENGINE,
             "chain_id": c.id,
             "input_type": c.input_type,
@@ -163,10 +171,44 @@ def _humanize(result) -> str:
                      f"{'，' + r.get('日期') if r.get('日期') else ''}）" for r in recs[:20]]
             head = result.get("message") or f"识别出 {len(recs)} 条记录："
             return str(head) + "\n" + "\n".join(lines)
-        # HarvenEye 识别 dict：取 tags/对象摘要
+        # HarvenEye 识别 dict：trace 各层挖成稿（#1537c：VLM 描述直接端出来，
+        # 不再让用户看到「详情看工坊试跑页」这种没头没脑的话）
         if result.get("trace"):
+            tr = result.get("trace")
+            if isinstance(tr, list):
+                # 1) 从后往前找理解环/VLM 描述（L3 成稿最有内容）
+                for layer in reversed(tr):
+                    if isinstance(layer, dict):
+                        d = layer.get("description")
+                        if isinstance(d, str) and d.strip():
+                            src = layer.get("source_layer") or ""
+                            head = f"【{src} 理解】" if src else ""
+                            return f"{head}{d.strip()}"
+                # 2) 没有描述 → 报检测到的对象清单（L1 目标检测）
+                for layer in tr:
+                    if isinstance(layer, dict):
+                        dets = layer.get("detections") or []
+                        names = [d.get("name") or d.get("label") or d.get("cls")
+                                 for d in dets if isinstance(d, dict)]
+                        names = [str(n) for n in names if n]
+                        if names:
+                            src = layer.get("source_layer") or "检测"
+                            return f"检测到 {len(names)} 个对象：{'、'.join(names[:12])}（{src}）"
+                # 3) 只有语义检索线索（L2 相似图）
+                for layer in tr:
+                    if isinstance(layer, dict):
+                        sim = layer.get("similar")
+                        if isinstance(sim, list) and sim:
+                            top = sim[0] if isinstance(sim[0], dict) else {}
+                            pct = round(float(top.get("similarity", 0)) * 100)
+                            return f"图库里有 {len(sim)} 张相似照片（最像 {pct}%），已按图库路由入库"
             tags = result.get("tags") or result.get("labels") or []
-            return "识别结果：" + ("、".join(map(str, tags)) if tags else "（详情看工坊试跑页）")
+            if tags:
+                return "识别结果：" + "、".join(map(str, tags))
+            note = result.get("note")
+            if isinstance(note, str) and note.strip():
+                return f"识别完成：{note.strip()}"
+            return "识别完成（本次没有可成稿的内容），物流单里有完整环节记录"
     return "（组合产出见工坊试跑页/物流单——此结果没有文本成稿）"
 
 
