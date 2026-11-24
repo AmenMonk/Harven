@@ -211,14 +211,20 @@ def test_recipe(recipe_id: str):
     payload = data.get("payload") or {}
     sample_note = None
     if not payload.get("image_path"):
-        sample, sample_note = _sample_for(r)
-        if sample is None:
-            return _err(f"试跑需要样例（首环输入 {r.steps[0].input_type if r.steps else '?'}）: "
-                        f"{sample_note or '请上传或在 payload 指定'}")
-        if isinstance(sample, dict):
-            payload.update(sample)          # 文本类样例：直接注入 payload 字段
+        first_type = r.steps[0].input_type if r.steps else "image_path"
+        if first_type == "any":
+            # ★ #1537b 实锤修复：免样例链（如账单链 collect 环自取数据）直接空 payload 跑，
+            #   此前「未知输入类型 any」把试跑门错杀
+            sample_note = "免样例（首环管线自取数据）"
         else:
-            payload["image_path"] = sample
+            sample, sample_note = _sample_for(r)
+            if sample is None:
+                return _err(f"试跑需要样例（首环输入 {first_type}）: "
+                            f"{sample_note or '请上传或在 payload 指定'}")
+            if isinstance(sample, dict):
+                payload.update(sample)          # 文本类样例：直接注入 payload 字段
+            else:
+                payload["image_path"] = sample
     out = get_orchestrator().run(recipe_id, payload)
     # 样例若命中 L0 查重短路（trace 只有 L0 一行），旋转 90° 造一张「指纹不同、内容相同」的
     # 新图重跑一次——工坊试跑的目的是让用户看到全链逐环点亮，短路不是用户想看的东西。
