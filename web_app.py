@@ -701,7 +701,11 @@ try:
     app.register_blueprint(chain_ws_bp)
     from src.core.chain_engine import ensure_chain_engine
     _ce = ensure_chain_engine()
-    logger.info(f"[ChainWorkshop] 组合工坊路由已注册（/api/chains），内置组合 {_ce.get('builtin_registered')} 个")
+    # ★ #1534：组合即模型——启用的组合同步进垂直模型页（动态模型，engine=chain）
+    from src.core.chain_engine.binding import sync_vertical_binding
+    _cb = sync_vertical_binding()
+    logger.info(f"[ChainWorkshop] 组合工坊路由已注册（/api/chains），内置组合 {_ce.get('builtin_registered')} 个，"
+                f"垂直页绑定 {_cb.get('registered')} 个")
 except Exception as e:
     logger.error(f"[ChainWorkshop] 组合工坊路由注册失败: {e}")
 

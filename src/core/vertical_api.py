@@ -424,6 +424,13 @@ def execute_vertical_model():
 
     engine = model.get('engine', 'tool_executor')
 
+    # ★ #1534（2026-11-24）：组合即模型——组合以动态模型身份出现在垂直页，
+    #   engine='chain' 的执行委托给编排器（模型决策全在配方单，铁律0 不碰）。
+    #   注意走原始 attachments（视频附件整段给 video_brief，不在这里被抽帧摊平）。
+    if engine == 'chain':
+        from src.core.chain_engine.binding import execute_chain_model
+        return jsonify(execute_chain_model(model, params, attachments))
+
     # ★ 2026-09-15: 附件只支持 Ollama 引擎模型（minicpm-v 等看图/转写模型）；其他引擎给出友好提示
     if attachments and engine != 'ollama':
         return jsonify({"success": False,

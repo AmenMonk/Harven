@@ -10,7 +10,8 @@
   POST   /<id>/fork            fork 另存（示范田照改，内置唯一修改通道）
   DELETE /<id>                 卸载（底座模型保留，三轮定版）
   POST   /<id>/check           三道门干跑（结构+能力+preflight，不真跑）
-  POST   /<id>/test            试跑：真跑一次全链（样例图片），逐环耗时从物流单取
+  POST   /<id>/test            试跑：真跑一次全链（样例按输入类型自动取），逐环耗时从物流单取
+  POST   /<id>/advise          AI 参谋：物流单事实+目标描述→优化建议（跟用户所选模型，铁律0）
   GET    /<id>/logs            物流单历史（每环耗时/成功率/瓶颈事实）
 
 铁律对照：
@@ -84,6 +85,14 @@ def inventory_models():
     return _ok(models=models)
 
 
+@bp.route("/entries", methods=["GET"])
+def capability_entries():
+    """统一能力查询：模型能力 + 组合能力（chain: 前缀一等条目）。
+    消费方（聊天框/面板/FC 工具）查「本机现在有什么能力可用」用。"""
+    from .binding import chain_entries
+    return _ok(entries=chain_entries())
+
+
 # ══ 配方单读写 ═══════════════════════════════════════════════
 @bp.route("/<recipe_id>", methods=["GET"])
 def get_recipe(recipe_id: str):
@@ -107,7 +116,18 @@ def save_recipe():
     res = get_registry().register_chain(r)
     if not res.get("ok"):
         return _err("；".join(res.get("errors") or ["校验失败"]))
+    _sync_binding()
     return _ok(recipe_id=res["recipe_id"])
+
+
+def _sync_binding():
+    """组合增删改后对账垂直页绑定（失败不拖累主流程，只记日志）。"""
+    try:
+        from .binding import sync_vertical_binding
+        sync_vertical_binding()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"[ChainWorkshop] 绑定对账失败: {e}")
 
 
 @bp.route("/<recipe_id>", methods=["PUT"])
@@ -127,7 +147,8 @@ def update_recipe(recipe_id: str):
         return _err(f"配方单字段非法: {e}")
     res = get_registry().register_chain(r)
     if not res.get("ok"):
-        return _err("；".join(res.get("errors") or ["校验失败"]))
+        return _err("；".join(res.get("errors") or ["更新失败"]))
+    _sync_binding()
     return _ok(recipe_id=recipe_id)
 
 
@@ -149,6 +170,7 @@ def fork_recipe(recipe_id: str):
     res = get_registry().register_chain(r)
     if not res.get("ok"):
         return _err("；".join(res.get("errors") or ["fork 失败"]))
+    _sync_binding()
     return _ok(recipe_id=new_id, forked_from=src.id)
 
 
@@ -162,6 +184,7 @@ def remove_chain(recipe_id: str):
     res = get_registry().unregister_chain(recipe_id)
     if not res.get("ok"):
         return _err("；".join(res.get("errors") or ["卸载失败"]))
+    _sync_binding()
     return _ok(removed=recipe_id, base_models_kept=True)
 
 
@@ -180,17 +203,22 @@ def check_recipe(recipe_id: str):
 
 @bp.route("/<recipe_id>/test", methods=["POST"])
 def test_recipe(recipe_id: str):
-    """试跑门：真跑一次全链。样例=请求里的 image_path（缺省用最近一张图片库照片）。"""
+    """试跑门：真跑一次全链。样例按首环输入类型自动取（samples 样例库优先）。"""
     r = get_registry().get_chain(recipe_id)
     if r is None:
         return _err(f"组合不存在: {recipe_id}", 404)
     data = request.get_json(silent=True) or {}
     payload = data.get("payload") or {}
+    sample_note = None
     if not payload.get("image_path"):
-        sample = _latest_photo()
-        if not sample:
-            return _err("试跑需要一张样例图片：请上传或在 payload.image_path 指定路径")
-        payload["image_path"] = sample
+        sample, sample_note = _sample_for(r)
+        if sample is None:
+            return _err(f"试跑需要样例（首环输入 {r.steps[0].input_type if r.steps else '?'}）: "
+                        f"{sample_note or '请上传或在 payload 指定'}")
+        if isinstance(sample, dict):
+            payload.update(sample)          # 文本类样例：直接注入 payload 字段
+        else:
+            payload["image_path"] = sample
     out = get_orchestrator().run(recipe_id, payload)
     # 样例若命中 L0 查重短路（trace 只有 L0 一行），旋转 90° 造一张「指纹不同、内容相同」的
     # 新图重跑一次——工坊试跑的目的是让用户看到全链逐环点亮，短路不是用户想看的东西。
@@ -212,7 +240,49 @@ def test_recipe(recipe_id: str):
                     "run_id": out.get("run_id"), "total_ms": out.get("total_ms"),
                     "label": out.get("label"), "identity": out.get("identity"),
                     "result": out.get("result"), "steps": steps,
-                    "note": out.get("note")})
+                    "sample_note": sample_note, "note": out.get("note")})
+
+
+# ══ 试跑样例库（按首环输入类型取样）═══════════════════════════
+_SAMPLES_DIR = r"H:\HarvenAI\data\chains\samples"
+
+
+def _sample_for(r) -> tuple[object, str | None]:
+    """按首环输入类型选试跑样例。返回 (样例, 说明)。
+    图片类 → str 路径；文本类 → dict 注入 payload；没有 → (None, 缺样例说明)。"""
+    from pathlib import Path
+    it = r.steps[0].input_type if r.steps else "image_path"
+    sdir = Path(_SAMPLES_DIR)
+    if it in ("image", "image_path", "frames", "video"):
+        # 视频链优先视频样例；图片链只取图（视频当图开 PIL 会炸）
+        if it in ("video", "frames"):
+            order = (("sample_video.mp4", "样例视频"),)
+        else:
+            order = (("sample_image.jpg", "合成样例图"),)
+        for name, kind in order:
+            p = sdir / name
+            if p.exists():
+                return str(p), f"{kind}（samples 样例库）"
+        if it not in ("video", "frames"):
+            photo = _latest_photo()
+            if photo:
+                return photo, "图片库最近一张"
+            return None, "samples 样例库为空且图片库无照片（samples/sample_image.jpg 缺失）"
+        return None, "样例视频缺失（samples/sample_video.mp4）"
+    if it == "audio":
+        p = sdir / "sample_audio.wav"
+        if p.exists():
+            return str(p), "样例音频（samples 样例库）"
+        return None, "样例音频缺失（samples/sample_audio.wav）"
+    if it in ("text", "table_row", "json"):
+        txt_p = sdir / "sample_text.txt"
+        if txt_p.exists():
+            try:
+                return {"text": txt_p.read_text(encoding="utf-8")}, "样例文本（samples 样例库）"
+            except Exception:
+                pass
+        return {"text": "哈尔滨红肠 39.9 元一斤，买了两斤。"}, "内置兜底文本"
+    return None, f"未知输入类型 {it}"
 
 
 def _rotated_sample(image_path: str) -> str | None:
@@ -254,9 +324,158 @@ def _latest_photo() -> str | None:
     return None
 
 
+# ══ 说话级入口（大白话→草稿，跟用户所选模型铁律0）═══════════════
+@bp.route("/draft", methods=["POST"])
+def draft_recipe():
+    """说话级入口：用户大白话 → 配方单草稿 + 需求↔环节对照表。
+    草稿 origin=draft 不落盘，用户在编辑器里过目→保存才走三道门。"""
+    from . import advisor
+    data = request.get_json(silent=True) or {}
+    res = advisor.draft(data.get("intent") or "")
+    if not res.get("ok"):
+        return _err(res.get("error") or "草稿生成失败", 502)
+    return _ok(recipe=res["recipe"], mapping=res["mapping"],
+               model_used=res["model_used"], elapsed_ms=res["elapsed_ms"])
+
+
+# ══ AI 参谋（跟用户所选模型，铁律0）═══════════════════════════
+@bp.route("/<recipe_id>/advise", methods=["POST"])
+def advise_recipe(recipe_id: str):
+    """AI 参谋：物流单事实+配方单 → 优化建议。只动嘴不动手，运行时零 AI 不变。"""
+    from . import advisor
+    data = request.get_json(silent=True) or {}
+    res = advisor.advise(recipe_id, data.get("question"))
+    if not res.get("ok"):
+        return _err(res.get("error") or "参谋调用失败", 502)
+    return _ok(advice=res["advice"], model_used=res["model_used"],
+               elapsed_ms=res["elapsed_ms"])
+
+
 # ══ 物流单历史 ═══════════════════════════════════════════════
 @bp.route("/<recipe_id>/logs", methods=["GET"])
 def chain_logs(recipe_id: str):
     limit = int(request.args.get("limit", 100))
     rows = get_logistics().query(recipe_id, limit=min(limit, 500))
     return _ok(rows=rows)
+
+
+# ══ 组合包分享/导入（#1535：Hub 第 8 内容类型 chain）════════════════════
+@bp.route("/<recipe_id>/share", methods=["POST"])
+def share_recipe(recipe_id: str):
+    """导出组合包 zip 并上传 HarvenHub（type=chain，带许可证）。
+    内置原件也可分享（示范田分享的是原件副本，Hub 上人人可导入 fork）。"""
+    src = get_registry().get_chain(recipe_id)
+    if src is None:
+        return _err(f"组合不存在: {recipe_id}", 404)
+    data = request.get_json(silent=True) or {}
+    import io
+    import os
+    import zipfile
+
+    d = src.to_dict()
+    d.pop("enabled", None)  # 接收方自己决定启用
+    license_id = (data.get("license") or src.license or "MIT").strip()[:50]
+    desc = (data.get("description") or f"哈文组合包：{src.name}（{len(src.steps)} 环）").strip()
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("chain.json", json.dumps(d, ensure_ascii=False, indent=2))
+        z.writestr("README.txt",
+                   f"{src.name}\n{'=' * len(src.name)}\n\n"
+                   f"哈文模型组合包（chain）· {len(src.steps)} 环\n"
+                   f"许可证: {license_id}\n\n"
+                   f"导入方式：哈文 → 工坊 → 从 Hub 导入\n")
+    tmp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "data", "chains", "tmp")
+    tmp_dir = os.path.abspath(tmp_dir)
+    os.makedirs(tmp_dir, exist_ok=True)
+    tmp_path = os.path.join(tmp_dir, f"share_{recipe_id}.zip")
+    with open(tmp_path, "wb") as f:
+        f.write(buf.getvalue())
+
+    try:
+        from src.core.harvenhub_client import hub_upload
+        up = hub_upload(tmp_path, "chain", data.get("name") or src.name,
+                        description=desc, license=license_id)
+    finally:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+    if not up.get("success"):
+        return _err(up.get("error") or "上传 Hub 失败", 502)
+    return _ok(item_id=up.get("item_id"), license=license_id)
+
+
+@bp.route("/import", methods=["POST"])
+def import_recipe():
+    """从 HarvenHub 下载组合包（item_id）→ 解包 → 三道门校验 → 落为 fork 组合。
+    origin=forked：行为等同用户自建（可改可删可停用），Hub 原件不追踪。"""
+    data = request.get_json(silent=True) or {}
+    item_id = (data.get("item_id") or "").strip()
+    if not item_id:
+        return _err("缺少 item_id")
+    from src.core.harvenhub_client import hub_download
+    dl = hub_download(item_id)
+    if not dl.get("success"):
+        return _err(dl.get("error") or "下载失败", 502)
+    file_path = dl["file_path"]
+
+    import os
+    import zipfile
+    try:
+        if not zipfile.is_zipfile(file_path):
+            return _err("不是合法的组合包（zip）")
+        with zipfile.ZipFile(file_path) as z:
+            if "chain.json" not in z.namelist():
+                return _err("组合包缺少 chain.json")
+            raw = json.loads(z.read("chain.json").decode("utf-8"))
+    except json.JSONDecodeError as e:
+        return _err(f"chain.json 解析失败: {e}")
+    finally:
+        try:
+            os.remove(file_path)
+        except OSError:
+            pass
+
+    src_id = str(raw.get("id") or "chain")
+    new_id = (data.get("id") or src_id).strip().lower()
+    reg = get_registry()
+    # B7 查重按 id+名称双口径，导入侧两个都要消歧
+    taken_ids = {c.id for c in reg.list_chains()}
+    taken_names = {c.name for c in reg.list_chains()}
+    base_id = new_id
+    n = 0
+    while new_id in taken_ids:  # id 撞户口循环消歧
+        n += 1
+        new_id = f"{base_id}-hub{n}" if n > 1 else f"{base_id}-hub"
+    base_name = str(raw.get("name") or new_id).strip()
+    new_name = base_name
+    n = 0
+    while new_name in taken_names:  # B7 按名称精确查重，循环消歧到不撞
+        n += 1
+        new_name = f"{base_name}·Hub{n}" if n > 1 else f"{base_name}·Hub"
+    raw["id"] = new_id
+    raw["name"] = new_name
+    raw["origin"] = "forked"
+    raw["forked_from"] = f"hub:{item_id}"
+    raw["enabled"] = False  # 导入先停用，过三道门+用户确认再启用
+    try:
+        r = Recipe.from_dict(raw)
+    except TypeError as e:
+        return _err(f"配方单字段非法: {e}")
+    res = reg.register_chain(r)
+    if not res.get("ok"):
+        return _err("；".join(res.get("errors") or ["导入校验失败"]))
+    _sync_binding()
+    # 结构门+能力门立即体检一遍，把结果一并告诉前端
+    check = {"ok": True}
+    try:
+        from .gates import gate_structure, gate_capability
+        s = gate_structure(r)
+        c2 = gate_capability(r, reg)
+        check = {"ok": bool(s.get("passed") and c2.get("passed")),
+                 "structure": s.get("problems"), "capability": c2.get("problems")}
+    except Exception:
+        pass
+    return _ok(recipe_id=new_id, check=check,
+               hint="已导入并停用，请在工坊里试跑确认后再启用")

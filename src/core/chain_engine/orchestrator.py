@@ -116,6 +116,14 @@ def _get_shared_pipeline():
 
 register_packed("harveneye_pipeline", _run_harveneye)
 
+# ── 账单链打包执行器（#1531 官方第二号）：复用 bills_scan 公开函数，四环真实计时 ──
+from .packed_bills import run_bills_pipeline as _bills_pipeline_fn  # noqa: E402
+register_packed("bills_scan_pipeline", _bills_pipeline_fn)
+
+# ── 视频速览打包执行器（#1532 官方第三号）：cv2 抽帧→关键帧→逐帧识别→VLM 成稿 ──
+from .packed_video import run_video_pipeline as _video_pipeline_fn  # noqa: E402
+register_packed("video_brief_pipeline", _video_pipeline_fn)
+
 
 # ══ 编排器本体 ═════════════════════════════════════════════════
 class Orchestrator:

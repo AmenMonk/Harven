@@ -16,15 +16,20 @@ from . import recipe as recipe_mod
 from .registry import Registry
 
 # 结构门类型相容表：后环输入 ← 可接受的前环输出
+# （2026-11-24 细化：补 frames 帧列表（视频速览链 video→抽帧→识别）；
+#   table_row 明确接受 json（结构化抽取环常直接产 dict 行）；
+#   text 接受 table_row/audio 文本化结果——转录/表格序列化后都是文本）
 _COMPAT = {
-    "image_path": {"image_path", "image", "any"},
-    "image": {"image", "image_path", "any"},
+    "image_path": {"image_path", "image", "frames", "any"},
+    "image": {"image", "image_path", "frames", "any"},
     "boxes": {"boxes", "image", "image_path", "any"},
     "vector": {"vector", "any"},
-    "text": {"text", "any"},
-    "table_row": {"table_row", "text", "any"},
+    "text": {"text", "table_row", "audio", "json", "any"},
+    "table_row": {"table_row", "text", "json", "any"},
+    "json": {"json", "text", "table_row", "any"},
     "audio": {"audio", "any"},
     "video": {"video", "any"},
+    "frames": {"frames", "video", "image_path", "image", "any"},
     "any": {"*"},
 }
 

@@ -150,16 +150,17 @@ def hub_download(item_id, save_dir=None):
         return {'success': False, 'file_path': '', 'error': str(e)}
 
 
-def hub_upload(file_path, item_type, title, description='', author='', category='other'):
+def hub_upload(file_path, item_type, title, description='', author='', category='other', license=''):
     """上传内容到云端市场
 
     Args:
         file_path: 本地文件路径
-        item_type: 类型（skill/agent/template/knowledge/bundle/model）
+        item_type: 类型（skill/agent/template/knowledge/bundle/model/chain）
         title: 标题
         description: 描述
         author: 作者
         category: 分类
+        license: 许可证（MIT/Apache-2.0/CC-BY-4.0 等，#1535 组合包用）
 
     Returns:
         dict: {success: bool, item_id: str, error: str}
@@ -181,6 +182,7 @@ def hub_upload(file_path, item_type, title, description='', author='', category=
                 'description': description,
                 'author': author,
                 'category': category,
+                'license': (license or '').strip(),
             }
             resp = _safe_request('POST', f"{hub_url}/api/hub/upload", files=files, data=data, timeout=120)
 

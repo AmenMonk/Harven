@@ -3,6 +3,7 @@
     <template #actions>
       <BigButton v-if="mode !== 'list'" type="ghost" :disabled="false" @click="backToList"><HIcon name="x" :size="16" /> 返回列表</BigButton>
       <BigButton v-else type="ghost" @click="newChain"><HIcon name="plus" :size="16" /> 新建组合</BigButton>
+      <BigButton v-if="mode === 'list'" type="ghost" @click="importFromHub"><HIcon name="dots" :size="16" /> 从 Hub 导入</BigButton>
       <BigButton type="ghost" @click="loadAll"><HIcon name="dots" :size="16" /> 刷新</BigButton>
     </template>
 
@@ -11,6 +12,36 @@
 
     <!-- ═══ 列表区 ═══ -->
     <div v-if="mode === 'list'">
+      <!-- 说话级入口：大白话→草稿 -->
+      <div class="talk-box">
+        <div class="talk-head">🗣️ 说一句话，帮你装一个组合（AI 只出草稿，保存前还有三道门把关）</div>
+        <div class="talk-row">
+          <textarea v-model="draftIntent" rows="2" :disabled="drafting"
+                    placeholder="如：拍一张冰箱的照片，帮我看看里面有什么吃的，快过期的提醒我" @keydown.enter.exact.prevent="makeDraft" />
+          <BigButton :disabled="drafting || !draftIntent.trim()" @click="makeDraft">{{ drafting ? '参谋想着…' : '生成草稿' }}</BigButton>
+        </div>
+        <div v-if="draftRes" class="draft-card">
+          <div class="draft-head">
+            <b>{{ draftRes.recipe.name || '未命名组合' }}</b>
+            <span class="pill soft">成稿：{{ draftRes.model_used }}</span>
+            <span class="pill soft">{{ (draftRes.elapsed_ms / 1000).toFixed(1) }}s</span>
+            <div class="draft-tools">
+              <button class="mini" @click="applyDraft">📥 载入编辑器</button>
+              <button class="mini" @click="draftRes = null">✕</button>
+            </div>
+          </div>
+          <p class="cc-target">{{ draftRes.recipe.target }}</p>
+          <div class="cc-steps">
+            <span v-for="(s, i) in draftRes.recipe.steps" :key="i" class="step-chip">
+              {{ i + 1 }}. {{ s.name }}（{{ capLabel(s.capability) || '程序环' }}）
+            </span>
+          </div>
+          <table v-if="draftRes.mapping && draftRes.mapping.length" class="log-table">
+            <thead><tr><th>你的需求</th><th>对应环节</th></tr></thead>
+            <tbody><tr v-for="(m, i) in draftRes.mapping" :key="i"><td>{{ m.need }}</td><td>{{ m.step }}</td></tr></tbody>
+          </table>
+        </div>
+      </div>
       <div class="quick-filter">
         <button :class="{ on: tab === 'all' }" @click="tab = 'all'">全部</button>
         <button :class="{ on: tab === 'mine' }" @click="tab = 'mine'">我的组合</button>
@@ -42,6 +73,7 @@
               <button class="mini" @click="openEdit(c)">{{ c.builtin_protected ? '🔍 查看' : '✏️ 编辑' }}</button>
               <button class="mini" @click="openRun(c)">▶ 试跑</button>
               <button class="mini" @click="openLogs(c)">📋 物流单</button>
+              <button class="mini" @click="shareChain(c)">⬆ 分享</button>
               <button v-if="c.builtin_protected" class="mini" @click="forkChain(c)">🍴 Fork 另存</button>
               <button v-else class="mini danger" @click="removeChain(c)">🗑 删除</button>
             </div>
@@ -164,6 +196,19 @@
     <!-- ═══ 物流单区 ═══ -->
     <div v-if="mode === 'logs'" class="logs-wrap">
       <div class="run-head"><BigButton type="ghost" @click="backToList">← 返回</BigButton><b>📋 物流单：{{ running.name }}</b><span class="dim-line">每环耗时与成败的历史事实（AI 参谋靠它出优化建议）</span></div>
+      <div class="advisor-box">
+        <div class="talk-row">
+          <input v-model="adviceQ" :disabled="asking" placeholder="问参谋（可选）：哪一环最慢？怎么优化？留空则整体建议" @keydown.enter="askAdvice" />
+          <BigButton type="ghost" :disabled="asking" @click="askAdvice">{{ asking ? '参谋看着物流单…' : '🧠 问 AI 参谋' }}</BigButton>
+        </div>
+        <div v-if="adviceRes" class="draft-card">
+          <div class="draft-head">
+            <b>参谋建议</b><span class="pill soft">{{ adviceRes.model_used }}</span>
+            <button class="mini" style="margin-left:auto" @click="adviceRes = null">✕</button>
+          </div>
+          <pre class="advice-text">{{ adviceRes.advice }}</pre>
+        </div>
+      </div>
       <table v-if="logs.length" class="log-table">
         <thead><tr><th>时间</th><th>环节</th><th>模型</th><th>耗时</th><th>状态</th></tr></thead>
         <tbody>
@@ -201,6 +246,12 @@ const testing = ref(false)
 const testResult = ref(null)
 const logs = ref([])
 const checkResult = ref(null)
+const draftIntent = ref('')
+const drafting = ref(false)
+const draftRes = ref(null)
+const adviceQ = ref('')
+const asking = ref(false)
+const adviceRes = ref(null)
 let isNew = false
 
 const CAPS = ['dedup', 'detect', 'face', 'embed', 'tag', 'locate', 'vision_understand', 'text_gen']
@@ -301,8 +352,37 @@ async function saveChain() {
     loadAll()
   } catch (e) { err.value = e.message }
 }
-async function forkChain(c) {
-  const name = prompt(`Fork「${c.name}」另存。新组合名：`, c.name + '·副本')
+// ── 分享 / 导入（#1535：Hub 第 8 内容类型 chain）──
+async function shareChain(c) {
+  err.value = ''; msg.value = ''
+  const license = prompt(`把「${c.name}」分享到哈文市场（Hub）。\n请填许可证（MIT / Apache-2.0 / CC-BY-4.0）：`, c.license || 'MIT')
+  if (!license) return
+  msg.value = '正在打包上传…'
+  try {
+    const r = await postJSON(`/api/chains/${c.id}/share`, { license })
+    msg.value = `已分享到 Hub（item_id: ${r.item_id}，许可证 ${r.license}）。别人在工坊点「从 Hub 导入」输入这个编号就能装。`
+  } catch (e) { err.value = '分享失败：' + e.message; return }
+  loadAll()
+}
+
+async function importFromHub() {
+  err.value = ''; msg.value = ''
+  const s = prompt('粘贴 Hub 组合包的编号或详情页链接（如 https://harvenhub.com/item/xxxx）：')
+  if (!s) return
+  const m = String(s).match(/(?:\/item\/)?([0-9a-f]{16})/i)
+  const itemId = m ? m[1] : s.trim()
+  msg.value = '正在从 Hub 下载导入…'
+  try {
+    const r = await postJSON('/api/chains/import', { item_id: itemId })
+    const bad = r.check && !r.check.ok
+    msg.value = bad
+      ? `已导入「${r.recipe_id}」，但三道门体检有问题（${[].concat(r.check.structure, r.check.capability).filter(Boolean).join('；')}）——先别启用，去编辑页看看。`
+      : `导入成功「${r.recipe_id}」，默认停用。试跑确认没问题后，在编辑页启用即可像正式组合一样用。`
+  } catch (e) { err.value = '导入失败：' + e.message; return }
+  loadAll()
+}
+
+async function forkChain(c) {  const name = prompt(`Fork「${c.name}」另存。新组合名：`, c.name + '·副本')
   if (!name) return
   try {
     const r = await postJSON(`/api/chains/${c.id}/fork`, { name })
@@ -336,6 +416,46 @@ async function checkChain() {
       checkResult.value = await postJSON(`/api/chains/${form.value.id}/check`, {})
     }
   } catch (e) { err.value = e.message }
+}
+
+// ── 说话级入口 + AI 参谋（都跟用户所选模型，铁律0）──
+async function makeDraft() {
+  if (!draftIntent.value.trim() || drafting.value) return
+  drafting.value = true; err.value = ''; draftRes.value = null
+  try {
+    const r = await postJSON('/api/chains/draft', { intent: draftIntent.value })
+    draftRes.value = r
+  } catch (e) { err.value = '草稿生成失败：' + e.message }
+  drafting.value = false
+}
+function applyDraft() {
+  const raw = draftRes.value && draftRes.value.recipe
+  if (!raw) return
+  editing.value = {}
+  const f = emptyForm()
+  f.id = raw.id || ''
+  f.name = raw.name || ''
+  f.version = raw.version || '0.1.0'
+  f.target = raw.target || draftIntent.value
+  f.on_step_fail = raw.on_step_fail || 'skip_optional'
+  f.input_type = raw.input_type || 'any'
+  f.output_type = raw.output_type || 'text'
+  f.steps = (raw.steps || []).map(s => ({ ...blankStep(), ...s,
+    backup_models: s.backup_models || [], dynamic_cap_filter: s.dynamic_cap_filter || (s.binding === 'dynamic_follow' && s.capability ? [s.capability] : []) }))
+  if (!f.steps.length) f.steps = [blankStep()]
+  form.value = f
+  isNew = true
+  checkResult.value = null
+  draftRes.value = null
+  mode.value = 'edit'
+}
+async function askAdvice() {
+  if (asking.value) return
+  asking.value = true; err.value = ''; adviceRes.value = null
+  try {
+    adviceRes.value = await postJSON(`/api/chains/${running.value.id}/advise`, { question: adviceQ.value })
+  } catch (e) { err.value = '参谋调用失败：' + e.message }
+  asking.value = false
 }
 
 // ── 试跑 ──
@@ -372,6 +492,15 @@ loadAll()
 </script>
 
 <style scoped>
+.talk-box { border: 1px solid var(--line, #e3e3e3); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px; background: var(--card, #fff); }
+.talk-head { font-size: 13px; font-weight: 600; }
+.talk-row { display: flex; gap: 8px; align-items: flex-start; }
+.talk-row textarea, .talk-row input { flex: 1; border: 1px solid var(--line, #ddd); border-radius: 8px; padding: 8px 10px; font-size: 13px; background: var(--card, #fff); color: inherit; resize: vertical; }
+.draft-card { border: 1px dashed var(--accent, #4a7dff); border-radius: 10px; padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; }
+.draft-head { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.draft-tools { margin-left: auto; display: flex; gap: 5px; }
+.advisor-box { border: 1px solid var(--line, #e3e3e3); border-radius: 10px; padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.advice-text { white-space: pre-wrap; word-break: break-word; margin: 0; font-size: 13px; line-height: 1.7; font-family: inherit; }
 .quick-filter { display: flex; gap: 7px; margin: -4px 0 14px; flex-wrap: wrap; }
 .quick-filter button { border: 1px solid var(--line, #ddd); background: transparent; color: inherit; border-radius: 16px; padding: 5px 14px; cursor: pointer; font-size: 13px; }
 .quick-filter button.on { background: var(--accent, #4a7dff); color: #fff; border-color: var(--accent, #4a7dff); }
