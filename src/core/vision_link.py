@@ -304,8 +304,23 @@ def chat(messages: list[dict], stream: bool = False):
 
 
 def recognize(image_path: str, **kw) -> dict:
-    """四层瀑布识别（L0~L3，含入库/检索）。"""
+    """四层瀑布识别（L0~L3，含入库/检索）。
+
+    ★ 骨架开工（2026-11-24）：正式经「模型组合工坊」编排器路由——
+    HarvenEye=官方组合第一号，同图同模型零行为变化，新增物流单记账；
+    骨架路径异常时回退原直调（同一 Pipeline 实例、同一批模型，非模型偷换）。"""
     apply_understand_channel()
+    try:
+        from core.chain_engine import get_orchestrator
+        out = get_orchestrator().run("harveneye", {"image_path": image_path, **kw})
+        if out.get("ok"):
+            r = out["result"]
+            r["chain"] = {"id": "harveneye", "run_id": out["run_id"],
+                          "label": out["label"], "total_ms": out.get("total_ms")}
+            return r
+        logger.warning(f"[VisionLink] 骨架路由未过 preflight，回退原链: {out.get('error')}")
+    except Exception as e:
+        logger.warning(f"[VisionLink] 骨架路由异常回退原链: {e}")
     return get_pipeline().recognize(image_path, **kw)
 
 
