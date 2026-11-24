@@ -39,11 +39,22 @@ echo   Harven AI is starting...
 echo  ==========================================
 echo.
 
-rem Start Flask in background, wait, then open browser
+rem Start Flask in background, poll until port 7000 is LISTENING, then open browser
+rem (fix: old code slept 5s then opened browser - got ERR_CONNECTION_REFUSED because
+rem  Harven needs 15-40s to fully start. Now we wait until the door is actually open.)
 start /b "" .venv\Scripts\python.exe web_app.py
 
-timeout /t 5 /nobreak >nul
+echo  Waiting for Harven AI to be ready - first start takes 15-40s ...
+set /a HVEN_WAITED=0
+:wait_ready
+timeout /t 2 /nobreak >nul
+netstat -ano 2>nul | findstr ":7000.*LISTENING" >nul
+if not errorlevel 1 goto port_ready
+set /a HVEN_WAITED+=2
+if %HVEN_WAITED% lss 120 goto wait_ready
+echo  [!] Port 7000 not ready after 120s. Check data\logs\runtime.log
 
+:port_ready
 start http://localhost:7000/spa
 
 echo  Harven AI started!
