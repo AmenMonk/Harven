@@ -695,6 +695,16 @@ try:
 except Exception as e:
     logger.error(f"[TokenLedger] Token账本路由注册失败: {e}")
 
+# ==================== 模型组合工坊 API（2026-11-24 骨架开工）====================
+try:
+    from src.core.chain_engine import bp as chain_ws_bp
+    app.register_blueprint(chain_ws_bp)
+    from src.core.chain_engine import ensure_chain_engine
+    _ce = ensure_chain_engine()
+    logger.info(f"[ChainWorkshop] 组合工坊路由已注册（/api/chains），内置组合 {_ce.get('builtin_registered')} 个")
+except Exception as e:
+    logger.error(f"[ChainWorkshop] 组合工坊路由注册失败: {e}")
+
 # ==================== 运行状态聚合端点（B批B7 · 2026-09-13）====================
 # ==================== ★ 2026-09-17 #740 定时任务增删改 API（真调度器：APScheduler + scheduled_tasks 表） ====================
 @app.route('/api/cron/list', methods=['GET'])

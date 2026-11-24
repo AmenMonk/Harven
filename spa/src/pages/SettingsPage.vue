@@ -23,6 +23,11 @@
         <div class="row-main"><b>{{ t('set.installModel') }}</b><span>{{ t('set.installModelD') }}</span></div>
         <a href="#/models/install"><BigButton :px="13" variant="ghost">{{ t('set.go') }}</BigButton></a>
       </div>
+      <!-- ★ 2026-11-24 骨架开工：组合工坊入口二（v1.14 定版：模型管理的人顺势理解「组合也是模型」） -->
+      <div class="row">
+        <div class="row-main"><b>🧩 模型组合工坊</b><span>把几个模型串成一条链（组合即模型），HarvenEye 就是第一个组合——编辑/试跑/Fork 官方示范田</span></div>
+        <a href="#/workshop"><BigButton :px="13" variant="ghost">进入</BigButton></a>
+      </div>
       <div class="row">
         <div class="row-main"><b>{{ t('set.currentForeign') }}</b><span>{{ currentForeign ? currentForeign : t('set.noForeign') }}</span></div>
         <span class="pill" :class="currentForeign ? 'ok' : ''">{{ currentForeign ? t('set.configured') : t('set.notConfigured') }}</span>

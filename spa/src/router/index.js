@@ -27,6 +27,7 @@ import PhotosPage from '../pages/PhotosPage.vue'
 import MemoryPage from '../pages/MemoryPage.vue'
 import GoalsPage from '../pages/GoalsPage.vue'
 import VisionPage from '../pages/VisionPage.vue'
+import WorkshopPage from '../pages/WorkshopPage.vue'
 
 // hash 模式：Flask 静态托管下无需后端路由配合，灰度期最稳
 const routes = [
@@ -53,6 +54,8 @@ const routes = [
   // ★ 2026-10-25 #1183/#1184 入口收纳：任务页并入管家中心，/tasks 重定向（老 URLs 不炸）
   { path: '/butler', name: 'butler', component: ButlerPage, meta: { id: 'D1', title: '管家中心', note: '★ #1183：待确认收纳盒+今日议程+任务+目标+随手记 五区一页；#1184 任务/随身记/浮球入口统一收进来' } },
   { path: '/tasks', redirect: '/butler' },
+  // ★ 2026-11-24 骨架开工：模型组合工坊（入口双开：面板中心按钮条 + 设置页模型 tab）
+  { path: '/workshop', name: 'workshop', component: WorkshopPage, meta: { id: 'E1', title: '模型组合工坊', note: '★ 骨架开工：组合列表+配方单编辑（环节拖序/选模型/回退）+硬件体检三道门+试跑+物流单；内置组合原件保护只许 Fork' } },
   { path: '/goals', name: 'goals', component: GoalsPage, meta: { id: 'C5', title: '目标', note: '★ 2026-10-20 第二批2.2：目标进度卡墙+三步设定向导+详情时间线+偏差卡三选' } },
   { path: '/mail', name: 'mail', component: MailPage, meta: { id: 'B14b', title: '邮箱', note: '配置向导 + 聊天入口说明（发送必过确认）' } },
   { path: '/hub', name: 'hub', component: HubPage, meta: { id: 'B14c', title: 'HarvenHub', note: '市场浏览/搜索/分类 + 一键下载安装' } },

@@ -32,3 +32,7 @@ def ensure_chain_engine() -> dict:
     n_builtin = register_builtin_chains(reg)
     return {"logistics_table": "chains_log", "chains_loaded": len(reg.list_chains()),
             "builtin_registered": n_builtin}
+
+
+# 工坊 API 蓝图（/api/chains；放包尾避免循环导入）
+from .routes import bp  # noqa: E402,F401

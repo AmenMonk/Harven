@@ -3,6 +3,8 @@
     <template #actions>
       <!-- ★ 2026-10-25 #1184 入口收纳：随身记按钮撤除，统一进管家中心（spa /butler） -->
       <BigButton variant="ghost" :px="14" @click="$router.push('/butler')"><HIcon name="task" :size="16" /> 管家中心</BigButton>
+      <!-- ★ 2026-11-24 骨架开工：组合工坊入口一（v1.13 定版：进面板的人就是玩配置的人） -->
+      <BigButton variant="ghost" :px="14" @click="$router.push('/workshop')"><HIcon name="grid" :size="16" /> 组合工坊</BigButton>
       <BigButton variant="ghost" :px="14" @click="installZip"><HIcon name="download" :size="16" /> 安装ZIP</BigButton>
       <BigButton variant="ghost" :px="14" @click="showHub = true"><HIcon name="globe" :size="16" /> 从Hub装</BigButton>
       <BigButton variant="ghost" :px="14" @click="showCreate = true"><HIcon name="plus" :size="16" /> 新建模块</BigButton>
