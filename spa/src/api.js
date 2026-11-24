@@ -15,7 +15,7 @@ export async function postJSON(url, body = {}) {
   })
   if (!res.ok) {
     let msg = `HTTP ${res.status}`
-    try { const j = await res.json(); if (j.error) msg = j.error } catch (_) {}
+    try { const j = await res.json(); if (j.error || j.message) msg = j.error || j.message } catch (_) {}
     throw new Error(msg)
   }
   return res.json()

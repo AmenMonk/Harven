@@ -184,6 +184,8 @@
           </select>
           <BigButton :px="13" @click="addMember"><HIcon name="plus" :size="14" /> 添加</BigButton>
         </div>
+        <!-- ★ #1537 修「添加不好用」：提示/报错改在弹窗内就地显示（原来写在页面顶部，被遮罩盖死，点按钮看起来没反应） -->
+        <p v-if="mMsg" class="m-msg" :class="{ bad: mMsgBad }">{{ mMsg }}</p>
         <div class="m-list">
           <!-- ★ 2026-10-20：档案编辑已提升到页顶「家人健康」区块，弹层回归「选记录人」本职 -->
           <div v-for="m in members" :key="m.id" class="m-item">
@@ -601,6 +603,16 @@ const memberModalTip = computed(() => isCompany.value
     : '给每个家人建一个名字，打开模块记账/打卡时就能选「记录人」，时间轴也能只看某个人记的。不添加成员也能正常用，只是记录不标注是谁记的。')
 const memberPlaceholder = computed(() => isCompany.value ? '同事名字，比如：张三 / 李四 / 王五' : '成员名字，比如：爸爸 / 妈妈 / 大宝')
 const newMemberRole = ref('员工')
+/* ★ #1537 弹窗内就地提示：成功/失败都看得见（重名/空名/网络错不再静默） */
+const mMsg = ref('')
+const mMsgBad = ref(false)
+let mMsgTimer = null
+function mFlash(text, bad = false) {
+  mMsg.value = text
+  mMsgBad.value = bad
+  clearTimeout(mMsgTimer)
+  mMsgTimer = setTimeout(() => { mMsg.value = '' }, 4000)
+}
 function memberColor(name) {
   const m = members.value.find(x => x.name === name)
   if (m?.color) return m.color
@@ -613,17 +625,17 @@ function openMembers() {
 }
 async function addMember() {
   const name = newMember.value.trim()
-  if (!name) { flash('先在框里输入成员名字再点「+ 添加」'); return }   // ★ 2026-10-22 修「添加不好用」：空名静默改为明确提示
+  if (!name) { mFlash('先在框里输入成员名字再点「+ 添加」', true); return }
   const color = MEMBER_COLORS[members.value.length % MEMBER_COLORS.length]
   try {
     const j = await postJSON('/api/panels/members', { name, color, role: newMemberRole.value })
     if (!j.success) throw new Error(j.message || '添加失败')
     members.value = j.members || []
     newMember.value = ''
-    flash(isCompany.value
+    mFlash(isCompany.value
       ? `成员「${name}」（${newMemberRole.value}）加好了，记日报/纪要时就能标注是谁记的`
       : `成员「${name}」加好了，记账/打卡时就能标注是谁记的`)
-  } catch (e) { err.value = '添加成员失败：' + e.message }
+  } catch (e) { mFlash('添加失败：' + e.message, true) }
 }
 async function delMember(m) {
   if (!confirm(`删除成员「${m.name}」？\n他之前记的记录都还在（名字保留），只是以后不能再选他。`)) return
@@ -632,8 +644,8 @@ async function delMember(m) {
     if (!j.success) throw new Error(j.message || '删除失败')
     members.value = j.members || []
     if (mfilter.value === m.name) mfilter.value = ''
-    flash(`成员「${m.name}」已删除`)
-  } catch (e) { err.value = '删除成员失败：' + e.message }
+    mFlash(`成员「${m.name}」已删除`)
+  } catch (e) { mFlash('删除失败：' + e.message, true) }
 }
 
 /* ★ 2026-10-22 合并归一：家人资料编辑已统一到「家人健康」面板（HvFamilyBar 六层弹窗），空间页只留入口 */
@@ -795,6 +807,9 @@ onUnmounted(() => {
 .m-role.r-员工 { background: #EDF3EC; color: #3C7A4E; }
 .m-add input { flex: 1; border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; font-size: 13px; }
 .m-add input:focus { outline: none; border-color: var(--blue); }
+/* ★ #1537 弹窗内就地提示（成功绿/失败红） */
+.m-msg { font-size: 12.5px; margin: 8px 0 0; color: #3C7A4E; background: #EDF3EC; border-radius: 8px; padding: 7px 10px; line-height: 1.5; }
+.m-msg.bad { color: #B4442E; background: #FBEDE9; }
 .m-list { margin-top: 12px; display: flex; flex-direction: column; gap: 7px; max-height: 240px; overflow-y: auto; }
 .m-item { display: flex; align-items: center; gap: 9px; border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; }
 .m-item b { font-size: 13px; }
