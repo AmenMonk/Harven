@@ -4468,16 +4468,23 @@ def models_local_all():
         _eye = eye_client.models_ready()
         if _eye.get('ready'):
             _em = _eye.get('model', '')
-            # ★ #1324：展示名人读化（hv-pin-<哈希> → 如 qwen3-vl-8b-q6k）
+            # ★ #1543 A2：层级展示——HarvenEye 是组合（引擎），括号里是用户钉的理解大脑，
+            #   一律用 catalog 标准名（如「Qwen3-VL 8B Q6_K（求准）」），不再露目录名
             try:
                 from src.core import vision_link as _vl_h
                 _em_show = _vl_h.human_label_for(_em)
+                if _em_show == _em:
+                    # hv-pin 换算失败/非 hv-pin（如 ollama tag / gguf stem）→ 试按钉选目录名查标准名
+                    _pinned = (_vl_h._load_mm().get('vision_model') or '').strip()
+                    if _pinned.startswith('local:vision/'):
+                        _em_show = _vl_h.catalog_label_for(_pinned.split('/', 1)[1])
             except Exception:
                 _em_show = _em
-            models.append({'name': f'HarvenEye（{_em_show}）', 'source': 'HarvenEye',
+            models.append({'name': f'HarvenEye · 大脑：{_em_show}' if _em_show else 'HarvenEye',
+                           'source': 'HarvenEye',
                            'size_gb': None, 'type': 'llm', 'icon': '👁️',
                            'id': 'harveneye',
-                           'desc': '本地混合模型引擎 · 视觉+对话 · 零费用零上传'})
+                           'desc': '视觉组合引擎 · 检测/检索底座+你选的理解大脑 · 零费用零上传'})
     except Exception as _e: logger.debug(f'[WebApp] HarvenEye 门禁探测跳过: {_e}')
     # 1. Ollama
     try:
@@ -4677,7 +4684,9 @@ def vision_models_list():
             pass
         local = []
         for m in vision_link.list_local_vision_models():
+            # ★ #1543 A3：本地视觉模型一并给 catalog 标准名（name=目录名兜底，label=标准名）
             local.append({'id': m['id'], 'name': m['name'], 'kind': 'local',
+                          'label': vision_link.catalog_label_for(m['name']),
                           'size_gb': m.get('size_gb'), 'ready': m.get('ready')})
         pinned = (vision_link._load_mm().get('vision_model') or '').strip()
         return jsonify({'success': True, 'cloud': cloud, 'local': local,
@@ -5220,6 +5229,20 @@ def vision_status():
         from src.core import vision_link
         from src.vision import config as vcfg
         ch = vision_link.resolve_understand_channel()
+        # ★ #1543 A3：resolved 附标准名 label（目录名 → catalog 标准名），前端统一展示
+        try:
+            if ch.get('provider') == 'llama_cpp' and ch.get('gguf'):
+                _dir = Path(ch['gguf']).parent.name
+                ch['label'] = vision_link.catalog_label_for(_dir)
+            elif ch.get('provider') == 'ollama':
+                # ★ #1543：#1323 钉选 GGUF 注册进 Ollama（model=hv-pin-*）→ 走标准名换算；
+                #   真 Ollama 模型（qwen3-vl:8b-instruct 等）原样展示
+                _std = vision_link.human_label_for(ch.get('model', ''))
+                ch['label'] = _std if _std != ch.get('model') else (ch.get('model', '') or '')
+            elif ch.get('provider') == 'api':
+                ch['label'] = ch.get('label') or ch.get('api_model', '')
+        except Exception:
+            pass
         u = vcfg.ENGINES.get('understand', {})
         try:
             import llama_cpp  # noqa: F401

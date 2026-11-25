@@ -64,8 +64,8 @@
       <div class="mrow" v-for="m in status?.local_list || []" :key="m.id">
         <label class="mradio">
           <input type="radio" name="vpin" :checked="pinned === m.id" :disabled="!m.ready" @change="pin(m.id)" />
-          <b>{{ m.name }}</b>
-          <span class="mini">{{ m.size_gb }}GB</span>
+          <b>{{ m.label || m.name }}</b>
+          <span class="mini">{{ m.name }}<template v-if="m.size_gb"> · {{ m.size_gb }}GB</template></span>
           <span class="mini" :class="m.ready ? 'ok' : 'warn'">{{ m.ready ? '可用' : '文件不全' }}</span>
         </label>
         <button class="mini-btn bad" @click="removeModel(m.name)">删除</button>
@@ -236,9 +236,9 @@ const pinned = computed(() => status.value?.pinned || '')
 const pinnedNow = computed(() => {
   const r = status.value?.resolved
   if (!r) return ''
-  if (r.provider === 'api') return `外脑 ${r.api_model}`
-  if (r.provider === 'llama_cpp') return `本地 ${String(r.gguf || '').split(/[\\/]/).slice(-2, -1)[0] || '模型'}`
-  if (r.provider === 'ollama') return '本机 Ollama'
+  if (r.provider === 'api') return `外脑 ${r.label || r.api_model}`
+  if (r.provider === 'llama_cpp') return `本地 ${r.label || String(r.gguf || '').split(/[\\/]/).slice(-2, -1)[0] || '模型'}`
+  if (r.provider === 'ollama') return `本机 Ollama（${r.label || r.model || ''}）`
   return ''
 })
 const pct = computed(() => {

@@ -168,6 +168,8 @@ def _ollama_model_from_gguf(vname: str, gguf_path, mmproj_path) -> str:
 def human_label_for(omodel: str) -> str:
     """★ #1324：hv-pin-* 内部注册名 → 人读名（查各模型目录的注册缓存）。
 
+    ★ #1543（2026-11-25）A1：返回目录对应的 catalog 标准名（如「Qwen3-VL 8B Q6_K（求准）」），
+    查不到 catalog 再退目录名——组合是组合、模型是模型，UI 一律展示标准名。
     查不到 / 非 hv-pin 名原样返回。给模型中心等 UI 展示用，注册键不受影响。
     """
     omodel = str(omodel or '').strip()
@@ -179,10 +181,26 @@ def human_label_for(omodel: str) -> str:
             d = json.loads(c.read_text(encoding='utf-8'))
             m = str(d.get('model', ''))
             if m == omodel or m.split(':')[0] == base:
-                return c.parent.name
+                return catalog_label_for(c.parent.name)
     except Exception as e:
         logger.debug(f"[VisionLink] 人读名换算失败（原样返回）: {e}")
     return omodel
+
+
+def catalog_label_for(dir_name: str) -> str:
+    """★ #1543 A1：目录名 → catalog 标准名（label）；查不到退目录名。
+
+    例：qwen3-vl-8b-q6k → 「Qwen3-VL 8B Q6_K（求准）」。
+    供模型选择列表 / 视觉引擎页统一展示（用户视角永远看标准名）。
+    """
+    try:
+        from src.vision.catalog import CATALOG
+        for e in CATALOG:
+            if e.get("dir_name") == dir_name:
+                return e.get("label") or dir_name
+    except Exception as _e:
+        logger.debug(f"[VisionLink] catalog 标准名查询失败（退目录名）: {_e}")
+    return dir_name
 
 
 def resolve_pinned_channel() -> dict:
