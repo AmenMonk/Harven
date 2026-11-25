@@ -658,27 +658,93 @@ def _queue_tag(img_id):
         logger.debug(f'[ImgStore] 队列标记跳过 id={img_id}: {e}')
 
 
-def _ensure_panel_record(pid, title):
-    """★ #1249 沿革（photo_namer 收编）：无说明的面板照片用主镜头标签补建面板记录——
-    照片不再是孤儿（实锤：只挂照片不建记录，电脑端面板记录列表永远空）。"""
+def _relink_panel_record(img_id, tags, pid=None):
+    """★ #1544 B3（2026-11-25）补标成功回头补台账：存入时快速档认不出（没建记录）或
+    旧链建了残记录（名称=「物品」这类泛词，实锤 home_items id=30）的照片，标签补出来后
+    （Eye 快速档重试 / #1542 VLM 深识）用新标签走 cloud_link._tags_to_record_fields 映射
+    补建或修正台账记录。
+    - 面板/记录定位：pid（照片库行，最权威）优先，退 images_index.panel_id/record_id
+    - 已有记录且名称已具体 → 不动（绝不覆盖用户改过的数据）
+    - 已有记录但名称是泛词/空 → update 修正名称/位置·房间/备注
+    - 无记录 → _photo_panel_record(tags=) 补建 + 双向挂链
+    幂等、失败软降绝不挡打标主链。"""
     try:
-        from src.core import panel_images as _pi
-        c = _pi._conn()
-        try:
-            row = c.execute('SELECT panel_id, record_id FROM panel_images WHERE id=?',
-                            (int(pid),)).fetchone()
-        finally:
-            c.close()
-        if row and not row['record_id']:
-            panel = str(row['panel_id'] or '')
-            if panel and panel not in ('mobile', 'fridge', 'account'):
-                from src.core.cloud_link import _photo_panel_record, _link_photo_record
-                rid = _photo_panel_record(panel, title)
-                if rid:
-                    _link_photo_record(int(pid), rid)
-                    logger.info(f'[ImgStore] 主镜头补建面板记录 {panel}: {rid}（{title}）')
+        if not tags:
+            return
+        from src.core.cloud_link import (_tags_to_record_fields, _photo_panel_record,
+                                         _link_photo_record, _GENERIC_TAG_WORDS)
+        cur = get(img_id) or {}
+        panel = str(cur.get('panel_id') or '')
+        rid = int(cur.get('record_id') or 0)
+        p_row = None
+        if pid:
+            try:
+                from src.core import panel_images as _pi
+                c = _pi._conn()
+                try:
+                    p_row = c.execute('SELECT id, panel_id, record_id FROM panel_images WHERE id=?',
+                                      (int(pid),)).fetchone()
+                finally:
+                    c.close()
+            except Exception:
+                p_row = None
+        if p_row:
+            panel = str(p_row['panel_id'] or '') or panel
+            rid = int(p_row['record_id'] or 0) or rid
+        # fridge/account 有专属链路（冰箱入库/账单分析），重复建台账会双份——沿用旧守卫
+        if not panel or panel in ('mobile', 'fridge', 'account'):
+            return
+        # ★ 定位到面板+记录就先把图库行户口补齐（幂等；实锤 T4d：238 的 record_id 一直 NULL）
+        if img_id and int(img_id) > 0 and rid \
+                and (cur.get('record_id') != rid or str(cur.get('panel_id') or '') != panel):
+            _update(int(img_id), panel_id=panel, record_id=int(rid))
+        m = _tags_to_record_fields(panel, tags)
+        if not m.get('__name__'):
+            logger.debug(f'[ImgStore] #1544 补标回填跳过 id={img_id}：补出的标签仍无可用名称')
+            return
+        from src.core.panel_manager import get_panel_manager
+        pm = get_panel_manager()
+        if rid:
+            # 已有记录：名称是泛词/空才修正（名称已具体 = 用户数据，不碰）
+            try:
+                rows = pm.query_panel_data(panel, filters={'id': int(rid)}, limit=1)
+                row = rows[0] if rows else None
+            except Exception:
+                row = None
+            if not row:
+                return
+            pd = pm.get_panel(panel)
+            pd = pd if isinstance(pd, dict) else (pd.__dict__ if hasattr(pd, '__dict__') else {})
+            fnames = [f.get('name', '') for f in (pd.get('fields') or [])]
+            tf = (pd.get('title_field') or '')
+            name_field = tf if tf in fnames else next(
+                (x for x in ('名称', '物品名称', '物品', '内容', '事项', '项目', '标题', '药名', '菜名') if x in fnames), '')
+            if not name_field:
+                name_field = next((x for x in fnames if x and ('名称' in x or '名字' in x)), '')
+            cur_name = str(row.get(name_field, '') or '').strip()
+            if cur_name and cur_name not in _GENERIC_TAG_WORDS:
+                return
+            data = {name_field: m['__name__']}
+            loc_f = next((x for x in fnames if x and '位置' in x and x != name_field), '')
+            if m.get('__loc__') and loc_f and not str(row.get(loc_f, '') or '').strip():
+                data[loc_f] = m['__loc__']
+            bf = next((x for x in fnames if x and '备注' in x and x != name_field), '')
+            if m.get('__note__') and bf and not str(row.get(bf, '') or '').strip():
+                data[bf] = m['__note__']
+            pm.update_panel_data(panel, int(rid), data)
+            logger.info(f'[ImgStore] #1544 补标修正台账 {panel}#{rid}: {data}')
+            return
+        # 无记录 → 补建 + 双向挂链
+        note = str(cur.get('note') or '')
+        new_rid = _photo_panel_record(panel, note, tags=list(tags))
+        if new_rid and new_rid > 0:
+            if pid:
+                _link_photo_record(int(pid), int(new_rid))
+            _update(img_id, panel_id=panel, record_id=int(new_rid))
+            logger.info(f'[ImgStore] #1544 补标补建台账 {panel}#{new_rid}（img={img_id}）: '
+                        f'{tags[:3]}')
     except Exception as e:
-        logger.debug(f'[ImgStore] 主镜头补建记录跳过 pid={pid}: {e}')
+        logger.debug(f'[ImgStore] #1544 补标回填跳过 id={img_id}: {e}')
 
 
 def auto_tag_full(img_id, pid=None, delay=0):
@@ -707,7 +773,7 @@ def auto_tag_full(img_id, pid=None, delay=0):
         except Exception as _fe:
             logger.debug(f'[ImgStore] 人脸映射挂钩失败 id={img_id}: {_fe}')
         if pid and tags:
-            _ensure_panel_record(pid, tags[0])
+            _relink_panel_record(img_id, tags, pid=pid)   # ★ #1544 B3 补标回头补台账
     if delay > 0:
         threading.Timer(delay, lambda: threading.Thread(
             target=_run, name=f'img-tag-{img_id}', daemon=True).start()).start()
@@ -1756,6 +1822,9 @@ def ensure_auto_tag_loop():
                     else:
                         _deep_tag_fail.pop(qid, None)
                         _deep_tag_count.pop(qid, None)
+                        # ★ #1544 B3 补标回头补台账：深识出真标签了，
+                        #   存入时没建/建残的台账在这里补齐
+                        _relink_panel_record(qid, dtags)
                 # ★ #1307（2026-10-29）深析相册：开开关的相册近 24h 无说明的图外脑补描述
                 _deep_analyze_recent(_deep_fail)
                 # ★ #1307 夜间扫尾（config vision.night_sweep，默认关）：02:00-05:00 每天一次，

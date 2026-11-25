@@ -836,6 +836,11 @@ def _dispatch(action: str, params: dict) -> dict:
             msg = str(params.get('message', '')).strip()
             if not msg:
                 return {'error': '缺少 message'}
+            # ★ #1544 B2（2026-11-25）物品存入撤销口令：先于记账确认拦截（记账类词不抢）
+            _sundo = _try_store_undo(msg)
+            if _sundo is not None:
+                _save_mobile_chat(msg, _sundo)
+                return {'answer': _sundo[:MAX_CHAT_CHARS]}
             # ★ A2（2026-10-23）手机凭证确认闭环：有记账待确认时「记上/确认入账」直接入库
             _cfirm = _try_mobile_accounting_confirm(msg)
             if _cfirm is not None:
@@ -1171,17 +1176,36 @@ def _dispatch(action: str, params: dict) -> dict:
             #   → 跳过 VLM 看图（实锤：「记入冰箱库存」白看 4s 图只说了句已存好），直接秒回。
             #   内容描述交给后台标签链（YOLOX+CLIP，0 token 不抢道）；提问型照常看图。
             _store_done = False
+            _fast_tags = []   # ★ #1544 B2 快速档同步标签（回执「识别为…」+ 直供台账链）
             if not _graded and _is_store_command(q):
                 _zone = _photo_zone_name(_tag_probe)
-                # ★ #1313（2026-10-29 2b 秒回升级，定版拍板）：秒回不再冷冰冰只说「已存好」——
-                #   带上照片说明内容，用户当场知道存的是什么（记录详情在下方建完后追加）
-                answer = (f"✓ 已存好{'（' + _zone + '）' if _zone else ''}"
-                          + (f'：{_note.strip()[:40]}' if (_note or '').strip() else '')
-                          + (f"（id={_img_id}）" if _img_id else '')
-                          + ('。这张之前也收过，不重复占地方' if _is_dup else '')
-                          + '\n想问照片里的内容直接问我（比如「这酒是什么牌子」），我就细看给你讲。')
+                # ★ #1544（2026-11-25 B2）秒回带标签：同步等 Eye 快速档（0.1~1s，不走 VLM
+                #   零费用不抢道），当场报「识别为：抽纸、纸巾」+ 撤销口令——修实锤「存抽纸
+                #   秒回已存好但没说存了啥」。认不出如实说稍后补（#1542 VLM 补标成功后
+                #   img_store._relink_panel_record 自动补建台账）。
+                try:
+                    from src.core.img_store import _eye_fast_tags as _eft
+                    _fast_tags, _ft_err = _eft(img)
+                except Exception as _fte:
+                    _fast_tags, _ft_err = [], str(_fte)
+                _spec = [t for t in _fast_tags
+                         if t not in _GENERIC_TAG_WORDS and not t.startswith(('🏷', '⏳'))]
+                _head = f"✓ 已存好{'（' + _zone + '）' if _zone else ''}"
+                if _spec:
+                    answer = (_head + '，识别为：' + '、'.join(_spec[:3])
+                              + (f"（id={_img_id}）" if _img_id else '')
+                              + ('。这张之前也收过，不重复占地方' if _is_dup else '')
+                              + '\n台账如有出入，回复「撤销」可删。')
+                else:
+                    _fast_tags = []   # 全是泛词/认不出 → 不传标签，不建残记录（等 B3 补建）
+                    answer = (_head
+                              + (f'：{_note.strip()[:40]}' if (_note or '').strip() else '')
+                              + (f"（id={_img_id}）" if _img_id else '')
+                              + ('。这张之前也收过，不重复占地方' if _is_dup else '')
+                              + '\n标签稍后自动补上，想问照片里的内容直接问我（比如「这是什么牌子」），我就细看给你讲。')
                 _store_done = True
-                logger.info(f'[CloudLink] 指令型拍照秒回（跳过看图）zone={_zone} q={q[:30]}')
+                logger.info(f'[CloudLink] 指令型拍照秒回（跳过看图）zone={_zone} '
+                            f'tags={_fast_tags[:3]} err={_ft_err} q={q[:30]}')
             if not _graded and not _store_done:
                 answer = _photo_answer(img, q,
                                        str(params.get('mode', '')).strip().lower())   # ★ #955 模式开关
@@ -1223,14 +1247,37 @@ def _dispatch(action: str, params: dict) -> dict:
             #   ★ #1197 批改流跳过面板记录：grade_homework 已入学习档案/错题本，再建一条就重复了
             _rid = 0
             if _saved and _tag.startswith('panel:') and not _graded:
-                _rid = _photo_panel_record(_tag[6:], _note)
-                if _rid:
+                # ★ #1544 B2：秒回已同步拿到的标签直供台账链（不再重复识别）；
+                #   返回 -1 = 标签无可用名称（等补标成功后 img_store 侧补建）
+                _rid = _photo_panel_record(_tag[6:], _note, tags=_fast_tags or None)
+                if _rid and _rid > 0:
                     _link_photo_record(_saved.get('id'), _rid)
+                    # ★ #1544 B3 回写图库行户口：深识队列补建台账靠 panel_id/record_id 定位
+                    try:
+                        if _img_id:
+                            img_store._update(int(_img_id), panel_id=_tag[6:], record_id=int(_rid))
+                    except Exception:
+                        pass
+                    # ★ #1544 B2 撤销口令户口：进程内撤销栈（10 分钟内说「撤销」可删）
+                    try:
+                        _STORE_UNDO_STACK.append({'rid': int(_rid), 'panel': _tag[6:],
+                                                  'pid': int(_saved.get('id') or 0),
+                                                  'ts': time.time()})
+                        if len(_STORE_UNDO_STACK) > 10:
+                            del _STORE_UNDO_STACK[:-10]
+                    except Exception:
+                        pass
+                elif _img_id:
+                    # 没建成记录也把面板户口写上（深识补出标签后按它补建）
+                    try:
+                        img_store._update(int(_img_id), panel_id=_tag[6:])
+                    except Exception:
+                        pass
             # ★ #1312（2026-10-29 2a 拍照链会话回写，定版拍板）：照片链动作只落库不进会话 →
             #   追问「这个咖啡机是什么牌子」时聊天上下文断层，模型两眼一抹黑只能翻库
             #   （咖啡机事故实锤）。建完记录把摘要并入本条回复再落库：单条消息既让用户
             #   当场知情（#1313 秒回升级），又让后续追问接得上上下文。失败不影响回复。
-            if _rid:
+            if _rid and _rid > 0:   # ★ #1544 -1=等补标补建，不算已建，不报台账行
                 _zone2 = _photo_zone_name(_tag_probe)
                 answer = (answer.rstrip()
                           + f"\n📋 已帮你记成{_zone2 or '面板'}台账（记录 id={_rid}）"
@@ -1634,6 +1681,52 @@ def _save_mobile_chat(msg: str, answer: str, img_id=None, photo_note: str = '', 
         logger.warning(f"[CloudLink] 手机对话落库失败（不影响回复）: {e}")
 
 
+# ★ #1544 B2（2026-11-25）物品存入撤销口令：进程内撤销栈（最近 10 条、10 分钟有效）——
+# 拍照存入建台账后，手机对话里说「撤销」即删刚建的台账行并解绑照片（照片留图库，
+# 标签补出来后可重建）。进程重启即清空（如实报无可撤销，不装傻）。
+_STORE_UNDO_STACK = []
+
+
+def _try_store_undo(msg: str):
+    """★ #1544 B2 撤销口令拦截：短句含「撤销/撤回」且不涉记账（#1379 通道不抢）
+    → 删撤销栈最近一条台账记录。命中返回回执文本，未命中返回 None（放行走引擎）。"""
+    m = (msg or '').strip()
+    if not m or len(m) > 12:
+        return None
+    if '撤销' not in m and '撤回' not in m:
+        return None
+    if any(k in m for k in ('入账', '记账', '账单')):
+        return None   # 记账类撤销归 #1379 通道
+    now = time.time()
+    while _STORE_UNDO_STACK and now - _STORE_UNDO_STACK[-1].get('ts', 0) > 600:
+        _STORE_UNDO_STACK.pop()   # 过期户口清掉
+    if not _STORE_UNDO_STACK:
+        return None
+    it = _STORE_UNDO_STACK.pop()
+    try:
+        from src.core.panel_manager import get_panel_manager
+        get_panel_manager().delete_panel_data(it['panel'], int(it['rid']))
+        # 照片解绑：panel_images.record_id 清空（照片保留，等补标后可重建台账）
+        try:
+            if it.get('pid'):
+                from src.core import panel_images as _pi
+                c = _pi._conn()
+                try:
+                    c.execute('UPDATE panel_images SET record_id=NULL WHERE id=? AND record_id=?',
+                              (int(it['pid']), int(it['rid'])))
+                    c.commit()
+                finally:
+                    c.close()
+        except Exception:
+            pass
+        logger.info(f"[CloudLink] #1544 撤销存入 {it['panel']}#{it['rid']}（口令触发）")
+        return (f"👌 已撤销刚才存入的台账记录（id={it['rid']}），照片还在图库里。"
+                '下次说「撤销」也只撤最近一条。')
+    except Exception as _ue:
+        logger.warning(f"[CloudLink] #1544 撤销存入异常: {_ue}")
+        return '⚠️ 撤销没成功，请去电脑端对应面板里手动删那条记录。'
+
+
 def _try_mobile_accounting_confirm(msg: str):
     """★ A2（2026-10-23）手机凭证确认闭环：拍照凭证进待确认队列后，手机上没有收纳盒，
     直接在对话里回「记上 / 确认入账」即入库（confirm_pending → insert_records 同管线，
@@ -1803,13 +1896,88 @@ def _extract_photo_note(raw_note, question):
 _LOC_WORDS = ('主卧', '次卧', '卧室', '客厅', '餐厅', '卫生间', '洗手间', '厨房', '阳台', '书房',
               '车库', '储物间', '玄关', '冰箱', '冷冻', '冷藏', '药箱', '床头', '柜子', '抽屉', '地下室')
 
+# ★ #1544（2026-11-25）A1 定版：标签→台账字段映射的泛词黑名单——
+# 这些词当「物品名称」没有信息量（实锤 id=30：名称抄成「物品」），映射时跳过
+_GENERIC_TAG_WORDS = ('物品', '东西', '物件', '物体', '杂物', '日常', '生活', '其他', '其它',
+                      '物品存放', '未分类', '截图', '照片', '已压缩', '已归档')
 
-def _photo_panel_record(panel_id: str, note: str) -> int:
+
+def _tags_to_record_fields(panel_id: str, tags: list) -> dict:
+    """★ #1544 A1：快速档/VLM 标签 → 台账字段映射（本地毫秒级，纯词典无网络）。
+
+    规则（老谭拍板 A1）：
+    - 名称主字段 = 首个「具体标签」：跳过泛词（物品/东西…）、跳过场所词（书房是位置不是名字）
+    - 位置·房间 = 标签里的场所词（书房/客厅/厨房…_LOC_WORDS 词典）
+    - 其余标签拼进备注（保留识别全貌，如「抽纸 · 纸巾/桌面」）
+    没有可用名称时返回 {}（调用方自行决定不建/等补标）。
+    """
+    if not tags:
+        return {}
+    tags = [str(t).strip() for t in tags if str(t).strip()]
+    loc = next((t for t in tags if t in _LOC_WORDS), '')
+    name_cands = [t for t in tags
+                  if t != loc and t not in _GENERIC_TAG_WORDS
+                  and not t.startswith(('🏷', '⏳'))]
+    if not name_cands:
+        return {}
+    note_rest = [t for t in tags
+                 if t != name_cands[0] and t != loc and t not in _GENERIC_TAG_WORDS]
+    d = {'__name__': name_cands[0]}
+    if loc:
+        d['__loc__'] = loc
+    if note_rest:
+        d['__note__'] = '/'.join(note_rest[:4])
+    return d
+
+
+def _photo_panel_record(panel_id: str, note: str, tags=None) -> int:
     """★ #1159（2026-10-17）任务1：存面板照片同步建记录——实锤缺口：手机「存物品」只挂照片
     （record_id=None 孤儿照片），面板记录表永远空 → 电脑端「手机录了电脑没有」。
     解析（本地毫秒级）：说明整句当名称主字段；数量/位置词典正则顺手抽。
+    ★ #1544（2026-11-25）A1 定版：识别标签优先——tags 非空时走 _tags_to_record_fields 映射
+    （名称=首个具体标签、位置·房间=场所标签、其余标签进备注），修实锤 id=30
+    「名称抄成『物品』、书房没进位置、照片没挂上」。tags 无可用名称再退说明解析旧链。
     查不到面板或插失败返回 0（不挡照片入库）。"""
-    if not panel_id or not (note or '').strip():
+    if not panel_id:
+        return 0
+    # ── ★ #1544 A1：标签映射优先 ──
+    if tags:
+        try:
+            from src.core.panel_manager import get_panel_manager
+            pm = get_panel_manager()
+            p = pm.get_panel(panel_id)
+            if not p:
+                return 0
+            pd = p if isinstance(p, dict) else (p.__dict__ if hasattr(p, '__dict__') else {})
+            fnames = [f.get('name', '') for f in (pd.get('fields') or [])]
+            tf = (pd.get('title_field') or '')
+            name_field = tf if tf in fnames else next(
+                (x for x in ('名称', '物品名称', '物品', '内容', '事项', '项目', '标题', '药名', '菜名') if x in fnames), '')
+            if not name_field:
+                name_field = next((x for x in fnames if x and ('名称' in x or '名字' in x)), '')
+            if not name_field:
+                return 0
+            m = _tags_to_record_fields(panel_id, tags)
+            if m.get('__name__'):
+                data = {name_field: m['__name__']}
+                loc_f = next((x for x in fnames if x and '位置' in x and x != name_field), '')
+                if m.get('__loc__') and loc_f:
+                    data[loc_f] = m['__loc__']
+                bf = next((x for x in fnames if x and '备注' in x and x != name_field), '')
+                if m.get('__note__') and bf:
+                    data[bf] = m['__note__']
+                saved = pm.insert_panel_data(panel_id, data)
+                rid = int(saved.get('id') or 0) if isinstance(saved, dict) else 0
+                if rid:
+                    logger.info(f'[CloudLink] #1544 标签映射建台账 {panel_id}#{rid}: {data}')
+                return rid
+            # 标签全是泛词（认不出主体）→ 返回 -1 语义「等补标补建」，不建残记录
+            logger.info(f'[CloudLink] #1544 标签无可用名称（{tags[:3]}），不建残记录等补标 panel={panel_id}')
+            return -1
+        except Exception as e:
+            logger.debug(f'[CloudLink] #1544 标签映射建台账失败（退说明链）: {e}')
+    # ── 旧链：说明整句解析（保留兜底）──
+    if not (note or '').strip():
         return 0
     try:
         from src.core.panel_manager import get_panel_manager
