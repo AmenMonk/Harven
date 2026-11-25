@@ -547,6 +547,8 @@ _COCO_ZH = {
 }
 
 _TAG_FAIL_TAG = '🏷标签失败'   # 失败也落标记：手机浮条见它即停转不卡屏（#1244 沿革）
+_TAG_QUEUE_TAG = '⏳待深识'   # ★ #1542（2026-11-25）失败照片进 VLM 补标队列的中转标记：
+                              # 快速档认不出 → 换此标记 + auto_tried=2 入队；VLM 成功后清除
 
 
 def _strip_b64(image_data):
@@ -620,16 +622,40 @@ def _eye_fast_tags(image_b64):
 
 
 def _mark_tag_fail(img_id, err=''):
-    """标签失败落标记 tag——手机浮条见它即停转（#1244 沿革：失败也要有个说法）。"""
+    """标签失败落标记 tag——手机浮条见它即停转（#1244 沿革：失败也要有个说法）。
+    ★ #1542：失败同时把图标成 auto_tried=2（VLM 补标队列），不再永久放弃——
+    后台低峰队列会用 L3 理解环（跟用户所选看图模型）二次打标，成功后清标记。"""
     try:
         cur = get(img_id) or {}
         raw = cur.get('tags') or []
         old = [str(t).strip() for t in (raw if isinstance(raw, list) else raw.split(','))]
-        if _TAG_FAIL_TAG not in old:
+        if _TAG_FAIL_TAG in old:
+            # 已有失败标记 → 升级成队列标记（保留 auto_tried=2 幂等）
+            _queue_tag(img_id)
+            return
+        if _TAG_QUEUE_TAG not in old:
             set_tags(img_id, old + [_TAG_FAIL_TAG], merge=False)
+        _queue_tag(img_id)
         logger.info(f'[ImgStore] 标签失败标记已落库 id={img_id}: {str(err)[:50]}')
     except Exception as e:
         logger.debug(f'[ImgStore] 标签失败标记跳过 id={img_id}: {e}')
+
+
+def _queue_tag(img_id):
+    """#1542 队列化：tags 里 🏷标签失败 → ⏳待深识 + auto_tried=2（幂等）。"""
+    try:
+        cur = get(img_id) or {}
+        raw = cur.get('tags') or []
+        old = [str(t).strip() for t in (raw if isinstance(raw, list) else raw.split(','))]
+        if _TAG_QUEUE_TAG in old and (cur.get('auto_tried') or 0) == 2:
+            return
+        new = [_TAG_QUEUE_TAG if t == _TAG_FAIL_TAG else t for t in old]
+        if _TAG_QUEUE_TAG not in new:
+            new.append(_TAG_QUEUE_TAG)
+        set_tags(img_id, new, merge=False)
+        _update(img_id, auto_tried=2)
+    except Exception as e:
+        logger.debug(f'[ImgStore] 队列标记跳过 id={img_id}: {e}')
 
 
 def _ensure_panel_record(pid, title):
@@ -868,6 +894,48 @@ def retag(img_id):
         if not tags:
             return None, model, '没解析出标签'
         set_tags(img_id, tags, merge=True)
+        return tags, model, ''
+    except Exception as e:
+        return None, '', str(e)
+
+
+def retag_deep(img_id):
+    """★ #1542（2026-11-25）VLM 补标队列消化：快速档认不出的照片（auto_tried=2 /
+    ⏳待深识）由后台低峰队列逐张交给 L3 理解环（_camp_vision 跟用户所选看图模型，
+    铁律0）二次打标。成功 → 真标签入库 + 清 ⏳待深识 + CLIP 归位重跑；失败 → 退避
+    30 分钟（_deep_tag_fail），连败 5 次如实留 🏷识别不出 不再空转。
+    返回 (tags_list, model, err)。"""
+    try:
+        p = get_file(img_id)
+        if not p:
+            return None, '', '图片读不出来'
+        b64 = base64.b64encode(p.read_bytes()).decode('ascii')
+        from src.core.panel_assist import _camp_vision_bg
+        text, model, err = _camp_vision_bg(
+            '看这张照片，给4到6个中文标签，标的是「拍摄主体」——拍摄者主要想拍的那个物体（画面最大或居中的），'
+            '必须覆盖：'
+            '①照片类型：自拍/风景/美食/家人/宠物/截图/物品中至少一个'
+            '②核心主体（如牛奶、鸡蛋、青菜、作业本、单据、玩具、工具——画面里真实存在的东西），'
+            '背景里的杂物不要标'
+            '③房间/场所（如厨房、书房、客厅、冰箱内部）'
+            '④人物（如有）。只输出标签，逗号分隔，不要句子不要解释。', b64, timeout=120)
+        if err or not text:
+            return None, model, err or '视觉模型没有返回'
+        tags = [t.strip()[:12] for t in text.replace('，', ',').replace('、', ',').split(',') if t.strip()][:6]
+        if not tags:
+            return None, model, '没解析出标签'
+        # 成功：真标签入库（去掉所有过程标记）+ 清队列户口 + 归位重跑
+        cur = get(img_id) or {}
+        raw = cur.get('tags') or []
+        old = [str(t).strip() for t in (raw if isinstance(raw, list) else raw.split(','))]
+        clean = [t for t in old if t not in (_TAG_FAIL_TAG, _TAG_QUEUE_TAG) and not t.startswith('🏷') and t != '已压缩']
+        set_tags(img_id, (clean + [t for t in tags if t not in clean])[:8], merge=False)
+        _update(img_id, auto_tried=3)   # 3=深识完成，队列 SQL 不再捞
+        try:
+            auto_place(img_id)
+        except Exception:
+            pass
+        logger.info(f'[ImgStore] VLM 补标成功 id={img_id}: {tags}（model={model}）')
         return tags, model, ''
     except Exception as e:
         return None, '', str(e)
@@ -1616,6 +1684,20 @@ def ensure_auto_tag_loop():
     _fail = {}   # ★ 2026-10-18 防空转：失败 5 次的图本轮跳过（实锤：timeout 参数 bug 让 1 张图
                  # 每 2 分钟空转失败一次刷屏一整夜；清零时机=进程重启或图有标签后被 SQL 自然排除）
     _deep_fail = {}   # ★ #1307 深析失败退避：失败后 30 分钟内不重试同一张（防外脑故障刷 token）
+    _deep_tag_fail = {}    # ★ #1542 VLM 补标失败退避（30 分钟）
+    _deep_tag_count = {}   # ★ #1542 VLM 补标连败计数（5 连败放弃）
+
+    def _queue_give_up(img_id):
+        """#1542 5 连败终态：⏳待深识 → 🏷识别不出，auto_tried=4 队列不再捞。"""
+        try:
+            cur = get(img_id) or {}
+            raw = cur.get('tags') or []
+            old = [str(t).strip() for t in (raw if isinstance(raw, list) else raw.split(','))]
+            new = ['🏷识别不出' if t == _TAG_QUEUE_TAG else t for t in old]
+            set_tags(img_id, new, merge=False)
+            _update(img_id, auto_tried=4)
+        except Exception as e:
+            logger.debug(f'[ImgStore] 队列放弃标记跳过 id={img_id}: {e}')
 
     def _loop():
         _sweep_day = ''   # ★ #1307 夜扫每天最多一次
@@ -1646,6 +1728,34 @@ def ensure_auto_tag_loop():
                             _fail.pop(r['id'], None)
                     logger.info(f'[ImgStore] 后台补标 {done}/{len(rows)} 张'
                                 + (f'（{len(failed)} 张失败）' if failed else ''))
+                # ★ #1542（2026-11-25）VLM 补标队列：auto_tried=2（⏳待深识）的照片，
+                #   每轮最多 2 张串行走 retag_deep（L3 理解环跟用户所选）；退避 30 分钟，
+                #   连败 5 次放弃（如实留标记不再空转）。存量子捞回 + 新失败照片同通道。
+                c = _conn()
+                qrows = c.execute(
+                    "SELECT id FROM images_index WHERE auto_tried=2 AND deleted_at='' "
+                    "ORDER BY id ASC LIMIT 2").fetchall()
+                c.close()
+                now_t = time.time()
+                for qr in qrows:
+                    qid = qr['id']
+                    ft = _deep_tag_fail.get(qid, 0)
+                    if ft and now_t - ft < 1800:
+                        continue
+                    dtags, _dm, derr = retag_deep(qid)
+                    if derr or not dtags:
+                        _deep_tag_fail[qid] = now_t
+                        _deep_tag_count[qid] = _deep_tag_count.get(qid, 0) + 1
+                        if _deep_tag_count.get(qid, 0) >= 5:
+                            # 放弃：换回 🏷标签失败 终态 + auto_tried=4（队列不再捞）
+                            _queue_give_up(qid)
+                            _deep_tag_count.pop(qid, None)
+                            logger.info(f'[ImgStore] VLM 补标 5 连败放弃 id={qid}')
+                        else:
+                            logger.debug(f'[ImgStore] VLM 补标失败退避 id={qid}: {derr}')
+                    else:
+                        _deep_tag_fail.pop(qid, None)
+                        _deep_tag_count.pop(qid, None)
                 # ★ #1307（2026-10-29）深析相册：开开关的相册近 24h 无说明的图外脑补描述
                 _deep_analyze_recent(_deep_fail)
                 # ★ #1307 夜间扫尾（config vision.night_sweep，默认关）：02:00-05:00 每天一次，
@@ -1666,6 +1776,7 @@ def ensure_auto_tag_loop():
     t = threading.Thread(target=_loop, name='imgstore-tag-loop', daemon=True)
     t.start()
     logger.info('[ImgStore] 图库自动打标签线程已启动（跟随用户看图路由偏好，每2分钟一批10张，批内3并发）')
+    logger.info('[ImgStore] VLM 补标队列已启用（#1542：快速档认不出的照片 auto_tried=2 每轮2张串行深识，跟用户所选看图模型）')
 
 
 def count():
