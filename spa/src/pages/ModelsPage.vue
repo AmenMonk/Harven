@@ -92,6 +92,17 @@
         <span class="v-where">💡 在「{{ VTYPE_PANEL[v.canvas_type] || '更多 → 专项大脑面板' }}」里选用这个模型</span>
       </div>
     </div>
+    <!-- ═══ 分区三·补：底座部件（#1561 模型中心合流：registry 户口在这也看得见） ═══ -->
+    <h2 v-if="baseParts.length" class="sec"><span class="dot vert" /> ⚙️ 本地底座部件<small>组合工坊的零件：快分类/定位/查重等，在「工坊」里组合流水线时选用</small></h2>
+    <div v-if="baseParts.length" class="v-grid">
+      <div v-for="b in baseParts" :key="b.id" class="vcard">
+        <b class="v-name">{{ b.label || b.id }}</b>
+        <span class="v-type">{{ (b.capabilities || []).join('/') }} · {{ b.vram_gb }}GB</span>
+        <span class="v-desc">{{ b.package ? '📦 接入包导入的模型' : b.builtin ? '✅ 哈文预置部件' : '🔌 已登记部件' }}</span>
+        <span class="v-where">💡 在「工坊」建组合链时，从环节的模型下拉里选它</span>
+      </div>
+    </div>
+
     <!-- ═══ 分区四：听音模型（★ 2026-10-23 自设置页「语音识别」标签迁入：什么模型去哪管） ═══ -->
     <h2 class="sec"><span class="dot voice" /> 🎤 听音模型（Whisper）<small>按住说话、手机喊哈文、音频转文字全靠它在本机听音——装好后不用联网也能用</small></h2>
     <div class="voice-row">
@@ -161,6 +172,7 @@ const currentForeign = ref('')
 const activeLocal = ref(false)   // ★ #1326 当前对话是否走本地
 const localAll = ref([])
 const verticals = ref([])
+const baseParts = ref([])   // #1561 底座部件（registry builtin/接入包）
 const openId = ref('')
 const keyInput = ref('')
 const busyId = ref('')
@@ -265,17 +277,20 @@ function toggleOpen(id) {
 
 async function loadAll(showErr = false) {
   try {
-    const [k, cf, la, vm] = await Promise.all([
+    const [k, cf, la, vm, cm] = await Promise.all([
       getJSON('/api/models/api-keys'),
       getJSON('/api/models/current-foreign'),
       getJSON('/api/models/local-all').catch(() => ({ models: [] })),
       getJSON('/api/vertical/models').catch(() => ({ models: [] })),
+      getJSON('/api/chains/models').catch(() => ({ models: [] })),   // #1561 底座部件户口
     ])
     keys.value = k.keys || {}
     currentForeign.value = (cf.model || '').trim()
     activeLocal.value = !!(cf.active_is_local)
     localAll.value = la.models || []
     verticals.value = vm.models || []
+    // #1561: 只展示 mnv4/locate 这类「部件」条目（内置+接入包），qwen3-vl/ollama 已在别处分区出现
+    baseParts.value = (cm.models || []).filter(m => m.builtin || m.package)
     // ★ #10 修复：当前本地模型从后端初始化（之前只在点击后才记，刷新页面"当前使用"标记就丢了）
     if (la.current) currentLocalId.value = la.current
     if (showErr) msg.value = ''

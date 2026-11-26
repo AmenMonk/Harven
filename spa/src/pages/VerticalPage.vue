@@ -208,12 +208,15 @@ const resultSections = computed(() => {
   const showable = secs.filter(s => ['image_gallery', 'audio_player', 'text_result', 'preview', 'step_timeline', 'json_fold'].includes(s.type))
   return showable.length ? showable : [{ type: 'preview' }]
 })
-const isImage = computed(() => /image|stable.?diffusion/i.test(current.value?.type || current.value?.canvas_type || ''))
+const isImage = computed(() => /image|stable.?diffusion/i.test(current.value?.type || current.value?.canvas_type || '')
+  || current.value?.show_image_result === true)   // #1560 定位标注图
 const isAudio = computed(() => /music|speech|audio|tts/i.test(current.value?.type || current.value?.canvas_type || ''))
 const runLabel = computed(() => {
   if (isImage.value) return '🎨 开始生成'
   if (/music/i.test(current.value?.type || '')) return '🎵 开始作曲'
   if (/speech|tts/i.test(current.value?.type || '')) return '🗣️ 开始合成'
+  if (current.value?.base_engine === 'mnv4') return '⚡ 开始识别'   // #1560
+  if (current.value?.base_engine === 'locate') return '🎯 开始定位' // #1560
   return '🚀 开始执行'
 })
 const capText = computed(() => {
@@ -222,6 +225,8 @@ const capText = computed(() => {
 })
 /* 执行中的等待提示（本地大模型推理可能要几分钟） */
 const runTip = computed(() => {
+  if (current.value?.base_engine === 'mnv4') return '毫秒级分类，几乎瞬间出结果…'
+  if (current.value?.base_engine === 'locate') return '定位中：首次要加载 7.8GB 模型（约 1 分钟），之后每次不到 1 秒…'
   if (/music/i.test(current.value?.type || '')) return '本地作曲比较慢，可能要 2~8 分钟，别关页面…'
   if (/image/i.test(current.value?.type || '')) return '正在画图，一般 20 秒~2 分钟…'
   if (/speech|tts/i.test(current.value?.type || '')) return '正在合成语音…'

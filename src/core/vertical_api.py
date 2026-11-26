@@ -357,6 +357,9 @@ def get_model_layout(model_id):
     # 再从动态模型找
     if not model:
         model = _dynamic_models.get(model_id)
+    # ★ #1560: 底座部件直答条目（mnv4/locate）
+    if not model:
+        model = _base_engine_model(model_id)
     if not model:
         return jsonify({"error": "模型不存在"}), 404
 
@@ -417,6 +420,22 @@ def execute_vertical_model():
     if not model:
         # 再从动态注册的模型找
         model = _dynamic_models.get(model_id)
+    # ★ #1560: 底座部件直答（mnv4/locate）——附件守卫之前拦截
+    if not model:
+        be_model = _base_engine_model(model_id)
+        if be_model:
+            try:
+                result = _execute_base_engine(be_model, params, attachments)
+            except Exception as e:
+                logger.error(f"[Vertical] 底座部件执行失败 {model_id}: {e}", exc_info=True)
+                return jsonify({"success": False, "error": str(e)[:200]}), 200
+            if result.get("error"):
+                return jsonify({"success": False, "error": result["error"]}), 200
+            try:
+                _save_to_history(model_id, be_model.get('name', model_id), params, result)
+            except Exception as he:
+                logger.warning(f"[Vertical] 历史记录写入失败（不影响主流程）: {he}")
+            return jsonify({"success": True, "data": result})
     if not model:
         # ★ 2026-07-10: 自动发现的模型 — 尝试用transformers执行
         if model_id.startswith('discovered_'):
@@ -1344,6 +1363,189 @@ def _model_available(m: dict) -> bool:
     return True
 
 
+# ═══════════════════════════════════════════════════════════════
+# ★ #1560（2026-11-27）：底座部件直答 —— registry 里的 harven.base.* 升格垂直页一等公民
+#   mnv4（快速分类）/ locate（目标定位）传图直答；engine='base_engine'
+#   C 部分：进了 /api/vertical/models 列表后，模型中心分区三自动可见
+# ═══════════════════════════════════════════════════════════════
+
+def _base_engine_entries() -> list:
+    """底座部件 → 垂直页直答条目。mnv4 需权重在盘；locate 服务可后启（报错带启动指引）。"""
+    entries = []
+    try:
+        from src.vision.engines.mnv4_engine import WEIGHTS as _MN4W
+        if not _MN4W.exists():
+            return []   # 没装 MobileNetV4 就别占卡片
+    except Exception:
+        return []
+    entries.append({
+        "id": "harven.base.mnv4",
+        "name": "⚡ 快速分类",
+        "icon": "⚡",
+        "license": "Apache 2.0",
+        "type": "vision",
+        "canvas_type": "generic",
+        "description": "传一张图 → 毫秒级告诉你图里是什么（Top5 类别+置信度，MobileNetV4）",
+        "engine": "base_engine",
+        "base_engine": "mnv4",
+        "capabilities": ["classify"],
+        "capability": {
+            "can_do": ["毫秒级图片分类（ImageNet 1000 类）", "返回 Top5 类别+置信度"],
+            "cannot_do": ["说出图中物体的具体位置", "看懂文字/场景描述", "生成图片"],
+            "advisor_tips": "它是「反射弧」档：快但糙。想要描述图里发生了什么，用看图理解类模型；想找东西在哪，用 🎯 目标定位。",
+        },
+        "params": {
+            "topk": {"type": "range", "label": "返回类别数", "default": 5, "min": 1, "max": 10, "step": 1},
+        },
+    })
+    entries.append({
+        "id": "harven.base.locate",
+        "name": "🎯 目标定位",
+        "icon": "🎯",
+        "license": "NVIDIA 非商用研究用途",
+        "license_warning": "⚠️ LocateAnything-3B 为 NVIDIA 非商用研究许可，商用受限",
+        "type": "vision",
+        "canvas_type": "generic",
+        "description": "传图 + 说找什么 → 框出目标位置（像素坐标+标注图，LocateAnything-3B）",
+        "engine": "base_engine",
+        "base_engine": "locate",
+        "show_image_result": True,   # 结果区显示标注图
+        "capabilities": ["locate"],
+        "capability": {
+            "can_do": ["按描述框出图中目标（返回像素坐标框/点）", "在原图上画出标注框"],
+            "cannot_do": ["生成/修改图片", "识别人脸身份", "读文字内容（OCR 请用哈文拍照识别）"],
+            "advisor_tips": "目标用简短名词（如「红绿灯」「dog」「left person」）。首次执行需先启动服务：双击 H:\\venvs\\locate\\start_locate_service.bat",
+        },
+        "params": {
+            "target": {"type": "text", "label": "找什么", "default": "", "placeholder": "如：红绿灯 / person / the left cup", "required": True},
+        },
+    })
+    return entries
+
+
+def _base_engine_model(model_id: str):
+    """按 id 取底座部件条目（layout/execute 查找共用）。"""
+    return next((m for m in _base_engine_entries() if m["id"] == model_id), None)
+
+
+def _first_image_attachment_file(attachments: list) -> str:
+    """附件列表第一张图 → 落临时文件返回路径（无图抛 ValueError）。"""
+    import base64 as _b64
+    import re as _re
+    import tempfile as _tempfile
+    for att in attachments or []:
+        if not isinstance(att, dict):
+            continue
+        dataurl = att.get("dataUrl") or att.get("data") or ""
+        if not dataurl:
+            continue
+        suffix = Path(att.get("name") or "img.jpg").suffix.lower()
+        if suffix not in (".jpg", ".jpeg", ".png", ".webp", ".bmp"):
+            mime = (att.get("type") or att.get("mime") or "").lower()
+            if not mime.startswith("image/"):
+                continue
+            suffix = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}.get(mime, ".jpg")
+        m = _re.match(r"^data:[^;]+;base64,(.+)$", dataurl, _re.S)
+        raw = _b64.b64decode(m.group(1) if m else dataurl)
+        fd, tmp = _tempfile.mkstemp(suffix=suffix)
+        import os as _os
+        _os.close(fd)
+        Path(tmp).write_bytes(raw)
+        return tmp
+    raise ValueError("请先在「附上文件」里选一张图片")
+
+
+def _execute_base_engine(model: dict, params: dict, attachments: list) -> dict:
+    """底座部件直答执行：mnv4 分类 / locate 定位（标注图落 data/media）。"""
+    which = model.get("base_engine", "")
+    try:
+        image_path = _first_image_attachment_file(attachments)
+    except ValueError as ve:
+        return {"output": "", "error": str(ve)}
+    except Exception as e:
+        return {"output": "", "error": f"图片读不出来: {e}"}
+
+    if which == "mnv4":
+        try:
+            from src.vision.engines.mnv4_engine import Mnv4Engine
+            eng = Mnv4Engine()
+            eng.load()
+            r = eng.infer(image_path, topk=int(params.get("topk") or 5))
+            lines = [f"识别结果（{r.elapsed_ms}ms）："]
+            for i, c in enumerate(r.data.get("topk") or [], 1):
+                lines.append(f"{i}. {c['label']}  {round(c['prob'] * 100, 1)}%")
+            return {"output": "\n".join(lines),
+                    "top1": r.data.get("top1", ""),
+                    "topk": r.data.get("topk") or [],
+                    "elapsed_ms": r.elapsed_ms}
+        except FileNotFoundError as fe:
+            return {"output": "", "error": str(fe)}
+        except Exception as e:
+            return {"output": "", "error": f"分类执行失败: {e}"}
+
+    if which == "locate":
+        try:
+            from src.vision.engines.locate_engine import LocateHttpEngine
+            eng = LocateHttpEngine()
+            eng.load()   # 服务未启动 → RuntimeError 带启动指引
+        except RuntimeError as re_:
+            return {"output": "", "error": str(re_)}
+        target = (params.get("target") or "").strip() or "the main object"
+        try:
+            r = eng.infer({"image_path": image_path, "prompt": target, "mode": "ground_multi"})
+        except RuntimeError as re_:
+            return {"output": "", "error": str(re_)}
+        except Exception as e:
+            return {"output": "", "error": f"定位执行失败: {e}"}
+        d = r.data or {}
+        boxes, points = d.get("boxes") or [], d.get("points") or []
+        w, h = d.get("width") or 0, d.get("height") or 0
+        lines = [f"找「{target}」："]
+        if boxes:
+            lines.append(f"框到 {len(boxes)} 处（图 {w}×{h}）：")
+            for i, b in enumerate(boxes, 1):
+                if isinstance(b, (list, tuple)) and len(b) == 4:
+                    lines.append(f"  框{i}: x={round(b[0])} y={round(b[1])} → x={round(b[2])} y={round(b[3])}")
+                else:
+                    lines.append(f"  框{i}: {b}")
+        elif points:
+            lines.append(f"点到 {len(points)} 处（图 {w}×{h}）：")
+            for i, p in enumerate(points[:10], 1):
+                if isinstance(p, (list, tuple)) and len(p) == 2:
+                    lines.append(f"  点{i}: x={round(p[0])} y={round(p[1])}")
+                else:
+                    lines.append(f"  点{i}: {p}")
+        else:
+            lines.append("没找到（试试换更短更具体的词，如「traffic light」「person」）")
+        # 标注图落 data/media（前端可显示）
+        file_rel = ""
+        try:
+            from PIL import Image as _PILImage, ImageDraw as _PILDraw
+            img = _PILImage.open(image_path).convert("RGB")
+            draw = _PILDraw.Draw(img)
+            for b in boxes:
+                if isinstance(b, (list, tuple)) and len(b) == 4:
+                    draw.rectangle([b[0], b[1], b[2], b[3]], outline=(255, 60, 40), width=3)
+            for p in points:
+                if isinstance(p, (list, tuple)) and len(p) == 2:
+                    draw.ellipse([p[0] - 6, p[1] - 6, p[0] + 6, p[1] + 6], fill=(255, 60, 40))
+            media_dir = Path(__file__).parent.parent.parent / "data" / "media"
+            media_dir.mkdir(parents=True, exist_ok=True)
+            import time as _time
+            dst = media_dir / f"locate_{int(_time.time())}.jpg"
+            img.save(str(dst), quality=92)
+            file_rel = f"data/media/{dst.name}"
+        except Exception as e:
+            logger.warning(f"[Vertical] 定位标注图保存失败（不影响文本结果）: {e}")
+        out = {"output": "\n".join(lines), "target": target,
+               "boxes": boxes, "points": points, "elapsed_ms": r.elapsed_ms}
+        if file_rel:
+            out["file"] = file_rel
+        return out
+
+    return {"output": "", "error": f"未知底座部件: {which}"}
+
+
 def _get_all_models():
     """获取全部模型列表（内置 + 动态 + 自动发现的本地模型）"""
     # ★ A批A2: 伪模型（pseudo=True）不进垂直列表，垂直列表只剩真模型
@@ -1420,6 +1622,15 @@ def _get_all_models():
             all_models.append(model_entry)
     except Exception as e:
         logger.warning(f"[Vertical] 加载自动发现模型失败: {e}")
+
+    # ★ #1560: 底座部件直答（mnv4/locate）——垂直页一等公民，模型中心分区三自动可见
+    try:
+        _have = {m["id"] for m in all_models}
+        for be in _base_engine_entries():
+            if be["id"] not in _have:
+                all_models.append(be)
+    except Exception as e:
+        logger.warning(f"[Vertical] 底座部件条目装载失败: {e}")
 
     return all_models
 
