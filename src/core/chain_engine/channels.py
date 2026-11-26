@@ -51,6 +51,10 @@ class InternalAdapter(BaseAdapter):
             return _SingletonSlot("chain.yolox", YoloxEngine)
         if base == "clip":
             return _SingletonSlot("chain.clip", ClipEngine)
+        if base == "mnv4":
+            # 快速分类（2026-11-26）：MobileNetV4 Conv Small，timm 通道，毫秒级 Top-K
+            from src.vision.engines.mnv4_engine import Mnv4Engine
+            return _SingletonSlot("chain.mnv4", Mnv4Engine)
         if base == "sface":
             if not FaceEngine.models_ready():
                 raise ChannelError("SFace 模型未安装（设置页可下载）；人脸支线缺失不瘫主链")

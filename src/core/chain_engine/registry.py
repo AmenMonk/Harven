@@ -27,6 +27,9 @@ BASE_MODELS = [
      "capabilities": ["embed", "tag"], "vram_gb": 0.5, "builtin": True},
     {"id": "harven.base.sface", "label": "SFace 人脸识别+活体", "channel": "internal",
      "capabilities": ["face"], "vram_gb": 0.3, "builtin": True},
+    # 快速分类（2026-11-26）：MobileNetV4 Conv Small，H:\models 本机件，timm 通道
+    {"id": "harven.base.mnv4", "label": "MobileNetV4 快速分类", "channel": "internal",
+     "capabilities": ["classify"], "vram_gb": 0.1, "builtin": True},
 ]
 
 # 外脑视觉能力名单（跟阵营走的事实：_camp_vision 现用 glm-4v-flash 起步）

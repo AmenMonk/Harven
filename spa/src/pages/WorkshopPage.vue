@@ -254,8 +254,8 @@ const asking = ref(false)
 const adviceRes = ref(null)
 let isNew = false
 
-const CAPS = ['dedup', 'detect', 'face', 'embed', 'tag', 'locate', 'vision_understand', 'text_gen']
-const CAP_LABEL = { dedup: '查重', detect: '目标检测', face: '人脸', embed: '向量/语义', tag: '打标', locate: '定位', vision_understand: '看图理解', text_gen: '文字生成' }
+const CAPS = ['dedup', 'detect', 'face', 'embed', 'tag', 'locate', 'classify', 'vision_understand', 'text_gen']
+const CAP_LABEL = { dedup: '查重', detect: '目标检测', face: '人脸', embed: '向量/语义', tag: '打标', locate: '定位', classify: '快速分类', vision_understand: '看图理解', text_gen: '文字生成' }
 
 function emptyForm() {
   return { id: '', name: '', version: '1.0.0', target: '', on_step_fail: 'abort',
