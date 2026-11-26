@@ -55,6 +55,10 @@ class InternalAdapter(BaseAdapter):
             # 快速分类（2026-11-26）：MobileNetV4 Conv Small，timm 通道，毫秒级 Top-K
             from src.vision.engines.mnv4_engine import Mnv4Engine
             return _SingletonSlot("chain.mnv4", Mnv4Engine)
+        if base == "locate":
+            # 目标定位（2026-11-26 #1555）：LocateAnything-3B 独立服务 http 通道
+            from src.vision.engines.locate_engine import LocateHttpEngine
+            return _SingletonSlot("chain.locate", LocateHttpEngine)
         if base == "sface":
             if not FaceEngine.models_ready():
                 raise ChannelError("SFace 模型未安装（设置页可下载）；人脸支线缺失不瘫主链")
@@ -138,7 +142,11 @@ class _SingletonSlot:
         obj = self._get()
         t0 = time.perf_counter()
         if hasattr(obj, "infer"):
-            r = obj.infer(payload.get("image_path", ""))
+            if getattr(obj, "accepts_payload", False):
+                # 定位等需要 prompt/target 的引擎：传完整 payload
+                r = obj.infer(payload)
+            else:
+                r = obj.infer(payload.get("image_path", ""))
         else:                                   # callable factory 分支
             r = obj().infer(payload.get("image_path", ""))
         return {"ok": True, "result": r, "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1)}

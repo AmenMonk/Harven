@@ -30,6 +30,9 @@ BASE_MODELS = [
     # 快速分类（2026-11-26）：MobileNetV4 Conv Small，H:\models 本机件，timm 通道
     {"id": "harven.base.mnv4", "label": "MobileNetV4 快速分类", "channel": "internal",
      "capabilities": ["classify"], "vram_gb": 0.1, "builtin": True},
+    # 目标定位（2026-11-26 #1555）：LocateAnything-3B 独立服务（H:\venvs\locate，8101 端口）
+    {"id": "harven.base.locate", "label": "LocateAnything 目标定位", "channel": "internal",
+     "capabilities": ["locate"], "vram_gb": 7.8, "builtin": True},
 ]
 
 # 外脑视觉能力名单（跟阵营走的事实：_camp_vision 现用 glm-4v-flash 起步）
