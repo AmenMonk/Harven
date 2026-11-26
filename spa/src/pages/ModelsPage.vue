@@ -4,7 +4,24 @@
       <BigButton variant="ghost" :px="14" @click="loadAll(true)"><HIcon name="dots" :size="16" /> 刷新</BigButton>
       <a href="#/models/install"><BigButton :px="14"><HIcon name="download" :size="16" /> 装新模型</BigButton></a>
       <a href="#/vision"><BigButton variant="ghost" :px="14"><HIcon name="image" :size="16" /> 视觉引擎</BigButton></a>
+      <BigButton variant="ghost" :px="14" :loading="checkupBusy" @click="runCheckup"><HIcon name="dots" :size="16" /> 🔍 模型体检</BigButton>
     </template>
+
+    <!-- #1557 模型体检报告 -->
+    <div v-if="checkupReport" class="checkup">
+      <div class="ck-head">
+        <b>🔍 模型体检报告</b>
+        <span class="ck-sum">✅ 已接入 {{ checkupReport.summary?.integrated || 0 }} · ⚠️ 未登记 {{ checkupReport.summary?.known || 0 }} · ❌ 不认识 {{ checkupReport.summary?.unknown || 0 }}</span>
+        <button class="ck-x" @click="checkupReport = null">✕</button>
+      </div>
+      <div v-for="(it, ii) in checkupReport.items" :key="ii" class="ck-row" :class="it.status">
+        <span class="ck-st">{{ it.status === 'integrated' ? '✅' : it.status === 'known' ? '⚠️' : '❌' }}</span>
+        <div class="ck-body">
+          <b>{{ it.name }}</b>
+          <span class="ck-hint">{{ it.hint }}</span>
+        </div>
+      </div>
+    </div>
 
     <div v-if="msg" class="tip" :class="msgOk ? 'ok' : 'bad'">{{ msg }}</div>
 
@@ -321,10 +338,38 @@ async function setCurrent(m) {
   } catch (e) { flash('切换失败：' + e.message, false) }
 }
 
+/* #1557 模型体检 */
+const checkupBusy = ref(false)
+const checkupReport = ref(null)
+async function runCheckup() {
+  checkupBusy.value = true
+  try {
+    checkupReport.value = await getJSON('/api/vertical/checkup')
+  } catch (e) {
+    flash('体检失败：' + e.message, false)
+  } finally {
+    checkupBusy.value = false
+  }
+}
+
 loadAll(true)
 </script>
 
 <style scoped>
+/* #1557 体检报告 */
+.checkup { border: 1px solid var(--line); background: #fff; border-radius: 12px; padding: 14px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 8px; }
+.ck-head { display: flex; align-items: center; gap: 10px; }
+.ck-head b { font-size: 14px; color: var(--ink); }
+.ck-sum { font-size: 12px; color: var(--ink-3, #8b949e); }
+.ck-x { margin-left: auto; border: none; background: none; cursor: pointer; color: var(--ink-3, #8b949e); font-size: 14px; }
+.ck-row { display: flex; gap: 9px; align-items: baseline; padding: 7px 10px; border-radius: 8px; background: rgba(46,160,67,.05); }
+.ck-row.known { background: rgba(255,212,0,.08); }
+.ck-row.unknown { background: rgba(229,83,75,.06); }
+.ck-st { flex-shrink: 0; }
+.ck-body { display: flex; flex-direction: column; gap: 2px; }
+.ck-body b { font-size: 12.5px; color: var(--ink); }
+.ck-hint { font-size: 11.5px; color: var(--ink-3, #8b949e); line-height: 1.5; }
+</style><style scoped>
 .tip { margin-bottom: 10px; padding: 9px 13px; border-radius: 10px; font-size: 13px; }
 .tip.ok { background: var(--mode-local-bg); color: var(--mode-local); }
 .tip.bad { background: #FDF2F2; color: #B4443C; }

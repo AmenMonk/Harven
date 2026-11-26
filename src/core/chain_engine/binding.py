@@ -132,7 +132,8 @@ def execute_chain_model(model_meta: dict, params: dict,
     result = out.get("result")
     output = _humanize(result)
     data = {"output": output, "elapsed_ms": ms,
-            "label": out.get("label"), "chain": chain_id}
+            "label": out.get("label"), "chain": chain_id,
+            "steps": out.get("steps") or []}   # #1559 物流单（step_timeline 点亮）
     # 视频速览等组合的关键帧细节随附（JSON 折叠在 output 之后由用户展开看）
     if isinstance(result, dict) and result.get("frames_detail") is not None:
         data["frames_detail"] = result["frames_detail"]

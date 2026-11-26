@@ -56,12 +56,49 @@ class Registry:
                     and time.time() - self._model_cache_ts < 30:
                 return self._model_cache
             models = [dict(m) for m in BASE_MODELS]
+            models += self._model_packages()          # #1558 接入包（data/model_packages/*.json）
             models += self._vision_catalog_models()
             models += self._ollama_models()
             models += self._cloud_models()
             self._model_cache = models
             self._model_cache_ts = time.time()
             return models
+
+    def _model_packages(self) -> list:
+        """#1558 接入包：data/model_packages/*.json（manifest v1）→ registry 条目。
+
+        manifest: {manifest_version, id, name, channel, capabilities, vram_gb,
+                   license, model_dir, architecture, deps, service?}
+        坏包拒载（缺 id/name/channel/capabilities 任一即跳过并记日志）。
+        """
+        out = []
+        builtin_ids = {m["id"] for m in BASE_MODELS}
+        pdir = self.chains_dir.parent / "model_packages"
+        if not pdir.is_dir():
+            return out
+        for p in sorted(pdir.glob("*.json")):
+            try:
+                mf = json.loads(p.read_text(encoding="utf-8"))
+                if int(mf.get("manifest_version", 0)) != 1:
+                    raise ValueError("manifest_version 必须为 1")
+                for k in ("id", "name", "channel", "capabilities"):
+                    if not mf.get(k):
+                        raise ValueError(f"缺字段 {k}")
+                if mf["id"] in builtin_ids:
+                    continue    # 内置件已在 BASE_MODELS，manifest 副本不重复登记
+                out.append({"id": mf["id"], "label": mf["name"],
+                            "channel": mf["channel"],
+                            "capabilities": list(mf["capabilities"]),
+                            "vram_gb": float(mf.get("vram_gb", 0.5)),
+                            "builtin": False, "package": True,
+                            "model_dir": mf.get("model_dir", ""),
+                            "license": mf.get("license", "")})
+            except Exception as e:
+                try:
+                    print(f"[registry] 接入包拒载 {p.name}: {e}", flush=True)
+                except Exception:
+                    pass
+        return out
 
     def _vision_catalog_models(self) -> list:
         """视觉目录（vision.catalog CATALOG）→ llama_cpp 通道条目。"""

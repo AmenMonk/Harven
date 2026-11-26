@@ -4,7 +4,7 @@
       <BigButton variant="ghost" :px="14" @click="$router.push('/models')"><HIcon name="cpu" :size="16" /> 管理模型</BigButton>
     </template>
 
-    <!-- ═══ 模型卡墙 ═══ -->
+    <!-- ═══ 卡墙：模型区（默认展开）+ 组合区（默认收起，#1559）═══ -->
     <div v-if="!current">
       <div v-if="loading" class="empty">正在加载专项模型清单…</div>
       <div v-else-if="!models.length" class="empty">
@@ -12,14 +12,32 @@
         去 <router-link to="/models">模型中心</router-link>「本地垂直」下载，
         或把电脑里已有的模型通过 Ollama 导入后刷新本页
       </div>
-      <div v-else class="m-grid">
-        <button v-for="m in models" :key="m.id" class="m-card" @click="pick(m)">
-          <span class="m-ic">{{ m.icon && m.icon.length <= 3 ? m.icon : '🧩' }}</span>
-          <b class="m-name">{{ m.name }}</b>
-          <span class="m-desc">{{ m.description || VTYPE[m.type] || '专项任务' }}</span>
-          <span class="m-type">{{ VTYPE[m.type] || m.canvas_type || '专项' }}</span>
-        </button>
-      </div>
+      <template v-else>
+        <!-- 模型区 -->
+        <div v-if="modelEntries.length" class="m-grid">
+          <button v-for="m in modelEntries" :key="m.id" class="m-card" @click="pick(m)">
+            <span class="m-ic">{{ m.icon && m.icon.length <= 3 ? m.icon : '🧩' }}</span>
+            <b class="m-name">{{ m.name }}</b>
+            <span class="m-desc">{{ m.description || VTYPE[m.type] || '专项任务' }}</span>
+            <span class="m-type">{{ VTYPE[m.type] || m.canvas_type || '专项' }}</span>
+          </button>
+        </div>
+        <!-- 组合区（默认收起） -->
+        <div v-if="chainEntries.length" class="chain-zone">
+          <button class="zone-toggle" @click="chainOpen = !chainOpen">
+            🧩 组合（{{ chainEntries.length }}）<span class="zone-arrow">{{ chainOpen ? '▾' : '▸' }}</span>
+            <span class="zone-hint">模型组合流水线，点击展开</span>
+          </button>
+          <div v-if="chainOpen" class="m-grid" style="margin-top:10px">
+            <button v-for="m in chainEntries" :key="m.id" class="m-card chain" @click="pick(m)">
+              <span class="m-ic">{{ m.icon && m.icon.length <= 3 ? m.icon : '🧩' }}</span>
+              <b class="m-name">{{ m.name }}</b>
+              <span class="m-desc">{{ m.description || '模型组合流水线' }}</span>
+              <span class="m-type chain">组合</span>
+            </button>
+          </div>
+        </div>
+      </template>
     </div>
 
     <!-- ═══ 模型直答页 ═══ -->
@@ -87,14 +105,35 @@
         </div>
       </div>
 
-      <!-- 结果 -->
+      <!-- 结果（#1559 layout 驱动：image_gallery/audio_player/text_result/json_fold/step_timeline） -->
       <div v-if="errMsg" class="result err">⚠️ {{ errMsg }}</div>
-      <div v-else-if="result" class="result">
-        <img v-if="isImage" :src="result.file" class="r-img" />
-        <audio v-else-if="isAudio" controls :src="result.file" class="r-audio" />
-        <pre v-else class="r-text">{{ result.output || '（模型没有返回内容）' }}</pre>
-        <div v-if="result.file && !isImage && !isAudio" class="r-file">生成文件：<a :href="result.file" target="_blank">{{ result.file }}</a></div>
-      </div>
+      <template v-else-if="result">
+        <div v-for="(sec, seci) in resultSections" :key="seci" class="result">
+          <img v-if="sec.type === 'image_gallery' && isImage" :src="result.file" class="r-img" />
+          <audio v-else-if="sec.type === 'audio_player' && isAudio" controls :src="result.file" class="r-audio" />
+          <template v-else-if="sec.type === 'text_result' || (sec.type === 'preview' && !isImage && !isAudio)">
+            <pre class="r-text">{{ result.output || '（模型没有返回内容）' }}</pre>
+            <div v-if="result.file && !isImage && !isAudio" class="r-file">生成文件：<a :href="result.file" target="_blank">{{ result.file }}</a></div>
+          </template>
+          <!-- 环节时间线（组合执行物流单逐环点亮） -->
+          <div v-else-if="sec.type === 'step_timeline' && result.steps?.length" class="steps">
+            <b class="steps-t">🔁 环节流水（{{ result.steps.filter(s=>s.ok).length }}/{{ result.steps.length }} 过）</b>
+            <div v-for="(s, si) in result.steps" :key="si" class="step-row" :class="s.ok ? 'ok' : 'bad'">
+              <span class="step-dot">{{ s.ok ? '✓' : '✗' }}</span>
+              <span class="step-name">{{ s.step_name || s.step_id }}</span>
+              <span v-if="s.model_id" class="step-model">{{ s.model_id }}</span>
+              <span class="step-ms" v-if="s.elapsed_ms">{{ s.elapsed_ms }}ms</span>
+              <span class="step-err" v-if="s.error">{{ s.error }}</span>
+              <span v-if="s.skipped_safe" class="step-skip">safe 跳过</span>
+            </div>
+          </div>
+          <!-- 关键帧/结构化细节折叠 -->
+          <details v-else-if="sec.type === 'json_fold' && result.frames_detail" class="fold">
+            <summary>🔍 查看结构化细节</summary>
+            <pre class="r-text">{{ JSON.stringify(result.frames_detail, null, 2) }}</pre>
+          </details>
+        </div>
+      </template>
     </div>
   </PageShell>
 </template>
@@ -126,6 +165,8 @@ const form = reactive({})
 const running = ref(false)
 const result = ref(null)
 const errMsg = ref('')
+const chainOpen = ref(false)   // #1559 组合区默认收起
+const pageLayout = ref(null)   // #1559 layout 驱动渲染
 
 /* ★ 2026-09-15 开发者令#1：附件通道 */
 const vattEl = ref(null)
@@ -158,6 +199,15 @@ function onAttPicked(e) {
 }
 
 const formFields = computed(() => (current.value?.params) || {})
+/* #1559 卡墙分层：模型区 / 组合区（chain: 前缀） */
+const chainEntries = computed(() => models.value.filter(m => (m.id || '').startsWith('chain:')))
+const modelEntries = computed(() => models.value.filter(m => !(m.id || '').startsWith('chain:')))
+/* #1559 结果区渲染 sections：有 layout 用 layout，否则回落传统单卡 */
+const resultSections = computed(() => {
+  const secs = pageLayout.value?.sections || []
+  const showable = secs.filter(s => ['image_gallery', 'audio_player', 'text_result', 'preview', 'step_timeline', 'json_fold'].includes(s.type))
+  return showable.length ? showable : [{ type: 'preview' }]
+})
 const isImage = computed(() => /image|stable.?diffusion/i.test(current.value?.type || current.value?.canvas_type || ''))
 const isAudio = computed(() => /music|speech|audio|tts/i.test(current.value?.type || current.value?.canvas_type || ''))
 const runLabel = computed(() => {
@@ -190,14 +240,19 @@ onMounted(async () => {
   }
 })
 
-/* ═══ 选模型 → 初始化表单默认值 ═══ */
-function pick(m) {
+/* ═══ 选模型 → 初始化表单默认值 + 拉取 layout（#1559）═══ */
+async function pick(m) {
   current.value = m
   result.value = null
   errMsg.value = ''
   atts.value = []
+  pageLayout.value = null
   Object.keys(form).forEach(k => delete form[k])
   for (const [k, p] of Object.entries(m.params || {})) form[k] = p.default ?? ''
+  try {
+    const j = await getJSON(`/api/vertical/layout/${encodeURIComponent(m.id)}`)
+    if (j && Array.isArray(j.sections)) pageLayout.value = j   // 坏 layout（无 sections）不设=回落
+  } catch (_e) { /* 拉不到 layout → 回落传统渲染 */ }
 }
 
 /* ═══ 执行直答 ═══ */
@@ -246,6 +301,25 @@ async function run() {
 .m-name { font-size: 14.5px; color: var(--ink); }
 .m-desc { font-size: 12px; color: var(--ink-3, #8b949e); line-height: 1.5; }
 .m-type { font-size: 11px; color: var(--accent, #5B8DEF); background: rgba(91,141,239,.1); padding: 2px 8px; border-radius: 999px; }
+.m-type.chain { color: #8250df; background: rgba(130,80,223,.1); }
+/* #1559 组合折叠区 */
+.chain-zone { margin-top: 16px; }
+.zone-toggle { display: flex; align-items: center; gap: 10px; width: 100%; border: 1px solid var(--line); background: rgba(130,80,223,.04); border-radius: 10px; padding: 10px 14px; cursor: pointer; font-size: 13.5px; color: var(--ink); }
+.zone-arrow { font-size: 12px; color: var(--ink-3, #8b949e); }
+.zone-hint { font-size: 11.5px; color: var(--ink-3, #8b949e); margin-left: auto; }
+/* #1559 环节时间线 */
+.steps { display: flex; flex-direction: column; gap: 6px; }
+.steps-t { font-size: 12.5px; color: var(--ink); margin-bottom: 2px; }
+.step-row { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 5px 9px; border-radius: 7px; background: rgba(46,160,67,.06); }
+.step-row.bad { background: rgba(229,83,75,.08); }
+.step-dot { flex-shrink: 0; width: 17px; height: 17px; border-radius: 999px; background: #2ea043; color: #fff; font-size: 11px; display: flex; align-items: center; justify-content: center; }
+.step-row.bad .step-dot { background: var(--red, #e5534b); }
+.step-name { color: var(--ink); font-weight: 600; }
+.step-model { color: var(--ink-3, #8b949e); font-size: 11px; }
+.step-ms { color: var(--ink-3, #8b949e); font-size: 11px; margin-left: auto; }
+.step-err { color: var(--red, #e5534b); font-size: 11px; }
+.step-skip { color: #9a6700; font-size: 11px; }
+.fold summary { font-size: 12.5px; color: var(--accent, #5B8DEF); cursor: pointer; }
 
 .detail { display: flex; flex-direction: column; gap: 14px; }
 .d-head { display: flex; align-items: center; gap: 12px; }

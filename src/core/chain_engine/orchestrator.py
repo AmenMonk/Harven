@@ -217,6 +217,7 @@ class Orchestrator:
         return {"ok": True, "run_id": run_id, "chain": r.id, "chain_name": r.name,
                 "label": label, "identity": r.identity(), "result": result,
                 "total_ms": total_ms, "safe_skipped": pre["safe_skipped_actions"],
+                "steps": ctx.get("step_rows") or [],   # #1559 物流单（垂直页 step_timeline 用）
                 "note": "组合执行 · 成稿模型见回复方标注（B1）"}
 
     # ── 逐环执行（通用路径：非 packed 的普通组合）──

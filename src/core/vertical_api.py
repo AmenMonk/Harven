@@ -323,6 +323,35 @@ _BUILTIN_MODELS = [
 @bp.route('/layout/<model_id>', methods=['GET'])
 def get_model_layout(model_id):
     """获取模型的画板布局 JSON"""
+    # ★ #1559：组合链（chain:xxx）→ 自动生成 step_timeline 布局（先于普通模型查找）
+    if model_id.startswith("chain:"):
+        chain_id = model_id.split(":", 1)[1]
+        steps_meta = []
+        chain_name, target = "", ""
+        try:
+            from src.core.chain_engine.registry import get_registry
+            r = get_registry().get_chain(chain_id)
+            if r is not None:
+                chain_name, target = r.name, r.target
+                for i, s in enumerate(r.steps, 1):
+                    steps_meta.append({"index": i, "name": s.name,
+                                       "capability": s.capability, "note": s.note})
+        except Exception as _e:
+            logger.debug(f"[vertical_api] 忽略: {_e}")
+        if not chain_name:
+            return jsonify({"error": "组合不存在"}), 404
+        return jsonify({
+            "model_id": model_id, "canvas_type": "chain_pipeline",
+            "chain_name": chain_name, "target": target,
+            "sections": [
+                {"type": "attachments", "position": "top"},
+                {"type": "form", "position": "top"},
+                {"type": "run_button", "label": "🚀 执行组合", "tip": "组合链执行中：各环节依次点亮…"},
+                {"type": "step_timeline", "position": "middle", "steps": steps_meta},
+                {"type": "preview", "position": "bottom", "height": "auto"},
+                {"type": "capability_card", "position": "bottom"},
+            ]})
+
     # 先从内置模型找
     model = next((m for m in _BUILTIN_MODELS if m['id'] == model_id), None)
     # 再从动态模型找
@@ -346,8 +375,14 @@ def get_model_layout(model_id):
     if layout_path.exists():
         try:
             custom = json.loads(layout_path.read_text(encoding="utf-8"))
-            layout = custom
-        except Exception as _e: logger.debug(f"[vertical_api] 忽略: {_e}")
+            # ★ #1559 回落门：坏 layout（无 sections/非列表）拒载回落默认
+            if isinstance(custom, dict) and isinstance(custom.get("sections"), list) \
+                    and custom["sections"]:
+                layout = custom
+            else:
+                logger.warning(f"[vertical_api] 坏 layout 拒载回落 generic: {model_id}")
+        except Exception as _e:
+            logger.warning(f"[vertical_api] layout 解析失败回落默认: {model_id} {_e}")
 
     return jsonify(layout)
 
@@ -1783,6 +1818,118 @@ def list_canvas_types():
     for ct in _dynamic_canvas_types.values():
         all_types.append(ct)
     return jsonify({"canvas_types": all_types, "count": len(all_types)})
+
+
+# ═══════════════════════════════════════════════════════════════
+# ★ #1557 模型体检 + #1558 接入包（2026-11-26）
+# ═══════════════════════════════════════════════════════════════
+
+@bp.route('/checkup', methods=['GET'])
+def model_checkup():
+    """模型体检：扫描本地模型目录 → 三态报告（只读零动手）。"""
+    try:
+        from src.core.model_checkup import run_checkup
+        return jsonify(run_checkup())
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)[:300]}), 500
+
+
+_PKG_DIR = Path(__file__).parent.parent.parent / "data" / "model_packages"
+_PKG_ARCHS = ("timm_classify", "transformers_vl", "gguf_vision", "http_service", "builtin")
+_PKG_CHANNELS = ("internal", "llama_cpp", "ollama", "cloud")
+
+
+@bp.route('/packages', methods=['GET'])
+def list_model_packages():
+    """列出已导入的接入包 manifest。"""
+    pkgs = []
+    for p in sorted(_PKG_DIR.glob("*.json")) if _PKG_DIR.is_dir() else []:
+        try:
+            pkgs.append(json.loads(p.read_text(encoding="utf-8")))
+        except Exception as _e:
+            logger.debug(f"[vertical_api] 忽略: {_e}")
+    return jsonify({"packages": pkgs, "count": len(pkgs)})
+
+
+@bp.route('/packages/import', methods=['POST'])
+def import_model_package():
+    """导入接入包 manifest（#1558 下载=接入）。
+
+    请求体: manifest JSON（或 {manifest: {...}}）
+    校验：manifest_version=1 / 必填字段 / 架构与通道在白名单；
+    依赖：逐项检测可导入性，缺失的列 missing_deps 返回（不自动 pip install——
+    版本钉死的走独立 venv，由用户/哈文按 service 模板搭，避免砸主 venv）。
+    落盘：data/model_packages/<id>.json → registry 动态加载（30s 缓存内 force 刷新）。
+    """
+    body = request.get_json(force=True, silent=True) or {}
+    mf = body.get("manifest") or body
+    try:
+        if int(mf.get("manifest_version", 0)) != 1:
+            return jsonify({"ok": False, "error": "manifest_version 必须为 1"}), 400
+        for k in ("id", "name", "architecture", "channel", "capabilities"):
+            if not mf.get(k):
+                return jsonify({"ok": False, "error": f"缺必填字段: {k}"}), 400
+        if mf["architecture"] not in _PKG_ARCHS:
+            return jsonify({"ok": False, "error":
+                            f"architecture 须为 {'/'.join(_PKG_ARCHS)}"}), 400
+        if mf["channel"] not in _PKG_CHANNELS:
+            return jsonify({"ok": False, "error":
+                            f"channel 须为 {'/'.join(_PKG_CHANNELS)}"}), 400
+        if not isinstance(mf.get("capabilities"), list) or not mf["capabilities"]:
+            return jsonify({"ok": False, "error": "capabilities 须为非空列表"}), 400
+        # 依赖检测（只读，不自动装）
+        installed, missing = [], []
+        deps = mf.get("deps") or {}
+        if isinstance(deps, dict):
+            deps = list(deps.keys())
+        try:
+            import importlib.util
+            _imp = {"timm": "timm", "torch": "torch", "transformers": "transformers",
+                    "pillow": "PIL", "diffusers": "diffusers", "peft": "peft",
+                    "opencv": "cv2", "lmdb": "lmdb", "decord": "decord",
+                    "torchvision": "torchvision"}
+            for d in deps:
+                mod = _imp.get(str(d).lower(), str(d))
+                (installed if importlib.util.find_spec(mod) else missing).append(d)
+        except Exception:
+            pass
+        # http_service 必须带 service 段
+        if mf["architecture"] == "http_service" and not mf.get("service"):
+            return jsonify({"ok": False, "error":
+                            "http_service 架构必须带 service 段（base_url/start_bat）"}), 400
+        # 落盘
+        _PKG_DIR.mkdir(parents=True, exist_ok=True)
+        slug = str(mf["id"]).replace("/", "_").replace(":", "_")
+        out = _PKG_DIR / f"{slug}.json"
+        out.write_text(json.dumps(mf, ensure_ascii=False, indent=2), encoding="utf-8")
+        # 刷 registry 缓存
+        try:
+            from src.core.chain_engine.registry import get_registry
+            get_registry().list_models(force=True)
+        except Exception as _e:
+            logger.debug(f"[vertical_api] 忽略: {_e}")
+        return jsonify({"ok": True, "saved": str(out), "registered_id": mf["id"],
+                        "deps_installed": installed, "deps_missing": missing,
+                        "note": ("缺依赖: " + ", ".join(missing)) if missing
+                        else "依赖齐，模型已登记（工坊能力表立即可见）"})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)[:300]}), 500
+
+
+@bp.route('/packages/<pkg_id>', methods=['DELETE'])
+def delete_model_package(pkg_id):
+    """删除接入包（只删 manifest 户口，不动模型文件）。"""
+    slug = pkg_id.replace("/", "_").replace(":", "_")
+    p = _PKG_DIR / f"{slug}.json"
+    if not p.is_file():
+        return jsonify({"ok": False, "error": "接入包不存在"}), 404
+    p.unlink()
+    try:
+        from src.core.chain_engine.registry import get_registry
+        get_registry().list_models(force=True)
+    except Exception as _e:
+        logger.debug(f"[vertical_api] 忽略: {_e}")
+    return jsonify({"ok": True, "deleted": pkg_id})
 
 
 @bp.route('/generate-canvas', methods=['POST'])
