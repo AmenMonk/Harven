@@ -7552,12 +7552,37 @@ def _try_smart_split(user_message, conversation_id):
 
     # 检测是否包含多个操作（至少2个金额或2个操作词）
     amounts = _re_split.findall(r'(\d+(?:\.\d+)?)\s*元', user_message)
+
+    # ★ #1556 技术数字上下文排除：端口/版本/超时/大小等数字不是记账金额。
+    #   实锤误报：方案文本「Flask 常驻服务（端口如 8101，绑 127.0.0.1）」→
+    #   裸数字正则把 8101 当金额（项目名成了「端口如」），差点入账 8101.0 元。
+    _TECH_BEFORE = ('端口', '版本', '版号', '超时', '延迟', '毫秒', '频率', '帧率',
+                    '分辨率', '线程', '进程', '字节', '像素', '批次', '轮次',
+                    '显存', '内存', '占用', '硬盘', '缓存',
+                    'port', 'timeout', 'version', 'batch', 'epoch', 'step', 'top_')
+    _TECH_AFTER = ('gb', 'mb', 'kb', 'tb', 'ms', 'px', 'dpi', 'fps', 'hz',
+                   'mib', 'gib', 'kib',
+                   '毫秒', '微秒', '像素', '字节', '版本')
+
+    def _is_tech_number(msg, num_start, num_end):
+        before = msg[max(0, num_start - 14):num_start].lower()
+        after = msg[num_end:num_end + 6].lower()
+        if any(w in before for w in _TECH_BEFORE):
+            return True
+        if after.startswith(_TECH_AFTER):
+            return True
+        return False
+
     # ★ 2026-09-17 放宽：句尾无单位纯数字也算金额（实锤"模拟飞行1200"聊天模式没记上，
     #   模型还嘴硬说"已经记录了"）。守卫：数字后跟量词/日期/分数/倍数不算
     #   （3个/5斤/90分/8岁/30度/9月15日/5万/13点）
-    _bare_amounts = _re_split.findall(
-        r'(?<![\d.:：])([1-9]\d{2,5}(?:\.\d+)?)(?![\d元块个只斤克次人天号日月点岁折成分度万亿千：:])(?=\s*[，。,.!！?？\s]|$)',
-        user_message)
+    _bare_amounts = [
+        m.group(1) for m in _re_split.finditer(
+            r'(?<![\d.:：])([1-9]\d{2,5}(?:\.\d+)?)(?![\d元块个只斤克次人天号日月点岁折成分度万亿千：:])(?![:.]\d)(?=\s*[，。,.!！?？\s]|$)',
+            user_message)
+        if not _is_tech_number(user_message, m.start(1), m.end(1))]
+    # ↑ #1556（2026-11-26）：finditer+过滤替换 findall（要数字位置判技术上下文）；
+    #   新增 (?![:.]\d) 排除 IP/版本号形态（127.0.0.1 的 "127.0"、2.9.1 的 "2.9"）
     # ★ 疑问句守卫："iPhone 7999值得买吗"/"多少钱"不是记账
     _is_question = bool(_re_split.search(r'[?？]|多少|几块|几元|值不值|好不好', user_message))
     if _is_question:
@@ -7582,6 +7607,9 @@ def _try_smart_split(user_message, conversation_id):
                 continue
             # 年份守卫："2026 年度计划"不是记账
             if _re_split.fullmatch(r'(19|20)\d{2}', _amt_s) and ('年' in _item or '月' in _item):
+                continue
+            # #1556 技术数字守卫："8101 端口服务"/"512 超时时间"不是记账
+            if any(w in _item for w in _TECH_BEFORE):
                 continue
             try:
                 _amt = float(_amt_s)
@@ -7642,11 +7670,14 @@ def _try_smart_split(user_message, conversation_id):
     # ★ 2026-09-17 无单位尾随数字："模拟飞行1200"/"酒店订金500。"
     #   项目名取末段（按 去/到/搜/买 切开取最后一段），分类交由落库口 acc_categories 兣底
     _bare_pat = (r'([\u4e00-\u9fa5A-Za-z]{2,}?)\s*([1-9]\d{2,5}(?:\.\d+)?)'
-                 r'(?![\d元块个只斤克次人天号日月点岁折成分度万亿千：:])'
+                 r'(?![\d元块个只斤克次人天号日月点岁折成分度万亿千：:])(?![:.]\d)'
                  r'(?=\s*[，。,.!！?？\s]|$)')
     for _bm in (_re_split.finditer(_bare_pat, user_message) if not _is_question else []):
         # 时间守卫：数字紧邻冒号（13:20）跳过
         if _bm.start() > 0 and user_message[_bm.start() - 1] in ':：':
+            continue
+        # #1556 技术数字守卫：端口/版本/带量纲单位的数字不是记账
+        if _is_tech_number(user_message, _bm.start(2), _bm.end(2)):
             continue
         item, amount_str = _bm.group(1), _bm.group(2)
         try:
