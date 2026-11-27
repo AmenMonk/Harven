@@ -56,8 +56,8 @@ def main():
     r = c.delete("/api/chains/harveneye")
     check("DELETE 内置 → 403", r.status_code == 403)
 
-    # 5 B7 命名查重（fork 用「HarvenEye」同名应被拒——内置真名是 HarvenEye）
-    r = c.post("/api/chains/harveneye/fork", json={"name": "HarvenEye"})
+    # 5 B7 命名查重（fork 用内置真名「图片理解组合」应被拒；#1587 修正：原测试写错为 HarvenEye）
+    r = c.post("/api/chains/harveneye/fork", json={"name": "图片理解组合"})
     check("fork 同名 → 拒（B7）", r.status_code == 400, r.get_json())
 
     # 6 fork 另存

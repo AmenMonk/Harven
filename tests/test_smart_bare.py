@@ -21,15 +21,27 @@ def dele():
 
 from src.core.engine import _try_smart_split
 
-# 1. 无单位尾随数字（用户实锤场景）
+def pending_cnt():
+    return sqlite3.connect(DB).execute(
+        "SELECT COUNT(*) FROM assist_pending WHERE panel_id='accounting_daily_1'").fetchone()[0]
+
+def clear_pending():
+    c = sqlite3.connect(DB)
+    c.execute("DELETE FROM assist_pending WHERE panel_id='accounting_daily_1' AND "
+              "(records_json LIKE '%模拟飞行%' OR records_json LIKE '%水果%' OR records_json LIKE '%买菜%')")
+    c.commit(); c.close()
+
+# 1. 无单位尾随数字（用户实锤场景） ★ #1587 对齐待确认机制（#1377 改版后不直入）
+# 预清理：clear 上一轮残留卡，规避 add_pending 10 分钟去重窗口（重跑可重复）
+clear_pending()
 before = cnt()
+p_before = pending_cnt()
 out = _try_smart_split('去酷航避避暑搜模拟飞行1200', 'test_conv')
-ok = out and '已处理' in out and '1200' in out
-L.append(('PASS' if ok else 'FAIL') + ' 模拟飞行1200 返回汇总: ' + repr(out))
+ok = out and '待确认' in out and '1200' in out
+L.append(('PASS' if ok else 'FAIL') + ' 模拟飞行1200 返回待确认话术: ' + repr(out))
 if not ok: fails.append('t1')
-row = last_row()
-ok = cnt() == before + 1 and row['项目'] == '模拟飞行' and row['金额'] == 1200.0 and row['kind'] == 'flow'
-L.append(('PASS' if ok else 'FAIL') + ' 落库正确: ' + json.dumps({k: row.get(k) for k in ('项目', '金额', '分类', 'kind', '来源')}, ensure_ascii=False))
+ok = cnt() == before and pending_cnt() == p_before + 1
+L.append(('PASS' if ok else 'FAIL') + ' 进待确认队列且面板表不直入: ' + f'{p_before}->{pending_cnt()} 表{before}->{cnt()}')
 if not ok: fails.append('t2')
 
 # 2. 疑问句不记账
@@ -52,12 +64,13 @@ ok = out and '35' in out
 L.append(('PASS' if ok else 'FAIL') + ' 买水果35元回归: ' + repr(out))
 if not ok: fails.append('t5')
 
-# 5. 裸数字+动词前缀
+# 5. 裸数字+动词前缀 ★ #1587 话术断言对齐待确认机制
 out = _try_smart_split('买菜120', 'test_conv')
-ok = out and '已处理' in out and '120' in out
+ok = out and '待确认' in out and '120' in out
 L.append(('PASS' if ok else 'FAIL') + ' 买菜120: ' + repr(out))
 if not ok: fails.append('t6')
 
+clear_pending()
 dele()
 L.append('清理完成，剩余行数=%d' % cnt())
 L.append('----')

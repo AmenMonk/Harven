@@ -16,21 +16,28 @@ check('随礼→人情', classify('朋友结婚随礼') == ('人情', '支出'),
 check('无关键词退回AI分类', classify('abc', '娱乐') == ('娱乐', '支出'))
 check('全无→其他支出', classify('', '') == ('其他', '支出'))
 
-# 智能拆分端到端：写面板表而非 skill_accounting
+# 智能拆分端到端：★ #1587 更新——#1377 待确认机制改版后，识别结果先进 assist_pending
+# 待确认队列（用户确认后才入库），不再直入面板表；断言随之对齐新机制。
 from src.core.engine import _try_smart_split
-import sqlite3
+import sqlite3, json as _json
 before = sqlite3.connect(r'H:\HarvenAI\data\sqlite\lingzhi.db').execute(
     "SELECT COUNT(*) FROM panel_accounting_daily_1").fetchone()[0]
+p_before = sqlite3.connect(r'H:\HarvenAI\data\sqlite\lingzhi.db').execute(
+    "SELECT COUNT(*) FROM assist_pending WHERE panel_id='accounting_daily_1'").fetchone()[0]
 out = _try_smart_split('今天买水果花了35元', 'test_conv')
-check('智能拆分返回汇总', out and '已处理' in out, out)
+check('智能拆分返回待确认话术', out and '待确认' in out, out)
 after = sqlite3.connect(r'H:\HarvenAI\data\sqlite\lingzhi.db').execute(
     "SELECT COUNT(*) FROM panel_accounting_daily_1").fetchone()[0]
-check('写入面板表(+1)', after == before + 1, f'{before}->{after}')
-conn = sqlite3.connect(r'H:\HarvenAI\data\sqlite\lingzhi.db')
-conn.row_factory = sqlite3.Row
-row = conn.execute("SELECT * FROM panel_accounting_daily_1 WHERE 项目 LIKE '%水果%' ORDER BY id DESC LIMIT 1").fetchone()
-check('水果分类正确+元数据齐', row and row['分类'] == '买菜' and row['kind'] == 'flow' and row['方向'] == '支出' and row['来源'] == '哈文快记',
-      dict(row) if row else 'none')
-conn.execute("DELETE FROM panel_accounting_daily_1 WHERE id = ?", [row['id']])
-conn.commit(); conn.close()
+check('面板表不直入（待确认机制）', after == before, f'{before}->{after}')
+p_after = sqlite3.connect(r'H:\HarvenAI\data\sqlite\lingzhi.db').execute(
+    "SELECT COUNT(*) FROM assist_pending WHERE panel_id='accounting_daily_1'").fetchone()[0]
+check('待确认队列进队(+1)', p_after == p_before + 1, f'{p_before}->{p_after}')
+prow = sqlite3.connect(r'H:\HarvenAI\data\sqlite\lingzhi.db').execute(
+    "SELECT records_json FROM assist_pending WHERE panel_id='accounting_daily_1' "
+    "AND records_json LIKE '%水果%' ORDER BY id DESC LIMIT 1").fetchone()
+_rj = (prow[0] if prow else '') or ''
+check('水果抽取进卡（项目/金额齐）', '水果' in _rj and '35' in _rj, _rj[:120])
+_cl = sqlite3.connect(r'H:\HarvenAI\data\sqlite\lingzhi.db')
+_cl.execute("DELETE FROM assist_pending WHERE panel_id='accounting_daily_1' AND records_json LIKE '%水果%'")
+_cl.commit(); _cl.close()   # ★ #1587 修复：原写法 execute/commit 用了两个连接=没提交，残留卡坑下一轮去重
 print(f'RESULT {ok} pass / {fail} fail')

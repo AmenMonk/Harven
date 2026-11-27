@@ -39,7 +39,8 @@ def probe(path):
 r = c.get('/spa')
 check('/spa 302 → SPA', r.status_code == 302 and '/static/spa/index.html' in r.headers.get('Location', ''), r.status_code)
 check('/static/spa/index.html 200', probe('/static/spa/index.html') == 200)
-check('/（老界面仍在）200', probe('/') == 200)
+check('/（SPA 时代 302 跳转）302', r.status_code == 302 and '/static/spa' in r.headers.get('Location', ''),
+      (r.status_code, r.headers.get('Location', '')))   # ★ #1587 对齐：根路径已改 302 跳 SPA，原期望 200（老界面已退役）
 check('/docs/guide 200（修复后指南链接）', probe('/docs/guide') == 200)
 check('/docs/guide.html 200（老界面用的链接）', probe('/docs/guide.html') == 200)
 

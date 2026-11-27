@@ -6916,24 +6916,22 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
             cands = [kw]
             cur = kw
             for _ in range(3):
-                nxt = _re_nav.sub(r'(面板|页面|空间|中心|界面|工具|记录页|的页|页|库)$', '', cur).strip()
+                # ★ #1587 修复：补「生活/记录/数据/娱乐/模板」——与前端 navCommands
+                #   CAT_SUFFIX 同步（原词表缺这批，"打开家庭生活"剥不动而漏配）
+                nxt = _re_nav.sub(r'(面板|页面|空间|中心|界面|工具|记录页|记录|数据|娱乐|生活|模板|的页|页|库)$', '', cur).strip()
                 if not nxt or nxt == cur:
                     break
                 cands.append(nxt)
                 cur = nxt
-            targets = []  # (name, path)
-            try:
-                from src.core.panel_manager import get_panel_manager as _gpm_nav
-                for _p in (_gpm_nav().get_all_panels() or []):
-                    if _p.get('id') and _p.get('name'):
-                        targets.append((_p['name'], '/panel/' + _p['id']))
-            except Exception:
-                pass
-            targets += [('家庭模板', '/space/family'), ('公司模板', '/space/company'),
-                        ('创作模板', '/space/create'), ('面板中心', '/panels')]
+            # ── ★ #1587 修复：出厂固定页优先匹配（与前端 navCommands 同序：
+            #    BUILTINS→模板→别名→动态面板）。原实现动态面板名与固定词混排，
+            #    "打开家庭生活"剥出"家庭"后被 家庭日历/家庭药箱/家庭维修 多面板截胡
+            #    → 多义兜底错跳 /panels，永远轮不到家庭模板页。
+            _fixed = [('家庭模板', '/space/family'), ('公司模板', '/space/company'),
+                      ('创作模板', '/space/create'), ('面板中心', '/panels')]
             for cand in cands:
                 hits = []
-                for name, path in targets:
+                for name, path in _fixed:
                     if cand == name:
                         hits.append((path, name))
                     elif (cand in name and len(name) - len(cand) <= 2) or (name in cand and len(cand) - len(name) <= 2):
@@ -6942,6 +6940,15 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
                     return hits[0]
                 if len(hits) > 1:
                     return ('/panels', '面板管理')
+            # ── 动态面板名（关键词与面板名互含且相差≤2字，防粘连误配）──
+            targets = []  # (name, path)
+            try:
+                from src.core.panel_manager import get_panel_manager as _gpm_nav
+                for _p in (_gpm_nav().get_all_panels() or []):
+                    if _p.get('id') and _p.get('name'):
+                        targets.append((_p['name'], '/panel/' + _p['id']))
+            except Exception:
+                pass
             # 常用别名（与前端 navCommands.js PANEL_ALIAS 同步维护）：别名 → 面板ID
             _panel_ids = set()
             for _nm, _pt in targets:
@@ -7816,10 +7823,15 @@ def _try_smart_split(user_message, conversation_id):
                 _rec = {'日期': _date_split.today().isoformat(),
                         '项目': op.get('item', ''),
                         '金额': op.get('amount', 0)}
-                _pa_add('accounting_daily_1', 'accounting', [_rec],
-                        source_text=user_message[:200])
-                results.append(f"✅ {op['item']} {op['amount']}元（待确认，还没入账）")
-                recorded += 1
+                # ★ #1587 修复：add_pending 10 分钟去重拒收时不再谎报"已放进队列"，
+                #   改为如实提示刚记过（原实现拒收后照样说"已放进待确认队列"）
+                if _pa_add('accounting_daily_1', 'accounting', [_rec],
+                        source_text=user_message[:200]):
+                    results.append(f"✅ {op['item']} {op['amount']}元（待确认，还没入账）")
+                    recorded += 1
+                else:
+                    results.append(f"↩️ {op['item']} {op['amount']}元 刚才已经记过一笔了，"
+                                   f"还在待确认队列里，不用重复说～")
             except Exception as e:
                 results.append(f"❌ {op['item']} 记录失败: {e}")
         elif op['type'] == '提醒':

@@ -51,8 +51,8 @@ check("validate 抓坏配方", len(errs) >= 3, f"{len(errs)} 处")
 # YAML 往返
 p = recipe_mod.save(he.copy(), r"H:\HarvenAI\data\chains")
 r2 = recipe_mod.load(r"H:\HarvenAI\data\chains", "harveneye")
-check("YAML 落盘/读回往返", r2 is not None and r2.name == "HarvenEye"
-      and len(r2.steps) == len(he.steps))
+check("YAML 落盘/读回往返", r2 is not None and r2.name == "图片理解组合"
+      and len(r2.steps) == len(he.steps))   # #1587 修正：内置定版名为「图片理解组合」，原期望旧名 HarvenEye
 
 # ══ 2. 注册表 ══════════════════════════════════════════════════
 fork = he.copy()
@@ -131,7 +131,7 @@ Image.fromarray(np.random.randint(0, 255, (640, 480, 3), dtype=np.uint8)).save(i
 from core.chain_engine.orchestrator import _get_shared_pipeline
 out = orch.run("harveneye", {"image_path": img_path})     # 冷启动跑（不计入对比）
 check("编排器真图跑通 HarvenEye", out.get("ok"), (out.get("error") or "")[:80])
-check("B1 身份标注存在", out.get("label") == "HarvenEye（组合）执行", out.get("label", ""))
+check("B1 身份标注存在", out.get("label") == "图片理解组合（组合）执行", out.get("label", ""))   # #1587 同步定版名
 pipe = _get_shared_pipeline()
 raw = pipe.recognize(img_path)                            # 热身
 t_chain0 = time.perf_counter()

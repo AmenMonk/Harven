@@ -280,7 +280,13 @@ def classify_sensitivity(text: str, use_llm: bool = True) -> str:
 
     text = text.strip()
 
-    # 1. 过短文本直接返回 transient（无分类意义）
+    # 1. ★ #1587 修复：关键词快车道前置（毫秒级，短句含明确敏感词也要拦住）。
+    #    原顺序「过短直接 transient」把「我的密码是123456」这类短敏感句放走了。
+    kw = _classify_by_keywords(text)
+    if kw != "transient":
+        return kw
+
+    # 2. 过短文本直接返回 transient（无分类意义；过短守门只挡语义路由）
     if len(text) < _SEMANTIC_MIN_LENGTH:
         return "transient"
 

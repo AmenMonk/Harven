@@ -85,8 +85,9 @@ recs = j.get('records', [])
 n_one = sum(1 for x in recs if x.get('kind') == 'expected' and str(x.get('名称', '')).startswith('测试-学费-一次性'))
 check('一次性无自动续期', n_one == 1, n_one)
 
-# 每月：已付 → 下一期 2026-10-20
-next1 = post({'kind': 'expected', '名称': '测试-学费-每月-下一期', '金额': 100, '到期日': '2026-10-20',
+# 每月：已付 → 下一期（#1587 修正：金额改 101 绕开 #913 同日同金额近似名防重——
+# 上面刚写过「测试-学费-每月」金额 100，名称前缀互含会被判重跳过，原测试被误伤）
+next1 = post({'kind': 'expected', '名称': '测试-学费-每月-下一期', '金额': 101, '到期日': '2026-10-20',
               '周期': '每月', '分类': '孩子', '状态': '待付'})
 check('每月下一期可写入（10-20，由前端 nextDue 计算）', next1.get('success'))
 nid = (next1.get('record') or {}).get('id') if isinstance(next1.get('record'), dict) else next1.get('record')

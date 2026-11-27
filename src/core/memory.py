@@ -218,7 +218,10 @@ JSON:"""
                         break
                 sentence = user_msg[idx:sentence_end].strip()
                 # ★ 过滤问题句和太短的句子
-                if len(sentence) >= 5 and not _is_question(sentence):
+                # ★ #1587 修复：identity 类门槛降为 3（"我叫张三"只有 4 字，5 字门槛把
+                #    最经典的自我介绍拦在了门外；身份短语天然短，问句过滤照旧）
+                _min_len = 3 if category == "identity" else 5
+                if len(sentence) >= _min_len and not _is_question(sentence):
                     # ★ 添加语义前缀
                     if category == "preference":
                         content = "用户偏好：" + _clean_sentence(sentence)

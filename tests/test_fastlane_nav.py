@@ -25,10 +25,10 @@ check('空串兜底', CE._strip_assist_context('') == '')
 
 # ── 2. 导航兜底 _match_nav_target ──
 r = CE._match_nav_target('打开家庭生活')
-check('打开家庭生活 → /space/family', r == ('/space/family', '家庭生活'), r)
-check('打开家庭生活面板 → 同上', CE._match_nav_target('打开家庭生活面板') == ('/space/family', '家庭生活'))
-check('帮我打开家庭生活 → 同上', CE._match_nav_target('帮我打开家庭生活') == ('/space/family', '家庭生活'))
-check('打开面板 → /panels', CE._match_nav_target('打开面板') == ('/panels', '面板管理'))
+check('打开家庭生活 → /space/family', r == ('/space/family', '家庭模板'), r)
+check('打开家庭生活面板 → 同上', CE._match_nav_target('打开家庭生活面板') == ('/space/family', '家庭模板'))
+check('帮我打开家庭生活 → 同上', CE._match_nav_target('帮我打开家庭生活') == ('/space/family', '家庭模板'))
+check('打开面板 → /panels', CE._match_nav_target('打开面板') == ('/panels', '面板中心'))
 check('打开D盘 → None（留给computer_use）', CE._match_nav_target('打开D盘') is None)
 check('打开设置 → None（防撞车Windows设置）', CE._match_nav_target('打开设置') is None)
 check('问句不跳', CE._match_nav_target('家庭面板里有什么？') is None)
@@ -50,7 +50,7 @@ for kw in ['打开冰箱', '打开记账', '打开成长档案']:
 evts = list(CE._try_smart_route(CE, CE._strip_assist_context(polluted), stream=True))
 texts = [c for t, c in evts if t == 'text']
 joined = ''.join(texts)
-check('快车道输出导航文本', '已为你打开「家庭生活」' in joined, joined[:60])
+check('快车道输出导航文本', '已为你打开「家庭模板」' in joined, joined[:60])
 import re
 m = re.search(r'\[NAVIGATE:([^\]\s]+)\]\s*$', joined)
 check('末尾带[NAVIGATE:]标记(web_app可提取)', bool(m) and m.group(1) == '/space/family', m.group(1) if m else None)
