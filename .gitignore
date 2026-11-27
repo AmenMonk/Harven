@@ -172,3 +172,6 @@ data/conversations/*
 /check_*.py
 /tmp_*.py
 /_repro*
+
+# 测试临时落盘（#1587）
+tests/_tmp_*.json
