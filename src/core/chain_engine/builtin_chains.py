@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """内置组合（官方预置 · 精装修样板间，拆不得）。
 
-第一号 HarvenEye：哈文视觉图像组合——搬家不装修（v1.9 零破坏迁移轨）：
+第一号「图片理解组合」（原 HarvenEye，2026-11-27 D2 改名：模型选项已取消，
+配方保留为官方样板）：哈文视觉图像组合——搬家不装修（v1.9 零破坏迁移轨）：
 配方单环节照登记（L0/L1/LF/L2/L3），执行走打包执行器包装现有
 vision.Pipeline（同一引擎单例，C3 六秒红线零风险）。
 第二号 账单链：#1377 账单相册分析管线原样复用（packed_bills，四环真实计时，
@@ -16,9 +17,9 @@ from .recipe import Recipe, Step, BIND_DYNAMIC, DAMAGE_READONLY, DAMAGE_DB
 def harveneye_recipe() -> Recipe:
     return Recipe(
         id="harveneye",
-        name="HarvenEye",
+        name="图片理解组合",   # ★ D2 #1565：原 HarvenEye，id=harveneye 保持不变防破坏引用
         version="1.0.0",
-        target="哈文视觉图像组合：拍照查重→检测→认人→打标→按门控理解→入库。"
+        target="图片理解组合：拍照查重→检测→认人→打标→按门控理解→入库。"
                "底座预置全本地，理解环跟用户所选（本地或外脑，绝不偷换）。",
         origin="builtin",
         license="Apache-2.0",
@@ -67,7 +68,7 @@ def bills_chain_recipe() -> Recipe:
         name="账单链",
         version="1.0.0",
         target="账单相册照片→视觉抽取消费信息→#913 查重→管家中心待确认卡。"
-               "抽取环跟用户所选视觉模型（铁律0：HarvenEye→Eye，外脑→外脑视觉），"
+               "抽取环跟用户所选视觉模型（铁律0：本地选了看图模型→Eye，外脑→外脑视觉），"
                "照片全生命周期只扫一次（成功/失败/重复都打标记）。",
         origin="builtin",
         license="Apache-2.0",
@@ -108,7 +109,7 @@ def video_brief_recipe() -> Recipe:
         id="video_brief",
         name="视频速览",
         version="1.0.0",
-        target="视频→均匀抽帧→dhash 关键帧去重→逐关键帧识别（HarvenEye 瀑布提速版）"
+        target="视频→均匀抽帧→dhash 关键帧去重→逐关键帧识别（图片理解瀑布提速版）"
                "→VLM 汇总成稿（跟用户所选视觉模型，铁律0）。"
                "第一个用户侧示范组合：大白话讲清一段视频讲了什么。",
         origin="builtin",

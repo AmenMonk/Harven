@@ -25,6 +25,12 @@
 
     <div v-if="msg" class="tip" :class="msgOk ? 'ok' : 'bad'">{{ msg }}</div>
 
+    <!-- ★ D1 #1564 识图引导（模型中立：只告知能力位，不推任何品牌） -->
+    <div class="vision-guide">
+      <b>💡 想让哈文能看图？</b>
+      <span>挑模型时认准徽标：<b class="vg-vis">👁️ 支持识图</b> 的模型才能看懂图片；标着 <b class="vg-novis">📄 仅文字对话</b> 的只能打字聊天，看不了图。外脑和本地都一样——外脑配好钥匙就能用，本地装好后零费用。发照片、拍照记账、识别东西，都得用带 👁️ 的模型。</span>
+    </div>
+
     <!-- ═══ 分区一：外脑 ═══ -->
     <h2 class="sec"><span class="dot cloud" /> 外脑 · 云端大脑 <small>聪明但按量花钱，得配钥匙（API Key）</small></h2>
     <div class="foreign-note">
@@ -42,7 +48,12 @@
       <div v-for="p in foreignList" :key="p.id" class="fcard" :class="{ on: currentForeign === p.id, open: openId === p.id }" @click="toggleOpen(p.id)">
         <div class="f-head">
           <b>{{ FOREIGN_NAME[p.id] || p.id }}</b>
-          <span class="f-badge" :class="p.configured ? 'ok' : ''">{{ p.configured ? '钥匙已配' : '未配钥匙' }}</span>
+          <span class="f-head-badges">
+            <!-- ★ D1 #1564 识图能力徽标（模型中立，未标注不显示） -->
+            <span v-if="p.vision === true" class="f-badge vis">👁️ 支持识图</span>
+            <span v-else-if="p.vision === false" class="f-badge novis">📄 仅文字对话</span>
+            <span class="f-badge" :class="p.configured ? 'ok' : ''">{{ p.configured ? '钥匙已配' : '未配钥匙' }}</span>
+          </span>
         </div>
         <div class="f-masked">{{ p.masked || 'sk-…' }}</div>
         <div v-if="p.model_name" class="f-model">型号：{{ p.model_name }}</div>
@@ -73,6 +84,8 @@
         <div class="l-info">
           <b>{{ m.name }}</b>
           <span class="l-meta">{{ m.source }} · {{ m.size_gb != null ? m.size_gb + 'GB' : (m.desc || '本机模型') }}</span>
+          <span v-if="m.vision === true" class="l-vis vis">👁️ 支持识图</span>
+          <span v-else-if="m.vision === false" class="l-vis novis">📄 仅文字对话</span>
           <span v-if="isAlsoVertical(m)" class="l-vert-tag">🎯 垂直大脑也可用</span>
         </div>
         <button class="mini" :class="{ cur: currentLocalId === m.id }" :disabled="currentLocalId === m.id" @click="setCurrent(m)">
@@ -407,6 +420,15 @@ loadAll(true)
 .mini.danger:hover { border-color: #D9534F; color: #D9534F; }
 
 .foreign-note { font-size: 12.5px; color: var(--sub); background: var(--mode-cloud-bg); border-radius: 9px; padding: 7px 12px; margin-bottom: 11px; }
+/* ★ D1 #1564 识图引导条 */
+.vision-guide { font-size: 12.5px; color: var(--sub); background: #FFF9E6; border: 0.5px solid #F0E2B0; border-radius: 10px; padding: 9px 13px; margin-bottom: 12px; line-height: 1.6; }
+.vision-guide b { color: var(--ink); }
+.vg-vis { color: #1B7F3B; }
+.vg-novis { color: #8B949E; }
+.f-head-badges { display: flex; align-items: center; gap: 5px; }
+.f-badge.vis, .l-vis.vis { background: #E8F5EC; color: #1B7F3B; font-weight: 700; }
+.f-badge.novis, .l-vis.novis { background: #F4F5F7; color: #8B949E; }
+.l-vis { font-size: 10.5px; padding: 1px 7px; border-radius: 6px; width: fit-content; font-weight: 700; }
 .foreign-note b { color: var(--mode-cloud); }
 .foreign-note .fn-note { display: block; margin-top: 3px; color: var(--sub); }
 

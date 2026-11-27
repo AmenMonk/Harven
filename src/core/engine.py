@@ -2584,10 +2584,11 @@ SUGGEST:吉他适合多种风格。\\n我建议：民谣 + 吉他 + 90BPM + 平�
                     else:
                         # 槽位也空/脏 → 保持原细分报错（四段式指引）
                         if mm.current_model == "harveneye":
-                            return True, "HarvenEye（本地混合模型）", "harveneye", (
-                                "你处于 🤖外脑模式 → 但当前选的模型是本地的 HarvenEye → 无法用外脑推理 → "
+                            # ★ D2 #1565：对外不再叫 HarvenEye，改「本地视觉引擎（图片理解组合）」
+                            return True, "本地视觉引擎（图片理解组合）", "harveneye", (
+                                "你处于 🤖外脑模式 → 但当前选的模型是本地的视觉引擎（图片理解组合） → 无法用外脑推理 → "
                                 "请到 设置→模型管理 选一个外脑（如 智谱AI），"
-                                "或点击对话区的 🏠本地 按钮切换回本地模式用 HarvenEye"
+                                "或点击对话区的 🏠本地 按钮切换回本地模式用视觉引擎"
                             )
                         logger.warning("[Engine] 外脑模式但未选择外脑模型（current_model=%r）", mm.current_model)
                         return False, "未选择外脑模型", "ollama", (
@@ -2810,13 +2811,14 @@ SUGGEST:吉他适合多种风格。\\n我建议：民谣 + 吉他 + 90BPM + 平�
     def _pipeline_participant_name(self, participant: str) -> str:
         if participant == 'local':
             _lm = getattr(self.model, 'model', '') or '模型'
-            # ★ #1517：引擎名显示真身（协作站名不再出现「🏠 本地 harveneye」这种引擎牌）
-            if _lm == 'harveneye':
-                return "🏠 HarvenEye"
-            return f"🏠 本地 {_lm}"
+        # ★ #1517：引擎名显示真身（协作站名不再出现「🏠 本地 harveneye」这种引擎牌）
+        #   ★ D2 #1565：对外统一叫「本地视觉引擎」，不再露 HarvenEye 产品名
+        if _lm == 'harveneye':
+            return "🏠 本地视觉引擎"
+        return f"🏠 本地 {_lm}"
         if participant == 'harveneye':
-            # ★ 2026-11-15：独立 HarvenEye 站（老谭定名：就叫 HarvenEye）
-            return "🏠 HarvenEye"
+            # ★ 2026-11-15：独立视觉引擎站（原 HarvenEye 站，D2 #1565 改对外名）
+            return "🏠 本地视觉引擎"
             return f"🏠 本地 {participant[7:]}"
         if participant.startswith('gguf:'):
             try:
@@ -5611,7 +5613,7 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
                     _pch_1497 = _rpch_1497() or {}
                     if _pch_1497.get('provider') == 'ollama':
                         _eye_model = _pch_1497.get('model', '')
-                        _fc_label = f"👁️ HarvenEye · {_pch_1497.get('label') or _eye_model}（Ollama）"
+                        _fc_label = f"👁️ 本地视觉引擎 · {_pch_1497.get('label') or _eye_model}（Ollama）"
                 except Exception:
                     _pch_1497 = {}
                 if not _eye_model:
@@ -5622,7 +5624,7 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
                         if (_u_1497.get('provider') == 'ollama' and _u_1497.get('model')
                                 and bool(_est_1497().get('ready'))):
                             _eye_model = _u_1497['model']
-                            _fc_label = f"👁️ HarvenEye · {_eye_model}（本地）"
+                            _fc_label = f"👁️ 本地视觉引擎 · {_eye_model}（本地）"
                     except Exception:
                         pass
                 _fc_model = _eye_model
@@ -5687,14 +5689,14 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
                 if _pch:
                     # 有钉选大脑 → 用钉的模型答（标注真实名字，铁律 0 合规）
                     if _pch.get('provider') == 'api':
-                        _elabel = f"👁️ HarvenEye · {_pch.get('api_model', '')}（外脑视觉大脑）"
+                        _elabel = f"👁️ 本地视觉引擎 · {_pch.get('api_model', '')}（外脑视觉大脑）"
                         _emid = _pch.get('api_model', 'vision')
                     elif _pch.get('provider') == 'ollama':
-                        _elabel = f"👁️ HarvenEye · {_pch.get('label') or _pch.get('model', '')}（Ollama）"
+                        _elabel = f"👁️ 本地视觉引擎 · {_pch.get('label') or _pch.get('model', '')}（Ollama）"
                         _emid = _pch.get('model', 'vision')
                     else:
                         from pathlib import Path as _Pth2
-                        _elabel = f"👁️ HarvenEye · {_Pth2(_pch['gguf']).stem}（本地直载）"
+                        _elabel = f"👁️ 本地视觉引擎 · {_Pth2(_pch['gguf']).stem}（本地直载）"
                         _emid = _Pth2(_pch['gguf']).stem
                     self._reply_source = _elabel
                     yield ("model_source", {"model": _emid, "label": _elabel,
@@ -5710,7 +5712,7 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
                         yield ("error", f"❌ {_ere}")
                         return
                     except Exception as _eee:
-                        yield ("error", f"❌ HarvenEye 大脑回答失败: {_eee}")
+                        yield ("error", f"❌ 本地视觉大脑回答失败: {_eee}")
                         return
                     if _egot:
                         save_message(self.conversation_id, "assistant", ''.join(_efull),
@@ -5752,10 +5754,10 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
                 if _fch and _base_ok:
                     from pathlib import Path as _Pth4
                     if _fch.get("provider") == "ollama":
-                        _elabel = f"👁️ HarvenEye · {_fch['model']}（本地）"
+                        _elabel = f"👁️ 本地视觉引擎 · {_fch['model']}（本地）"
                         _emid = _fch["model"]
                     else:
-                        _elabel = f"👁️ HarvenEye · {_Pth4(_fch['gguf']).stem}（本地直载）"
+                        _elabel = f"👁️ 本地视觉引擎 · {_Pth4(_fch['gguf']).stem}（本地直载）"
                         _emid = _Pth4(_fch['gguf']).stem
                     self._reply_source = _elabel
                     yield ("model_source", {"model": _emid, "label": _elabel,
@@ -5771,7 +5773,7 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
                         yield ("error", f"❌ {_ere}")
                         return
                     except Exception as _eee:
-                        yield ("error", f"❌ HarvenEye 大脑回答失败: {_eee}")
+                        yield ("error", f"❌ 本地视觉大脑回答失败: {_eee}")
                         return
                     if _egot:
                         save_message(self.conversation_id, "assistant", ''.join(_efull),
@@ -5781,14 +5783,14 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
                 # 三件套不齐 → 按「卡在哪层」分层报错（每条至少三条出路，不给死胡同）
                 if not _base_ok:
                     yield ("error",
-                           "❌ HarvenEye 还没安装（本机没有它的视觉底座文件）。\n\n"
+                           "❌ 视觉引擎还没安装（本机没有它的视觉底座文件）。\n\n"
                            "出路：\n"
                            "① 到「视觉」页面一键安装（约 800MB，普通电脑即可，CPU 也能跑）\n"
                            "② 在 设置→模型管理 换一个本地模型\n"
                            "③ 点对话区 🤖 按钮切换外脑模式")
                 else:
                     yield ("error",
-                           "❌ HarvenEye 底座已装，但三件套里的通用大脑还没就位，没法对话。\n\n"
+                           "❌ 视觉引擎底座已装，但通用大脑还没就位，没法对话。\n\n"
                            "出路：\n"
                            "① 到「视觉」页面下载/钉选通用模型当它的大脑\n"
                            "② 电脑配置有限？在「视觉」页面把外脑视觉模型（如 GLM 看图）设为大脑，本机零负担\n"
@@ -6664,7 +6666,7 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
                 except Exception:
                     _ch = {}
                 if not _ch:
-                    yield ("error", "❌ 当前模型看不了图，也还没配置视觉模型。请到 设置→模型管理 钉选视觉模型，或安装 HarvenEye 视觉引擎")
+                    yield ("error", "❌ 当前模型看不了图，也还没配置视觉模型。请到 设置→模型管理 钉选一个支持识图的模型")
                     return
                 if _ch.get('provider') == 'api':
                     _ulabel = f"🤖 外脑看图 · {_ch.get('api_model', '')}"
@@ -6706,7 +6708,7 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
                 return
 
             if _eyecli.is_selected():
-                _label = "🏠 本地看图 · HarvenEye"
+                _label = "🏠 本地看图 · 视觉引擎"
                 self._reply_source = _label
                 yield ("model_source", {"model": "harveneye", "label": _label,
                                         "is_external": False, "mode": "vision"})
@@ -6730,14 +6732,14 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
                     yield ("error", f"❌ {_re}")
                     return
                 except Exception as _ee:
-                    yield ("error", f"❌ HarvenEye 看图失败: {_ee}")
+                    yield ("error", f"❌ 视觉引擎看图失败: {_ee}")
                     return
                 if _got:
                     save_message(self.conversation_id, "assistant", ''.join(_full),
                                  metadata={"source": _label})
                     self.history.append({"role": "assistant", "content": ''.join(_full)})
                 else:
-                    yield ("error", "❌ HarvenEye 返回了空回答，请把图片重新发一次")
+                    yield ("error", "❌ 视觉引擎返回了空回答，请把图片重新发一次")
                 return
             _base = getattr(self.model, 'base_url', 'http://localhost:11434')
             vision_model = (getattr(self.model, 'model', '') or '').strip()

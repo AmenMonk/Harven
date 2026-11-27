@@ -1179,20 +1179,20 @@ class MultiModelManager:
                             yield {'type': 'text', 'content': content}
                         else:
                             yield {'type': 'error', 'content':
-                                   f'HarvenEye 本地通道未就绪（{content or "无响应"}）。'
-                                   '请到设置页检查 HarvenEye 视觉模型，或点对话区 🏠本地 切 Ollama 对话'}
+                                   f'本地视觉通道未就绪（{content or "无响应"}）。'
+                                   '请到设置页检查看图模型，或点对话区 🏠本地 切 Ollama 对话'}
                     else:
                         ok, content = _eye.chat(messages)
                         if ok and content:
                             yield {'type': 'text', 'content': content}
                         else:
                             yield {'type': 'error', 'content':
-                                   f'HarvenEye 本地通道未就绪（{content or "无响应"}）。'
-                                   '请到设置页检查 HarvenEye 视觉模型，或点对话区 🏠本地 切 Ollama 对话'}
+                                   f'本地视觉通道未就绪（{content or "无响应"}）。'
+                                   '请到设置页检查看图模型，或点对话区 🏠本地 切 Ollama 对话'}
                 except Exception as e:
                     logger.error(f"[MultiModel] harveneye 本地通道失败: {e}", exc_info=True)
                     yield {'type': 'error', 'content':
-                           f'HarvenEye 本地对话失败: {e}。可点对话区 🏠本地 切 Ollama 对话'}
+                           f'本地视觉对话失败: {e}。可点对话区 🏠本地 切 Ollama 对话'}
             return _eye_gen()
 
         if provider_id == 'ollama':

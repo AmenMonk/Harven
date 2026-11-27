@@ -120,7 +120,7 @@ def _current_vision_provider():
     if provider_id == 'harveneye':
         # ★ #1265 防线：正常不应到达（_is_eye_selected 已拦截走 Eye 通道）——到达说明
         #   双源同时错位/异常，给可执行话术，不再撞「PROVIDERS 查无此人→不支持看图」误导报错
-        raise RuntimeError('批改状态异常（当前模型=HarvenEye 但本地通道未接上）。请重启哈文后重试；'
+        raise RuntimeError('批改状态异常（当前模型=视觉引擎但本地通道未接上）。请重启哈文后重试；'
                            '仍失败请到 设置→模型中心 选一个支持看图的外脑（如智谱 GLM）')
     if provider_id == 'ollama':
         raise RuntimeError('当前是本地模型模式。批改需要看图能力——请把外脑切换到支持看图的云端模型（如智谱 GLM）')
@@ -190,7 +190,7 @@ def _eye_vision_call_raw(images_b64: list, prompt: str):
         _t.sleep(15)
         ok, ans = eye_client.chat(msgs, timeout=180.0)
     if not ok:
-        raise RuntimeError(f'HarvenEye 批改失败: {ans}')
+        raise RuntimeError(f'视觉引擎批改失败: {ans}')
     return ans, ''
 
 
@@ -242,7 +242,7 @@ def _vision_call_raw(images_b64: list, prompt: str):
             _last_vision_route = f'外脑视觉 {model_name}（外脑槽）'
         except Exception:
             # 第三级：真没有可用外脑视觉 → 落回本地 Eye（如实标注，绝不冒充）
-            _last_vision_route = 'HarvenEye 本地视觉'
+            _last_vision_route = '视觉引擎本地视觉'
             return _eye_vision_call_raw(images_b64, prompt)
     import urllib.request
     content = [{'type': 'text', 'text': prompt}]

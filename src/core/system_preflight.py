@@ -53,10 +53,11 @@ def _collect_ports(lines):
     p7001 = _port_alive(7001)
     lines.append(f"- 服务端口 7000（哈文主服务）: {'✅ 监听中' if p7000 else '❌ 未监听'}")
     lines.append(f"- 本地引擎 11434（Ollama）: {'✅ 监听中' if p11434 else '❌ 未监听'}")
-    # ★ #1448（2026-11-05 r50）话术修正：旧写法「旧 Eye 端口 7001 …退役」被模型脑补成
-    #   「HarvenEye 已退役」（自检胡编实锤源头之一）。7001 只是历史端口残留检查项，
-    #   HarvenEye 本体早已融合进哈文主进程、完全在役——话术必须零歧义。
-    lines.append(f"- 历史端口 7001（旧独立架构残留检查，与 HarvenEye 无关，HarvenEye 在役）: "
+    # ★ #1448 话术修正：旧写法「旧 Eye 端口 7001 …退役」被模型脑补成
+    #   「视觉引擎已退役」（自检胡编实锤源头之一）。7001 只是历史端口残留检查项，
+    #   视觉引擎本体早已融合进哈文主进程、完全在役——话术必须零歧义。
+    #   ★ 2026-11-27 D2（#1565）：对外不再用 HarvenEye 产品名，改「视觉引擎/图片理解组合」
+    lines.append(f"- 历史端口 7001（旧独立架构残留检查，与视觉引擎无关，视觉引擎在役）: "
                  f"{'⚠️ 仍有进程监听（历史残留）' if p7001 else '✅ 已清零（无残留）'}")
 
 
@@ -130,17 +131,17 @@ def _collect_vision(lines):
         base = Path(r'H:\HarvenAI\data\models\vision')
         y = (base / 'yolox' / 'yolox_s.onnx').is_file()
         c1 = (base / 'chinese-clip' / 'pytorch_model.bin').is_file()
-        lines.append(f"- HarvenEye 底座: yolox {'✅' if y else '❌'} / chinese-clip {'✅' if c1 else '❌'}"
-                     f"（视觉引擎已融合进哈文主进程，HarvenEye 正常在役）")
-        # ★ #1448：补一行 HarvenEye 实时状态，给自检一个明确的「在役」事实锚点
+        lines.append(f"- 图片理解底座: yolox {'✅' if y else '❌'} / chinese-clip {'✅' if c1 else '❌'}"
+                     f"（视觉引擎已融合进哈文主进程，正常在役）")
+        # ★ #1448：补一行视觉引擎实时状态，给自检一个明确的「在役」事实锚点
         try:
             from src.core import eye_client as _ec
             _ok, _msg = _ec.is_eye_alive()
-            lines.append(f"- HarvenEye 状态: {'✅ ' + _msg if _ok else '⚠️ ' + _msg}")
+            lines.append(f"- 视觉引擎状态: {'✅ ' + _msg if _ok else '⚠️ ' + _msg}")
         except Exception:
             pass
     except Exception:
-        lines.append("- HarvenEye 底座: N/A")
+        lines.append("- 图片理解底座: N/A")
 
 
 def _collect_junk(lines):

@@ -1,5 +1,5 @@
 <template>
-  <PageShell title="视觉引擎" icon="image" sub="HarvenEye 融合版 · 看图/批改/相册识别的大本营">
+  <PageShell title="视觉引擎" icon="image" sub="图片理解组合 · 看图/批改/相册识别的大本营">
     <template #actions>
       <BigButton variant="ghost" :px="14" @click="loadAll"><HIcon name="pulse" :size="16" /> 刷新</BigButton>
     </template>

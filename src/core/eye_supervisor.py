@@ -100,8 +100,8 @@ def _start_bg(wait_s: float) -> None:
         # ★ B2：探测安装位置（环境变量 > 同盘同级 > 常见盘符），找不到给明确引导不崩哈文
         eye_home, eye_python = _find_eye()
         if eye_home is None:
-            logger.warning("[EyeSup] 未找到 HarvenEye 安装（已探测 HARVENEYE_HOME / 同盘同级 / C~H 盘标准路径）。"
-                           "视觉深度功能降级；如需使用请安装 HarvenEye 或设置环境变量 HARVENEYE_HOME 指向其目录")
+            logger.warning("[EyeSup] 未找到视觉引擎安装（已探测 HARVENEYE_HOME / 同盘同级 / C~H 盘标准路径）。"
+                           "视觉深度功能降级；如需使用请安装视觉引擎或设置环境变量 HARVENEYE_HOME 指向其目录")
             return
         fh = _log_fh()
         try:

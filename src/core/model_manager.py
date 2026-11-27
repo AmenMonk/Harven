@@ -248,7 +248,7 @@ class ModelManager:
     def _eye_fallback_notice(self, reason: str) -> str:
         """Eye 失败回退 Ollama 时的诚实标注（回答开头一行，不冒充 Eye 在答）。"""
         fb = self._pick_ollama_fallback_model()
-        return f"（⚠️ HarvenEye 暂不可用：{reason}；已回退本地模型 {fb} 回答）\n\n"
+        return f"（⚠️ 视觉引擎暂不可用：{reason}；已回退本地模型 {fb} 回答）\n\n"
 
     def _pick_ollama_fallback_model(self) -> str:
         """回退用 Ollama 模型：ollama.default_model 优先，否则已装列表第一个通用模型。"""
@@ -293,7 +293,7 @@ class ModelManager:
                 if not ok:
                     # 非流式回退：切 Ollama 引擎后重发（同步返回，标注前置）
                     if not self._ensure_ollama_fallback():
-                        raise RuntimeError(f'HarvenEye 不可用且 Ollama 回退也失败: {content}')
+                        raise RuntimeError(f'视觉引擎不可用且 Ollama 回退也失败: {content}')
                     retry_msgs = [{'role': 'system', 'content': '你是一个有帮助的AI助手。'}] + msgs[-8:]
                     fb_text = self.chat(retry_msgs, stream=False, temperature=temperature)
                     return self._eye_fallback_notice(str(content)[:80]) + (fb_text or '')
@@ -308,14 +308,14 @@ class ModelManager:
                             notice_yielded = True
                         yield piece
                     if not notice_yielded:
-                        raise RuntimeError('HarvenEye 返回空流')
+                        raise RuntimeError('视觉引擎返回空流')
                 except RuntimeError as e:
                     if notice_yielded:
                         # 已吐过答案再断——诚实标注断点
-                        yield f"\n\n（⚠️ HarvenEye 传输中断：{e}）"
+                        yield f"\n\n（⚠️ 视觉引擎传输中断：{e}）"
                         return
                     if not self._ensure_ollama_fallback():
-                        raise RuntimeError(f'HarvenEye 不可用且 Ollama 回退也失败: {e}') from e
+                        raise RuntimeError(f'视觉引擎不可用且 Ollama 回退也失败: {e}') from e
                     yield self._eye_fallback_notice(str(e)[:80])
                     notice_yielded = True
                     retry_msgs = [{'role': 'system', 'content': '你是一个有帮助的AI助手。'}] + msgs[-8:]
@@ -325,7 +325,7 @@ class ModelManager:
         except RuntimeError:
             raise
         except Exception as e:
-            raise RuntimeError(f'HarvenEye 对话失败: {e}') from e
+            raise RuntimeError(f'视觉引擎对话失败: {e}') from e
 
     def _stream_response(self, response):
         """处理流式响应，兼容普通模型和 thinking 模型（qwen3/deepseek-r1）

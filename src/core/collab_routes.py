@@ -197,15 +197,15 @@ def _validate_pipeline(steps) -> tuple:
             if pid == 'local':
                 pass  # 当前选中的本地模型，运行时解析
             elif pid == 'harveneye':
-                # ★ 2026-11-15（老谭定版）：含通用大脑的 HarvenEye 才能当站——
-                # 门禁=视觉大脑通道就绪（models_ready），没配大脑的 HarvenEye 不进流水线
+                # ★ 2026-11-15（老谭定版）：含通用大脑的视觉引擎才能当站——
+                # 门禁=视觉大脑通道就绪（models_ready）；D2 #1565：对外不露 HarvenEye 产品名
                 try:
                     from src.core import eye_client as _ec
                     _mr = _ec.models_ready()
                     if not _mr.get('ready'):
-                        return None, f"第{idx+1}站 HarvenEye 视觉大脑未就绪（先去模型中心装/钉选视觉大脑）"
+                        return None, f"第{idx+1}站 视觉引擎大脑未就绪（先去模型中心装/钉选视觉大脑）"
                 except Exception as e:
-                    return None, f"第{idx+1}站 HarvenEye 门禁校验失败: {e}"
+                    return None, f"第{idx+1}站 视觉引擎门禁校验失败: {e}"
             elif pid.startswith('ollama:'):
                 # ★ 2026-09-16：本地站可选指定 Ollama 模型
                 if pid[7:] not in _ollama_installed_models():
@@ -289,7 +289,7 @@ def collab_participants():
         from src.core import eye_client as _eye_cli
         _eye_ready = _eye_cli.models_ready()
         if _eye_ready.get('ready'):
-            chat.append({"id": "harveneye", "name": "🏠 HarvenEye", "kind": "local", "has_key": True})
+            chat.append({"id": "harveneye", "name": "🏠 本地视觉引擎", "kind": "local", "has_key": True})
     except Exception as e:
         logger.debug(f"[Collab] HarvenEye 门禁探测跳过: {e}")
     try:

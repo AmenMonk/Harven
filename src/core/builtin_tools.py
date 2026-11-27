@@ -38,7 +38,7 @@ except Exception as _e:  # pragma: no cover
     class _EyeStub:
         def __getattr__(self, name):
             def _dead(*a, **kw):
-                return {'success': False, 'error': 'HarvenEye 客户端未加载（eye_client 导入失败）'}
+                return {'success': False, 'error': '视觉引擎客户端未加载（eye_client 导入失败）'}
             return _dead
     _eye = _EyeStub()
 

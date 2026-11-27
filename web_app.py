@@ -4461,41 +4461,32 @@ def models_check():
 def models_local_all():
     """统一本地模型列表：Ollama + data/models/ + HuggingFace缓存"""
     models = []
-    # 0. ★ #1238 HarvenEye（混合模型引擎）——门禁：Eye 在线且模型已装才显示（开发者铁律：
-    #    模型未装不可出现在本地列表）；排在最前，失败静默不阻塞后两个源
-    try:
-        from src.core import eye_client
-        _eye = eye_client.models_ready()
-        if _eye.get('ready'):
-            _em = _eye.get('model', '')
-            # ★ #1543 A2：层级展示——HarvenEye 是组合（引擎），括号里是用户钉的理解大脑，
-            #   一律用 catalog 标准名（如「Qwen3-VL 8B Q6_K（求准）」），不再露目录名
-            try:
-                from src.core import vision_link as _vl_h
-                _em_show = _vl_h.human_label_for(_em)
-                if _em_show == _em:
-                    # hv-pin 换算失败/非 hv-pin（如 ollama tag / gguf stem）→ 试按钉选目录名查标准名
-                    _pinned = (_vl_h._load_mm().get('vision_model') or '').strip()
-                    if _pinned.startswith('local:vision/'):
-                        _em_show = _vl_h.catalog_label_for(_pinned.split('/', 1)[1])
-            except Exception:
-                _em_show = _em
-            models.append({'name': f'HarvenEye · 大脑：{_em_show}' if _em_show else 'HarvenEye',
-                           'source': 'HarvenEye',
-                           'size_gb': None, 'type': 'llm', 'icon': '👁️',
-                           'id': 'harveneye',
-                           'desc': '视觉组合引擎 · 检测/检索底座+你选的理解大脑 · 零费用零上传'})
-    except Exception as _e: logger.debug(f'[WebApp] HarvenEye 门禁探测跳过: {_e}')
+    # ★ 2026-11-27 D2（#1565）：HarvenEye 模型选项已取消显示——底座内部化，不再作为
+    #    模型出现在本地列表（用户易误会「要多装一套组合」）。内部通道全保留：
+    #    current_model=harveneye 仍可走 Eye 引擎，存量用户零破坏。
+    #    （原 #1238 门禁注入段整段撤除）
     # 1. Ollama
+    # ★ D1 #1564：Ollama 模型识图能力探测——POST /api/show 读 capabilities（含 'vision'）。
+    #   进程内永久缓存（能力不随运行变化），避免每次拉列表都逐个打 Ollama
     try:
-        from requests import get as rget
+        from requests import get as rget, post as rpost
+        _vshow_cache = globals().setdefault('_OLLAMA_VISION_CAP', {})
         r = rget('http://localhost:11434/api/tags', timeout=5)
         if r.status_code == 200:
             for m in r.json().get('models', []):
                 # ★ #1324：hv-pin-* 注册件不进用户模型列表（钉选链路自动管理）
                 if str(m.get('name', '')).startswith('hv-pin-'):
                     continue
-                models.append({'name': m['name'], 'source': 'Ollama', 'size_gb': round(m['size']/1e9,1), 'type': 'llm', 'icon': '🦙', 'id': 'ollama:'+m['name']})
+                _mname = m['name']
+                if _mname not in _vshow_cache:
+                    try:
+                        _sr = rpost('http://localhost:11434/api/show', json={'name': _mname}, timeout=2)
+                        _caps = (_sr.json() or {}).get('capabilities', []) if _sr.status_code == 200 else []
+                        _vshow_cache[_mname] = 'vision' in [str(c).lower() for c in _caps]
+                    except Exception:
+                        _vshow_cache[_mname] = None
+                models.append({'name': _mname, 'source': 'Ollama', 'size_gb': round(m['size']/1e9,1), 'type': 'llm', 'icon': '🦙', 'id': 'ollama:'+_mname,
+                               'vision': _vshow_cache.get(_mname)})
     except Exception as _e: logger.debug(f'[WebApp] 忽略: {_e}')
     # 2. data/models/
     mdir = os.path.join(os.path.dirname(__file__), 'data', 'models')
@@ -4505,11 +4496,14 @@ def models_local_all():
             if not os.path.isdir(full): continue
             flist = os.listdir(full)[:50]
             gguf = any(f.endswith('.gguf') for f in flist)
+            # ★ D1 #1564：本地 GGUF 识图判定 = 主模型 GGUF + mmproj 投影都在（vision_link 同款标准）
+            _has_mm = any('mmproj' in f.lower() for f in flist)
+            _vis = bool(gguf and _has_mm) if gguf else None
             mtype = 'llm' if gguf else ('music' if any(k in d.lower() for k in ['musicgen','acestep']) else 'other')
             icon = '📦' if gguf else ('🎵' if mtype=='music' else '📁')
             src = '魔搭/GGUF' if gguf else '魔搭/HF'
             size = sum(os.path.getsize(os.path.join(r,f)) for r,_,fs in os.walk(full) for f in fs if os.path.isfile(os.path.join(r,f)))
-            models.append({'name': d, 'source': src, 'size_gb': round(size/1e9,1), 'type': mtype, 'icon': icon, 'id': 'local:'+d})
+            models.append({'name': d, 'source': src, 'size_gb': round(size/1e9,1), 'type': mtype, 'icon': icon, 'id': 'local:'+d, 'vision': _vis})
     # 3. ★ 2026-07-12: 也扫描HuggingFace缓存
     try:
         from src.core.system_knowledge import scan_huggingface_cache
@@ -4525,13 +4519,19 @@ def models_local_all():
                 msize = sum(os.path.getsize(os.path.join(r,f)) for r,_,fs in os.walk(mpath) for f in fs if os.path.isfile(os.path.join(r,f)))
             # 跳过已经在data/models里的
             if not any(m['id'] == 'local:'+mname.split(' ')[0] for m in models):
+                # ★ D1 #1564：HF 缓存 GGUF 目录同样按 mmproj 判识图
+                _hf_vis = None
+                if has_gguf and mpath and os.path.isdir(mpath):
+                    _hf_fl = os.listdir(mpath)[:50]
+                    _hf_vis = any('mmproj' in f.lower() for f in _hf_fl)
                 models.append({
                     'name': mname,
                     'source': '魔搭/HF' if not has_gguf else 'HF/GGUF',
                     'size_gb': round(msize/1e9, 1),
                     'type': 'llm' if has_gguf else 'other',
                     'icon': '📦' if has_gguf else '📁',
-                    'id': 'local:'+mname.split(' ')[0].replace('/','_')
+                    'id': 'local:'+mname.split(' ')[0].replace('/','_'),
+                    'vision': _hf_vis,
                 })
     except Exception as e:
         logger.warning(f"[Models] HuggingFace缓存扫描失败: {e}")
@@ -7739,6 +7739,15 @@ def get_api_keys():
         for pid, entry in _mm_items:
             if pid in result and isinstance(entry, dict):
                 result[pid]['model_name'] = entry.get('model_name', '') or ''
+        # ★ D1 #1564（2026-11-27）：外脑识图能力位——模型中心打「👁️ 支持识图/📄 仅文字对话」徽标。
+        #   数据源=PROVIDERS.vision（模型中立：True/False 如实标注，未标注 None 前端不显示）
+        try:
+            from src.core.multi_model_manager import PROVIDERS as _PROV
+            for k in result:
+                _v = (_PROV.get(k) or {}).get('vision')
+                result[k]['vision'] = True if _v is True else (False if _v is False else None)
+        except Exception as _e:
+            logger.debug(f'[WebApp] vision 能力位跳过: {_e}')
         return jsonify({'success': True, 'keys': result})
     except Exception as e:
         return jsonify({'success': False, 'keys': {}, 'error': str(e)}), 500

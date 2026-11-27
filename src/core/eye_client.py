@@ -50,8 +50,8 @@ def _base_url() -> str:
 _TIMEOUT_HEAVY = float(os.environ.get('HARVENEYE_TIMEOUT', '180'))
 _TIMEOUT_LIGHT = 8.0
 
-_DOWN_HINT = ('HarvenEye 没有启动。告诉用户：本地视觉引擎 HarvenEye 未运行，'
-              '双击 HarvenEye 目录里的 start_eye.bat 即可启动（会自动开浏览器控制台）。'
+_DOWN_HINT = ('视觉引擎没有启动。告诉用户：本地视觉引擎未运行，'
+              '到 设置→视觉引擎 页检查，或双击 HarvenEye 目录里的 start_eye.bat 启动（会自动开浏览器控制台）。'
               '看图说话等基础视觉功能不受影响，仍可正常使用')
 
 
@@ -70,34 +70,34 @@ def _post(path: str, payload: dict, timeout: float) -> dict:
     except requests.exceptions.ConnectionError:
         return {'ok': False, 'error': _DOWN_HINT, 'down': True}
     except requests.exceptions.Timeout:
-        return {'ok': False, 'error': f'HarvenEye 响应超时（{timeout:.0f}秒），识别任务可能太重，稍后再试'}
+        return {'ok': False, 'error': f'视觉引擎响应超时（{timeout:.0f}秒），识别任务可能太重，稍后再试'}
     except Exception as e:
-        return {'ok': False, 'error': f'HarvenEye 调用失败: {e}'}
+        return {'ok': False, 'error': f'视觉引擎调用失败: {e}'}
     try:
         data = r.json()
     except Exception:
-        return {'ok': False, 'error': f'HarvenEye 返回了非 JSON 响应（HTTP {r.status_code}）'}
+        return {'ok': False, 'error': f'视觉引擎返回了非 JSON 响应（HTTP {r.status_code}）'}
     if r.status_code >= 400:
         # ★ #1260（2026-10-29 A1 四件套）：503 话术按 Eye 真实状态分流——
         #   Eye 端 503 有两种：① models_ready=False 模型真没就绪；② VlmDegraded 推理超时/失败。
         #   旧版一刀切报「还没就绪」——120s 截断被误报成未就绪，用户重试必败（实测批改实测）
         if r.status_code == 503:
             if data.get('models_ready') is False:
-                return {'ok': False, 'error': 'HarvenEye 的视觉大模型还没就绪（引擎正常，深度问答暂不可用）。'
+                return {'ok': False, 'error': '视觉引擎的视觉大模型还没就绪（引擎正常，深度问答暂不可用）。'
                                               '基础识别/搜图不受影响，可先用 eye_recognize',
                         'degraded': True, 'detail': data.get('error', '')}
             detail = str(data.get('error', ''))[:100]
             return {'ok': False,
-                    'error': (f'HarvenEye 处理超时或失败（{detail}）。可能是这页题目太多/图片太大一次批不完——'
+                    'error': (f'视觉引擎处理超时或失败（{detail}）。可能是这页题目太多/图片太大一次批不完——'
                               '稍等片刻重试一次；反复失败请把作业分开拍（一页少些题）'),
                     'degraded': True, 'timeout_like': True, 'detail': detail}
         # ★ B1 版本配套锁：404 = Eye 缺接口（新版哈文调旧版 Eye），给升级引导不报干巴巴 HTTP 码
         if r.status_code == 404:
             return {'ok': False,
-                    'error': 'HarvenEye 版本过旧，缺少该接口。请重启哈文（托管会自动拉起配套的新版 Eye）；'
-                             '若仍报错，请到 HarvenEye 目录更新后重启',
+                    'error': '视觉引擎版本过旧，缺少该接口。请重启哈文（托管会自动拉起配套的新版引擎）；'
+                             '若仍报错，请更新后重启',
                     'old_eye': True}
-        return {'ok': False, 'error': data.get('error', f'HarvenEye 返回 HTTP {r.status_code}')}
+        return {'ok': False, 'error': data.get('error', f'视觉引擎返回 HTTP {r.status_code}')}
     return {'ok': True, 'data': data}
 
 
@@ -108,7 +108,7 @@ def _get(path: str, timeout: float = _TIMEOUT_LIGHT) -> dict:
     except requests.exceptions.ConnectionError:
         return {'ok': False, 'error': _DOWN_HINT, 'down': True}
     except Exception as e:
-        return {'ok': False, 'error': f'HarvenEye 调用失败: {e}'}
+        return {'ok': False, 'error': f'视觉引擎调用失败: {e}'}
 
 
 def resolve_image_path(image_path) -> str:

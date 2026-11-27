@@ -1745,7 +1745,7 @@ def call_local_vision(prompt, image_b64, timeout=300):
     if _eyecli.is_selected():
         image_b64 = _normalize_b64_for_vision(image_b64)
         ok, ans = _eyecli.vision_chat(prompt, [image_b64], timeout=timeout)
-        return (ans.strip(), 'harveneye', '') if ok else (None, 'harveneye', f'HarvenEye 看图失败: {ans}')
+        return (ans.strip(), 'harveneye', '') if ok else (None, 'harveneye', f'视觉引擎看图失败: {ans}')
     model = _resolve_vision_model()
     if not model:
         return None, '', '本地模式没有选定模型。到「设置 → 模型中心」自己选一个能看图的本地模型，或切到外脑模式'
@@ -1870,10 +1870,10 @@ def _eye_vision(prompt, image_b64, timeout=120):
         ok, ans = eye_client.chat(
             [{'role': 'user', 'content': prompt}], timeout=timeout, image_path=path)
         if not ok:
-            return '', 'HarvenEye', ans
-        return ans, 'HarvenEye（qwen3-vl）', ''
+            return '', '视觉引擎', ans
+        return ans, '视觉引擎（qwen3-vl）', ''
     except Exception as e:
-        return '', 'HarvenEye', f'HarvenEye 看图失败: {e}'
+        return '', '视觉引擎', f'视觉引擎看图失败: {e}'
     finally:
         if path:
             try:

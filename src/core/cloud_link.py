@@ -2166,11 +2166,11 @@ def _photo_answer(img_dataurl_or_b64: str, question: str, mode: str = '') -> str
                 ]
                 ok, ans = eye_client.chat(eye_msgs, timeout=90.0, image_path=path)
                 if not ok:
-                    return f'❌ HarvenEye 看图失败：{ans}'
+                    return f'❌ 视觉引擎看图失败：{ans}'
                 return _clean_answer(ans)
         except Exception as _e:
             logger.error(f"[CloudLink] HarvenEye 看图通道异常: {_e}")
-            return f'❌ HarvenEye 看图失败：{_e}'
+            return f'❌ 视觉引擎看图失败：{_e}'
 
         try:
             if not vision_model or not model_supports_vision(vision_model, base_url=mm.base_url):

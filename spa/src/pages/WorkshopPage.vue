@@ -1,5 +1,5 @@
 <template>
-  <PageShell title="模型组合工坊" icon="grid" sub="组合即模型：几个模型串成一条链，做好后像 HarvenEye 一样被任何面板选用">
+  <PageShell title="模型组合工坊" icon="grid" sub="组合即模型：几个模型串成一条链，做好后像「图片理解组合」一样被任何面板选用">
     <template #actions>
       <BigButton v-if="mode !== 'list'" type="ghost" :disabled="false" @click="backToList"><HIcon name="x" :size="16" /> 返回列表</BigButton>
       <BigButton v-else type="ghost" @click="newChain"><HIcon name="plus" :size="16" /> 新建组合</BigButton>
