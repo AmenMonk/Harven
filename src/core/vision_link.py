@@ -285,11 +285,16 @@ def set_pin(model_id: str) -> dict:
 # ── Pipeline 单例 ─────────────────────────────────────────────────
 
 def get_pipeline():
-    """进程内视觉管线单例（线程安全）。首次调用即生效，未装引擎模型时 L1/L2 惰性加载。"""
+    """进程内视觉管线单例（线程安全）。首次调用即生效，未装引擎模型时 L1/L2 惰性加载。
+
+    ★ #1584 单载裁决第一层：单例构建前强制对齐用户钉选通道——堵死
+    「config 自导线（qwen3-vl-4b 在盘即切 llama_cpp）抢在 apply 之前建单例」
+    的竞态，那是 11-27 双载爆显存 ggml abort 的源头之一。"""
     global _pipeline
     if _pipeline is None:
         with _pipe_lock:
             if _pipeline is None:
+                apply_understand_channel()   # ★ #1584 幂等且便宜，失败不动配置
                 from src.vision.pipeline import Pipeline
                 _pipeline = Pipeline()
                 logger.info("[VisionLink] 视觉管线就绪（进程内单例）")
@@ -300,6 +305,7 @@ def rebuild_pipeline():
     """理解通道变化后重建（换 provider 需换引擎实例）。"""
     global _pipeline
     with _pipe_lock:
+        apply_understand_channel()   # ★ #1584 同步对齐后再重建
         from src.vision.pipeline import Pipeline
         _pipeline = Pipeline()
     logger.info("[VisionLink] 视觉管线已重建（理解通道变更）")

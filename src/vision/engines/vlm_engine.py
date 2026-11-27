@@ -275,8 +275,12 @@ class LlamaCppVlmEngine(BaseEngine):
     slot = "understand"
 
     def __init__(self):
-        self._llm = None
-        self._handler = None
+        # ★ #1584（2026-11-27）：推理本体已挪到独立 worker 子进程（src/vision/vision_worker.py），
+        #   本类只做客户端。背景：进程内 llama_cpp 跑 qwen3-vl 期间与 Ollama 驻留模型争 12GB
+        #   显存 → ggml-cuda 断言 abort → 哈文整进程秒死（无 traceback）。隔离后崩了只崩 worker。
+        self._proc = None          # worker 子进程句柄
+        self._port = 0             # worker HTTP 端口（写进 port-file 后得知）
+        self._worker_gguf = ""     # 当前 worker 装的模型（换模重建用）
 
     def _check_ready(self) -> None:
         """就绪检查：缺 wheel 或缺模型文件 → 带指引报错。"""
@@ -298,74 +302,123 @@ class LlamaCppVlmEngine(BaseEngine):
                 "视觉理解(llama_cpp通道)未就绪：缺视觉投影文件(mmproj)，"
                 "请到 设置→视觉引擎 重新下载")
 
+    # ── ★ #1584 worker 客户端 ────────────────────────────────
+    _WORKER_IDLE_EXIT = 900      # worker 空闲 15 分钟自动退出，下次调用重新拉起
+    _LOAD_WAIT_S = 600           # 等模型加载就绪上限（8B 首载 ~70s，留足余量）
+
+    def _worker_portfile(self):
+        from pathlib import Path as _P
+        return _P(config.MODELS_DIR).parent / "vision_worker_port.json"
+
+    def _spawn_worker(self):
+        """拉起独立 worker 子进程（幂等：同模型已活则复用）。"""
+        import hashlib
+        import subprocess
+        from pathlib import Path as _Path
+        cfg = config.ENGINES["understand"]
+        gguf = cfg["gguf"]
+        if self._proc is not None and self._proc.poll() is None and self._worker_gguf == gguf:
+            return                      # 已活且同一模型，复用
+        pf = self._worker_portfile()
+        try:
+            pf.unlink()                 # 旧端口文件清掉（换模型/旧 worker 已死场景）
+        except Exception:
+            pass
+        script = _Path(__file__).resolve().parents[1] / "vision_worker.py"
+        root = _Path(config.MODELS_DIR).parent.parent
+        log_p = _Path(config.MODELS_DIR).parent / "logs" / "vision_worker.log"
+        log_p.parent.mkdir(parents=True, exist_ok=True)
+        gguf_tag = hashlib.sha1(gguf.encode()).hexdigest()[:8]
+        logf = open(log_p, "ab")
+        kwargs = {}
+        if os.name == "nt":
+            kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        self._proc = subprocess.Popen(
+            [sys.executable, "-u", str(script),
+             "--gguf", gguf, "--mmproj", cfg["mmproj"],
+             "--num-ctx", str(cfg.get("num_ctx", config.CHAT_NUM_CTX)),
+             "--port-file", str(pf), "--idle-exit", str(self._WORKER_IDLE_EXIT)],
+            stdout=logf, stderr=subprocess.STDOUT, cwd=str(root), **kwargs)
+        self._worker_gguf = gguf
+        self._port = 0
+        print(f"[vlm] #1584 视觉 worker 已拉起 pid={self._proc.pid} 模型={_Path(gguf).name} tag={gguf_tag}", flush=True)
+
+    def _wait_worker_ready(self, wait_s: float | None = None) -> int:
+        """等 worker 监听+模型加载就绪，返回端口。超时/失败 → VlmDegraded 人话。"""
+        import json as _json
+        import time as _t
+        import urllib.request as _ur
+        pf = self._worker_portfile()
+        wait = wait_s or self._LOAD_WAIT_S
+        deadline = _t.time() + wait
+        port = 0
+        while _t.time() < deadline and port == 0:
+            if self._proc is not None and self._proc.poll() is not None:
+                raise VlmDegraded("视觉 worker 进程启动即退出（详情见 data/logs/vision_worker.log）")
+            try:
+                port = int((_json.loads(pf.read_text(encoding="utf-8")) or {}).get("port") or 0)
+            except Exception:
+                port = 0
+            if port:
+                break
+            _t.sleep(0.5)
+        if not port:
+            raise VlmDegraded(f"视觉 worker {wait:.0f}s 内未就绪（首次加载本地视觉模型较慢，请稍后重试）")
+        # 等模型真加载完（/health loaded=true；加载失败把 err 带出）
+        while _t.time() < deadline:
+            try:
+                with _ur.urlopen(f"http://127.0.0.1:{port}/health", timeout=3) as r:
+                    st = _json.load(r)
+                if st.get("loaded"):
+                    self._port = port
+                    return port
+                if st.get("err"):
+                    raise VlmDegraded(f"视觉模型加载失败：{str(st['err'])[:160]}（详情见 data/logs/vision_worker.log）")
+            except VlmDegraded:
+                raise
+            except Exception:
+                pass
+            if self._proc is not None and self._proc.poll() is not None:
+                raise VlmDegraded("视觉 worker 进程中途退出（详情见 data/logs/vision_worker.log）")
+            _t.sleep(1.0)
+        raise VlmDegraded("视觉模型加载超时，请稍后重试或到设置里改用外脑视觉模型")
+
+    def _post(self, path: str, payload: dict, timeout: float):
+        """POST 到 worker；连接类失败 → 重拉一次再试一次（worker 可能闲置自退了）。"""
+        import requests as _rq
+        try:
+            return _rq.post(f"http://127.0.0.1:{self._port}{path}", json=payload, timeout=timeout)
+        except Exception:
+            self._proc = None          # worker 已死，重建
+        self._spawn_worker()
+        self._wait_worker_ready()
+        return _rq.post(f"http://127.0.0.1:{self._port}{path}", json=payload, timeout=timeout)
+
     def load(self) -> None:
         self._check_ready()
-        _heal_cuda_runtime()   # ★ #1449 先补 CUDA 运行时 DLL 再 import llama_cpp
-        from llama_cpp import Llama
-        # Qwen3VLChatHandler 导入路径随版本漂移：新版在 llama_multimodal，旧版在 llama_chat_format
-        Qwen3VLChatHandler = None
-        try:
-            from llama_cpp.llama_multimodal import Qwen3VLChatHandler  # type: ignore
-        except ImportError:
-            try:
-                from llama_cpp.llama_chat_format import Qwen3VLChatHandler  # type: ignore
-            except ImportError:
-                pass
-        if Qwen3VLChatHandler is None:
-            raise VlmDegraded(
-                "llama-cpp-python 版本不含 Qwen3VL 视觉支持（Qwen3VLChatHandler），"
-                "请在 设置→视觉引擎 更新组件")
-        cfg = config.ENGINES["understand"]
-        self._handler = Qwen3VLChatHandler(clip_model_path=cfg["mmproj"])
-        # ★ #1431 显存守卫三梯队：env 显式指定最高优先，自动调度兜底
-        gpu_layers = int(os.environ.get("HARVENEYE_GPU_LAYERS", "-1"))
-        need_gb = float(os.environ.get("HARVENEYE_VRAM_NEED_GB", "3.2"))
-        free_gb = _cuda_free_gb()
-        if gpu_layers == -1 and free_gb is not None and free_gb < need_gb:
-            freed = _ollama_unload_all(cfg["base_url"])
-            free_gb = _cuda_free_gb()
-            if freed:
-                print(f"[vlm] 显存不足，已自动卸载 Ollama 常驻模型 {freed} 个，现空闲 {free_gb:.1f}GB", flush=True)
-            if free_gb is not None and free_gb < need_gb:
-                # 梯队②：按余量比例降层（Qwen3-VL-4B ≈36 层，Q4 权重 ~2.7GB）
-                ratio = max(0.0, min(1.0, (free_gb - 0.5) / need_gb))
-                gpu_layers = int(round(36 * ratio))
-                print(f"[vlm] 显存仍不足（{free_gb:.1f}GB/需{need_gb}GB），降层 GPU={gpu_layers}/36（其余 CPU）", flush=True)
-        load_kwargs = dict(
-            model_path=cfg["gguf"],
-            chat_handler=self._handler,
-            n_ctx=cfg.get("num_ctx", config.CHAT_NUM_CTX),
-            verbose=False,
-        )
-        try:
-            self._llm = Llama(n_gpu_layers=gpu_layers, **load_kwargs)
-        except Exception as e:
-            if gpu_layers != 0:
-                # 梯队③：GPU/混合加载仍炸 → 纯 CPU 保底
-                print(f"[vlm] GPU 加载失败({type(e).__name__})，改纯 CPU 加载", flush=True)
-                self._llm = Llama(n_gpu_layers=0, **load_kwargs)
-            else:
-                raise VlmDegraded(
-                    f"视觉模型加载失败（{type(e).__name__}）：显存/内存不足或权重损坏，"
-                    "请关闭占用显存的程序后重试") from e
+        self._spawn_worker()
+        self._wait_worker_ready()
         self.loaded = True
 
     def infer(self, image_path: str, prompt: str = "", timeout_s: float | None = None,
               **kwargs) -> EngineResult:
+        """★ #1584：经 worker 子进程推理（接口/返回不变）。"""
         t0 = self._now_ms()
         self._check_ready()
-        if not self.loaded:
+        if not self.loaded or self._port == 0:
             self.load()
+        timeout = (timeout_s or 120) + 30
         uri = self._image_to_uri(image_path)
-        messages = [{"role": "user", "content": [
-            {"type": "text", "text": prompt or "请用中文简要描述这张图片里的内容。"},
-            {"type": "image_url", "image_url": {"url": uri}},
-        ]}]
-        try:
-            out = self._llm.create_chat_completion(messages=messages, max_tokens=1024)
-        except Exception as e:
-            raise VlmDegraded(f"VLM 降级: {type(e).__name__}: {e}") from e
-        text = (out.get("choices") or [{}])[0].get("message", {}).get("content", "").strip()
+        r = self._post("/infer", {"image_b64": uri,
+                                  "prompt": prompt or "请用中文简要描述这张图片里的内容。"},
+                       timeout)
+        if r.status_code != 200:
+            try:
+                detail = (r.json() or {}).get("error", "")
+            except Exception:
+                detail = r.text[:160]
+            raise VlmDegraded(f"视觉模型处理失败：{detail or r.status_code}")
+        text = (r.json() or {}).get("text", "").strip()
         if not text:
             raise VlmDegraded("VLM 返回空内容")
         return EngineResult(
@@ -376,30 +429,44 @@ class LlamaCppVlmEngine(BaseEngine):
 
     def chat(self, messages: list[dict], stream: bool = False,
              timeout_s: float | None = None):
-        """通用对话（进程内）。
-        ★ #1446（2026-11-05 r50）：stream=True → 返回逐 token 生成器（打字机恢复，
-        llama-cpp 原生 create_chat_completion(stream=True)，Qwen3VLChatHandler 兼容）。
-        非 stream → 返回完整文本。失败抛 VlmDegraded。"""
+        """通用对话（★ #1584 起经 worker 子进程；stream=True 返回逐 token 生成器）。"""
         self._check_ready()
-        if not self.loaded:
+        if not self.loaded or self._port == 0:
             self.load()
         if stream:
             return self._stream_chat(messages)
-        try:
-            out = self._llm.create_chat_completion(messages=messages)
-        except Exception as e:
-            raise VlmDegraded(f"对话降级: {type(e).__name__}: {e}") from e
-        text = (out.get("choices") or [{}])[0].get("message", {}).get("content", "").strip()
+        timeout = (timeout_s or 120) + 30
+        r = self._post("/chat", {"messages": messages, "stream": False}, timeout)
+        if r.status_code != 200:
+            try:
+                detail = (r.json() or {}).get("error", "")
+            except Exception:
+                detail = r.text[:160]
+            raise VlmDegraded(f"对话降级：{detail or r.status_code}")
+        text = (r.json() or {}).get("text", "").strip()
         if not text:
             raise VlmDegraded("对话返回空内容")
         return text
 
     def _stream_chat(self, messages: list[dict]):
-        """逐 token 生成器（#1446）：yield 文本增量；中途异常统一转 VlmDegraded。
-        注意：生成器体惰性执行，load() 已在 chat() 里提前完成，首 chunk 即有词。"""
+        """逐 token 生成器（#1446 接口不变）：worker NDJSON 逐行透传。"""
+        import json as _json
+        import requests as _rq
         try:
-            for chunk in self._llm.create_chat_completion(messages=messages, stream=True):
-                piece = ((chunk.get("choices") or [{}])[0].get("delta") or {}).get("content") or ""
+            r = _rq.post(f"http://127.0.0.1:{self._port}/chat",
+                         json={"messages": messages, "stream": True},
+                         timeout=300, stream=True)
+            r.raise_for_status()
+            for line in r.iter_lines():
+                if not line:
+                    continue
+                try:
+                    obj = _json.loads(line.decode("utf-8", "replace"))
+                except Exception:
+                    continue
+                if obj.get("done"):
+                    break
+                piece = obj.get("t") or ""
                 if piece:
                     yield piece
         except VlmDegraded:
@@ -434,9 +501,14 @@ class LlamaCppVlmEngine(BaseEngine):
         return f"data:{mime};base64,{b64}"
 
     def unload(self) -> None:
-        """显存调度：释放进程内模型（13.2）。"""
-        self._llm = None
-        self._handler = None
+        """★ #1584：worker 进程整体终结（模型随进程消失，显存即刻归还）。"""
+        try:
+            if self._proc is not None and self._proc.poll() is None:
+                self._proc.terminate()
+        except Exception:
+            pass
+        self._proc = None
+        self._port = 0
         self.loaded = False
 
 
@@ -523,12 +595,47 @@ class ApiVlmEngine(BaseEngine):
 
 # ══ 工厂：按配置选通道（用户选谁用谁，铁律 0）══════════════════════
 
+def _ollama_model_for_same_gguf(base_url: str) -> str:
+    """★ #1584 单载裁决：本 GGUF 是否已注册进 Ollama（读同目录 .ollama_registered.json
+    缓存 + /api/tags 在列校验）。在列返回 Ollama 模型名（同一份模型，非代选），否则空。"""
+    from pathlib import Path
+    try:
+        gguf = config.ENGINES["understand"].get("gguf", "")
+        if not gguf:
+            return ""
+        cache = Path(gguf).parent / ".ollama_registered.json"
+        omodel = ((json.loads(cache.read_text(encoding="utf-8")) or {}).get("model") or "") \
+            if cache.is_file() else ""
+        if not omodel:
+            return ""
+        with urllib.request.urlopen(f"{base_url.rstrip('/')}/api/tags", timeout=2) as r:
+            names = [m.get("name", "") for m in (json.load(r) or {}).get("models", [])]
+        for n in names:
+            if n == omodel or n.split(":")[0] == omodel:
+                return omodel
+    except Exception:
+        pass
+    return ""
+
+
 def build_understand_engine() -> BaseEngine:
-    """理解槽工厂 — provider 决定通道；未知 provider 如实报错不兜底代选。"""
+    """理解槽工厂 — provider 决定通道；未知 provider 如实报错不兜底代选。
+
+    ★ #1584 单载裁决：provider=llama_cpp 但同一份 GGUF 已注册进 Ollama 时，
+    强制切 ollama 通道（同一模型非代选，铁律 0 合规）——杜绝「Ollama 驻留一份
+    + 进程内 llama_cpp 再载一份」双载爆 12GB 显存（11-27 ggml abort 实锤）。"""
     provider = config.ENGINES["understand"].get("provider", "ollama")
     if provider == "ollama":
         return OllamaVlmEngine()
     if provider == "llama_cpp":
+        base = config.ENGINES["understand"].get("base_url", "http://127.0.0.1:11434")
+        omodel = _ollama_model_for_same_gguf(base)
+        if omodel:
+            config.ENGINES["understand"]["provider"] = "ollama"
+            config.ENGINES["understand"]["model"] = omodel
+            print(f"[vlm] #1584 单载裁决: 同一模型已驻 Ollama（{omodel}），"
+                  "理解槽切 ollama 通道，不进程内双载", flush=True)
+            return OllamaVlmEngine()
         return LlamaCppVlmEngine()
     if provider == "api":
         return ApiVlmEngine()
