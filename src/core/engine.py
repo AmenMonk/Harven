@@ -1858,6 +1858,14 @@ class ConversationEngine:
         _emit('thinking', '🔎 本地工具调用中…')
         import requests as _rq_fc
         import json as _json_fc
+        # ★ #1585（2026-11-27）：死连接实锤——keep-alive 旧连接被 Ollama 侧关闭后复用，
+        #   POST 发出但对端没收（Ollama 日志无此请求），requests 在 _read_status 空等
+        #   300s 超时 → 眼镜对话 5 分钟无响应（py-spy 快照实锤）。根治三件：
+        #   ① Connection: close 每轮新建连接（本机 loopback，握手成本可忽略）
+        #   ② 超时改 (连接5s, 读120s)——本地 FC 单轮推理远用不了 300s
+        #   ③ 连接类异常自动重试 1 次（换新连接），仍失败才走原 skip 兜底
+        _fc_timeout = (5, 120)
+        _fc_hdrs = {'Connection': 'close'}
         messages = list(all_messages)
         # ★ #1497-B 补丁（2026-11-13 00:15 线上 400 实锤）：sanitize 后再发——
         #   历史注入的预查消息可能 content=None / role 非标准 / content 是 list，
@@ -1915,16 +1923,26 @@ class ConversationEngine:
                                                   #   → 400 "exceeds the available context size"。
                                                   #   显式拉高到 24576（qwen3 原生 32K 内）
                                                   'num_ctx': 24576}},
-                                timeout=300)
-                if r.status_code != 200:
-                    # ★ #1497-B 补丁：非 200 把 Ollama 响应体落日志（此前只报状态码，瞎区）
-                    logger.warning(
-                        f"[Engine] #1497-B 第{round_i+1}轮 HTTP {r.status_code}: {r.text[:300]}")
-                    return ('skip', None)
-                m = (r.json() or {}).get('message') or {}
-            except Exception as e:
-                logger.warning(f"[Engine] #1497-B 第{round_i+1}轮调用失败: {e}")
-                return ('skip', None)   # 失败不拦截 → 原有链路兜底（不回落外脑，铁律 #891）
+                                timeout=_fc_timeout, headers=_fc_hdrs)   # ★ #1585 短超时+短连接
+            except (_rq_fc.exceptions.ConnectionError, _rq_fc.exceptions.Timeout) as _ce:
+                # ★ #1585：死连接/超时自动重试 1 次（新连接），再挂才走 skip 兜底
+                try:
+                    r = _rq_fc.post('http://127.0.0.1:11434/api/chat',
+                                    json={'model': model_name, 'messages': messages,
+                                          'tools': fc_tools, 'stream': False,
+                                          'options': {'temperature': 0.3,
+                                                      'num_ctx': 24576}},
+                                    timeout=_fc_timeout, headers=_fc_hdrs)
+                except Exception as e2:
+                    logger.warning(f"[Engine] #1497-B 第{round_i+1}轮调用失败(含重试): {e2}")
+                    return ('skip', None)   # 失败不拦截 → 原有链路兜底（不回落外脑，铁律 #891）
+                logger.warning(f"[Engine] #1585 第{round_i+1}轮死连接已自动重试成功 ({type(_ce).__name__})")
+            if r.status_code != 200:
+                # ★ #1497-B 补丁：非 200 把 Ollama 响应体落日志（此前只报状态码，瞎区）
+                logger.warning(
+                    f"[Engine] #1497-B 第{round_i+1}轮 HTTP {r.status_code}: {r.text[:300]}")
+                return ('skip', None)
+            m = (r.json() or {}).get('message') or {}
             tcs = m.get('tool_calls') or []
             content = (m.get('content') or '').strip()
             if not tcs:
@@ -1963,9 +1981,10 @@ class ConversationEngine:
                     result = _json_fc.dumps({'success': False, 'error': str(e)}, ensure_ascii=False)
                 tools_used.append(name)
                 messages.append({'role': 'tool', 'content': str(result)[:8000]})
-        # 5 轮还没收笔 → 放弃总结，让用户看工具足迹
-        return ('done', '⚙️ 工具已执行（' + '、'.join(dict.fromkeys(tools_used)) +
-                '），但模型没能生成总结。请把想看的具体内容再问一次。')
+        # 5 轮还没收笔 → 放弃总结，把查到的数据直接转给人话（★ #1585：不再让机器腔出口播）
+        return ('done', '我查好了数据，但没能组织成回答。刚才查的是：'
+                + '、'.join(dict.fromkeys(tools_used))
+                + '。麻烦你再说一遍想看什么，我马上重新答。')
 
     # ★ 2026-10-05 #990 查询链分层 C′（定版拍板）——第0层纯查询直出
     #   分析信号词：命中任何一个 = 用户要的是「看法」不是「数字」→ 交模型，不直出

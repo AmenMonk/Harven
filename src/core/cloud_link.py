@@ -916,7 +916,8 @@ def _dispatch(action: str, params: dict) -> dict:
                 eng = get_conversation_engine()
                 qmode = _mobile_query_mode()
                 _last_note = time.time()
-                with _mobile_engine_conversation():
+                with _mobile_engine_conversation(conv_id=_ensure_glasses_conv_id(),
+                                                 history_cap=8):   # ★ #1585 眼镜专用会话+历史截短
                     for ev in eng.send(full_msg, stream=True, query_mode=qmode, images=imgs):
                         t, content = None, ''
                         if isinstance(ev, (tuple, list)) and len(ev) >= 2:
@@ -1586,6 +1587,8 @@ def _strip_tool_blocks(t: str) -> str:
 
 
 _mobile_conv_id = None
+_glasses_conv_id = None      # ★ #1585 眼镜口播专用会话（按日滚动，与手机远程分家）
+_glasses_conv_day = ''
 _mobile_conv_lock = threading.Lock()
 # ★ v8-①（2026-09-29）：手机对话引擎会话串行锁——手机 chat 走 eng.send() 期间锁住，
 #   防两条手机消息并发时 conversation_id 互踩（#977 中转已并发化，必须配这把锁）。
@@ -1603,13 +1606,34 @@ def _ensure_mobile_conv_id():
         return _mobile_conv_id
 
 
+def _ensure_glasses_conv_id():
+    """★ #1585（2026-11-27）：眼镜口播专用会话——与「📱 手机远程」分家，按日滚动。
+    根因实锤：眼镜问答与手机页共用一个会话，卡死轮的旧工具答案赖在历史里，
+    之后三次「你好」都答出同一份账单十笔（污染）;眼镜是一问一答口令式交互，
+    历史价值低、污染风险高 → 独立会话+按日滚动+历史截短（见 _mobile_engine_conversation）。"""
+    global _glasses_conv_id, _glasses_conv_day
+    with _mobile_conv_lock:
+        _today = datetime.now().strftime('%m-%d')
+        if not _glasses_conv_id or _glasses_conv_day != _today:
+            from src.models.database import create_conversation
+            _glasses_conv_id = create_conversation(
+                title=f"🎙️ 眼镜口播 · {_today}")
+            _glasses_conv_day = _today
+        return _glasses_conv_id
+
+
 class _mobile_engine_conversation:
     """★ v8-①：把引擎单例的 conversation_id 临时切到手机远程会话的上下文管理器。
     根因：eng.send() 内部十几处 save_message(self.conversation_id, ...) 自动落库——
     旧版手机对话走引擎后，回答存进了【电脑当前会话】，cloud_link 再手动 _save_mobile_chat
     存进「📱 手机远程」= 同一问答落两遍、电脑对话里冒出手机问答；且手机消息蹭了电脑会话
     的上下文（回答「不一样」的另一半根因）。切会话后引擎自动落库直达手机会话，一劳永逸。
-    finally 恢复原会话；异常/引擎不可用一律不碰原值。"""
+    finally 恢复原会话；异常/引擎不可用一律不碰原值。
+    ★ #1585：新增 conv_id（眼镜专用会话）与 history_cap（历史截短）两个可选参数。"""
+
+    def __init__(self, conv_id=None, history_cap=None):
+        self._conv_id = conv_id          # None → 手机远程会话（旧行为）
+        self._history_cap = history_cap  # None → 不截短（旧行为）；数字 → 只带最近 N 条
 
     def __enter__(self):
         self._locked = _mobile_engine_lock.acquire(timeout=180)   # 等上一次手机问答完
@@ -1621,7 +1645,7 @@ class _mobile_engine_conversation:
             from src.core.engine import get_conversation_engine
             eng = get_conversation_engine()
             self._prev = getattr(eng, 'conversation_id', None)
-            eng.conversation_id = _ensure_mobile_conv_id()
+            eng.conversation_id = self._conv_id or _ensure_mobile_conv_id()
             self._switched = True
             # ★ A1（2026-10-23）根修手机失忆：引擎单例的 self.history 只在启动时加载一次，
             #   旧版只换 conversation_id 不换记忆 → 手机切到「📱手机远程」会话后 GLM 拿到的
@@ -1629,6 +1653,11 @@ class _mobile_engine_conversation:
             #   「这是新对话的开头」。换会话必须换记忆，恢复时同理换回。
             try:
                 eng._load_history()
+                # ★ #1585：眼镜会话历史截短——口播一问一答不需要长记忆，
+                #   只带最近 N 条（默认 8 条=4 轮），卡死轮的旧工具答案最多污染 4 轮就滚出窗口
+                if self._history_cap and isinstance(getattr(eng, 'history', None), list) \
+                        and len(eng.history) > self._history_cap:
+                    eng.history = eng.history[-self._history_cap:]
             except Exception as _lh:
                 logger.warning(f"[CloudLink] 手机历史重载失败（继续用旧记忆）: {_lh}")
         except Exception as e:
@@ -2329,9 +2358,15 @@ def _relay_progress(req_id, note: str):
 
 
 def _voice_clean(s: str) -> str:
-    """★ #1402（A）口播清洗：剥掉眼镜端无法展示的 markdown 残留。"""
+    """★ #1402（A）口播清洗：剥掉眼镜端无法展示的 markdown 残留。
+    ★ #1585（2026-11-27）补漏实锤：眼镜把 ![](https://api.images/file/153) 原文念出来
+    ——补剥图片 markdown、链接（留链接文字）、裸 URL。"""
     import re as _re
-    s = _re.sub(r'\|', '，', str(s or ''))
+    s = str(s or '')
+    s = _re.sub(r'!\[[^\]]*\]\([^)]*\)', '', s)          # 图片 markdown 整段剥掉
+    s = _re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', s)      # [文字](链接) → 只留文字
+    s = _re.sub(r'https?://\S+', '一个链接', s)            # 裸 URL → 人话占位
+    s = _re.sub(r'\|', '，', s)
     s = _re.sub(r'[*#`>]+', '', s)
     s = _re.sub(r'\n{2,}', '。', s)
     return s.strip()

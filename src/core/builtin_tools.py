@@ -2179,24 +2179,90 @@ def get_current_model_status():
         return {'success': False, 'error': str(e)}
 
 
+_PANEL_ALIASES = {
+    # ★ #1585：眼镜/口播常见说法 → 真实面板 id（模型常只传 panel_id 不传 keyword）
+    'fridge': 'fridge_stock_1', '冰箱': 'fridge_stock_1', '冰箱库存': 'fridge_stock_1',
+    '账本': 'accounting_daily_1', '账单': 'accounting_daily_1', '记账': 'accounting_daily_1',
+    '账目': 'accounting_daily_1', 'accounting': 'accounting_daily_1',
+    'todo': 'daily_todo_1', '待办': 'daily_todo_1', '任务': 'daily_todo_1',
+}
+
+
+def _panel_recent_records(panel_id: str, limit: int = 10, time_range: str = '') -> dict:
+    """★ #1585：无关键词时列某面板最近 N 条记录（眼镜口播「看看冰箱/账本」场景）。
+    之前无关键词直接报错 → 模型连环重试 success=False 死循环。"""
+    import sqlite3
+    from pathlib import Path as _P
+    pid = _PANEL_ALIASES.get(panel_id.strip().lower(), panel_id.strip())
+    db = _P(__file__).parent.parent.parent / 'data' / 'sqlite' / 'lingzhi.db'
+    if not db.is_file():
+        return {'success': False, 'error': '面板数据库未找到'}
+    conn = sqlite3.connect(str(db))
+    conn.row_factory = sqlite3.Row
+    try:
+        tables = {r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        table = f'panel_{pid}'
+        if table not in tables:
+            return {'success': False,
+                    'error': f'没有找到面板「{panel_id}」对应的数据表。'
+                             '可用面板如：冰箱(fridge)、账本(账单/记账)、待办(todo)、'
+                             '车辆、保险、日程等——请换用这些说法重试。'}
+        cols = [r[1] for r in conn.execute(f'PRAGMA table_info("{table}")').fetchall()
+                if r[1] not in ('id', 'member', 'created_at', 'updated_at')]
+        rows = [dict(r) for r in conn.execute(
+            f'SELECT * FROM "{table}" ORDER BY id DESC LIMIT {max(1, min(int(limit or 10), 30))}').fetchall()]
+        # 时间过滤尽力而为：created_at 前缀匹配 start（记账/冰箱等都有 created_at）
+        tr_note = ''
+        if time_range:
+            try:
+                from src.core.archive_hub import parse_time_range
+                tr = parse_time_range(str(time_range))
+                if tr:
+                    start = str(tr[0])
+                    rows = [r for r in rows if str(r.get('created_at') or '')[:len(start)] >= start
+                            or any(start[:7] in str(v) for v in r.values() if v)]
+                    tr_note = f'（已按「{tr[2] if len(tr) > 2 else time_range}」尽力过滤）'
+            except Exception:
+                pass
+        results = []
+        for r in rows:
+            parts = [f'{c}:{r[c]}' for c in cols if r.get(c) not in (None, '', 0)]
+            if parts:
+                results.append({'panel': pid, 'record_id': r.get('id'), 'detail': '，'.join(parts)[:200]})
+        return {'success': True, 'count': len(results), 'results': results,
+                'note': f'这是「{pid}」面板最近{len(results)}条记录{tr_note}，'
+                        '请用短句大白话逐项转述，禁止原样输出 JSON/表格'}
+    finally:
+        conn.close()
+
+
 def query_panel_tool(keyword='', panel_id='', time_range=''):
     """★ 2026-09-26 乙（已批准）：外脑查面板档案工具 — 找自己存过的信息一轮查对地方，不再爬目录。
     面板数据/照片都存在 sqlite 里（照片是 base64 文本列），文件系统搜索注定落空。
     ★ 2026-09-27 #883：新增 time_range 参数（今天/昨天/本周/本月/上月/近N天/具体日期），
     记账类查询走档案中枢毫秒级直查，不再绕 skill 空库。
-    ★ #973：keyword 改默认值——AI 调用漏传参数时不再 TypeError 崩栈，返回人话引导补参。"""
+    ★ #973：keyword 改默认值——AI 调用漏传参数时不再 TypeError 崩栈，返回人话引导补参。
+    ★ #1585：keyword 为空但 panel_id 给了 → 不再报错循环，改列该面板最近记录
+    （眼镜口播「看看冰箱」「打开账本」实锤场景，此前连环 success=False 拖死回答）。"""
     try:
-        if not str(keyword or '').strip():
+        if not str(keyword or '').strip() and not str(panel_id or '').strip():
             return {'success': False,
-                    'error': '请提供查询关键词（keyword 参数）。请根据用户想找的内容重新调用本工具，'
-                             '例如「执照」「保险单」「血压」「雨伞」，查账目可配合 time_range（今天/本月等）。'}
+                    'error': '请提供查询关键词（keyword 参数）或面板名（panel_id 参数）。'
+                             '例如 keyword=「执照」/「血压」，或 panel_id=「冰箱」/「账本」配合 time_range=「今天」。'}
+
+        # ★ #1585：无关键词但指了面板 → 列最近记录（不报错、不循环）
+        if not str(keyword or '').strip() and str(panel_id or '').strip():
+            return _panel_recent_records(str(panel_id), limit=10, time_range=str(time_range or ''))
 
         # ★ #883 时间过滤：记账域走中枢直查（一期只做记账，二期扩全域）
         if time_range:
             try:
                 from src.core.archive_hub import parse_time_range, hub_query_accounting
                 tr = parse_time_range(str(time_range))
+                _pid_l = str(panel_id or '').strip().lower()
                 _is_acc = (str(panel_id or '') in ('accounting_daily_1', 'accounting_daily') or
+                           _PANEL_ALIASES.get(_pid_l, '') == 'accounting_daily_1' or
                            any(w in str(keyword) for w in ('账', '花', '支出', '收入', '开销', '金额')))
                 if tr and _is_acc:
                     start, end, label = tr
