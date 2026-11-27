@@ -60,6 +60,7 @@ class Registry:
             models += self._vision_catalog_models()
             models += self._ollama_models()
             models += self._cloud_models()
+            models += self._vertical_models()         # ★ #1571 件4：垂直插座上的生成件进组合可选清单
             self._model_cache = models
             self._model_cache_ts = time.time()
             return models
@@ -169,6 +170,74 @@ class Registry:
         except Exception:
             pass
         return out
+
+    def _vertical_models(self) -> list:
+        """★ #1571 件4 万能模板通道：用户自装的垂直模型（动态适配器插座上的）
+        → 组合可用条目。零特判：能力位直接用 canvas_type 原词（music_generation/
+        image_generation/speech/...），装了什么类别就有什么能力位，代码不认识任何具体模型。
+        只收「可执行生产件」（engine=tool_executor，MusicGen/SD/Bark 类）——
+        直答对话类垂直模型（ollama/llama_cpp 引擎）已由 _ollama_models 覆盖。"""
+        out = []
+        try:
+            import sys
+            if r"H:\HarvenAI" not in sys.path:
+                sys.path.insert(0, r"H:\HarvenAI")
+            from src.core import vertical_api as va
+            seen = set()
+            pool = list(getattr(va, "_BUILTIN_MODELS", []) or [])
+            _dyn = getattr(va, "_dynamic_models", None)
+            if isinstance(_dyn, dict):
+                pool += list(_dyn.values())
+            elif isinstance(_dyn, list):
+                pool += list(_dyn)   # ★ 实锤防御：运行时 _dynamic_models 可能被换成 list
+            for m in pool:
+                mid = str(m.get("id") or "")
+                if not mid or mid in seen:
+                    continue
+                seen.add(mid)
+                if m.get("engine") != "tool_executor":
+                    continue
+                canvas = str(m.get("canvas_type") or "special")
+                out.append({"id": f"vert:{mid}", "label": f"{m.get('name') or mid}（垂直模型）",
+                            "channel": "vertical",
+                            "capabilities": [canvas],
+                            "vram_gb": float(m.get("vram_gb") or 2.0),
+                            "builtin": False, "installed": True,
+                            "vert_model_id": mid})
+        except Exception:
+            pass
+        return out
+
+    def chat_chains(self) -> list:
+        """★ #1571 件1 对话型组合清单：启用的用户侧组合里，能力含 text_gen 或
+        vision_understand 的（末环是理解/生成大脑、吃文或图、出人话）——
+        这些是「复合本地模型」，可被选为当前对话大脑（泛化 HarvenEye 范式）。
+        管道型组合（账单链/视频速览等专项输出）不在此列，仍只走垂直页。"""
+        out = []
+        for r in self.list_chains():
+            if not r.enabled or not r.meta.get("user_facing", True):
+                continue
+            caps = sorted(r.capabilities())
+            if "text_gen" not in caps and "vision_understand" not in caps:
+                continue
+            out.append({"id": f"chain:{r.id}", "label": f"🧩 {r.name}（组合）",
+                        "channel": "chain", "capabilities": caps,
+                        "vram_gb": self.peak_vram_gb(r),
+                        "builtin": False, "installed": True,
+                        "vision": "vision_understand" in caps,
+                        "chain_id": r.id, "target": r.target or ""})
+        return out
+
+    def peak_vram_gb(self, r) -> float:
+        """组合显存峰值（各环钉选模型 vram 取最大，与体检口径一致）。"""
+        peak = 0.0
+        for s in r.steps:
+            if s.binding == "fixed" and s.model:
+                try:
+                    peak = max(peak, self.model_vram_gb(s.model))
+                except Exception:
+                    pass
+        return round(peak, 1)
 
     def find_model(self, model_id: str, force: bool = False) -> dict | None:
         for m in self.list_models(force=force):

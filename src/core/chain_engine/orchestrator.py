@@ -240,14 +240,21 @@ class Orchestrator:
             model_id, channel = self._resolve_step_model(s, current_models)
             t0 = time.perf_counter()
             try:
+                # ★ #1571 件4 参数接力：配方环提示词 > 运行时 payload > 上游环输出。
+                #   「通用模型扩写 → 垂直模型生产」的接力不需要任何手工映射——
+                #   上一环的文本产出自动成为下一环的提示词（配方写了 prompt 则以配方为准）。
+                _up = data.get("step_output")
+                _relay = ""
+                if _up is not None and not (getattr(s, "prompt", "") or data.get("prompt", "")):
+                    from .channels import _stringify_upstream
+                    _relay = _stringify_upstream(_up)
                 handle = self.pool.acquire(model_id, channel,
                                            self.reg.model_vram_gb(model_id),
                                            keep_alive_s=s.keep_alive_s,
                                            pin=(s.keep_alive_s == -1))
                 adapter = ch.get_adapter(channel)
                 out = adapter.infer(handle, {**payload, "image_path": data.get("image_path"),
-                                             # ★ #1568 配方环提示词优先（用户在编辑器写的），运行时 payload 兜底
-                                             "prompt": (getattr(s, "prompt", "") or data.get("prompt", ""))})
+                                             "prompt": (getattr(s, "prompt", "") or data.get("prompt", "") or _relay)})
                 step_collect({"step_id": s.id, "step_name": s.name,
                               "model_id": model_id, "channel": channel,
                               "elapsed_ms": out.get("elapsed_ms", 0), "ok": True})

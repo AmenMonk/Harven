@@ -78,9 +78,18 @@ class ModelManager:
                        if 'embed' not in m.lower() and 'bge' not in m.lower() and 'minicpm' not in m.lower()]
                 model = _av[0] if _av else ""
         self.model = model
-        self._engine_type = None  # 'ollama' | 'llama_cpp' | 'harveneye' | None
+        self._engine_type = None  # 'ollama' | 'llama_cpp' | 'harveneye' | 'chain' | None
         self._llama_engine = None
         self._using_gguf = False
+        self._chain_id = ''      # ★ #1571 件1：对话型组合的户口 id
+
+        # ★ #1571 件1（2026-11-27）：对话型组合（chain:<id>）当本地大脑——编排器接力执行。
+        #   泛化 HarvenEye 当年的分流范式：末环是理解/生成大脑的组合就是一个「复合本地模型」。
+        if model.strip().startswith('chain:'):
+            self._engine_type = 'chain'
+            self._chain_id = model.strip()[6:]
+            logger.info(f"[ModelManager] 引擎已选定: 对话型组合 {self._chain_id}（组合即本地大脑，走编排器接力）")
+            return
 
         # ★ #1238: HarvenEye 混合模型引擎（走 eye_client HTTP，进程内不碰其引擎代码）
         if model.strip() == EYE_MODEL_ID:
@@ -173,18 +182,27 @@ class ModelManager:
         避免首次对话时的冷启动延迟（通常 8-15 秒）
         """
         # ★ #1238: HarvenEye 无需哈文侧预热（Eye 服务自己管模型加载），只探门禁
-        if self._engine_type == 'harveneye':
-            def _eye_check():
+        if self._engine_type in ('harveneye', 'chain'):
+            if self._engine_type == 'chain':
+                # ★ #1571 件1：组合无需预热（编排器自管加载），只探户口在不在
                 try:
-                    from src.core import eye_client
-                    r = eye_client.models_ready()
-                    if r.get('ready'):
-                        logger.info(f"[ModelManager] HarvenEye 门禁就绪: {r.get('model')}")
-                    else:
-                        logger.warning(f"[ModelManager] HarvenEye 门禁未就绪: {r.get('error') or r.get('missing')}")
+                    from src.core.chain_engine.registry import get_registry as _greg
+                    r = _greg().get_chain(self._chain_id)
+                    logger.info(f"[ModelManager] 对话型组合{'就绪' if r else '不存在'}: {self._chain_id}")
                 except Exception as e:
-                    logger.debug(f"[ModelManager] HarvenEye 探测失败: {e}")
-            threading.Thread(target=_eye_check, daemon=True).start()
+                    logger.debug(f"[ModelManager] 组合户口探测失败: {e}")
+            else:
+                def _eye_check():
+                    try:
+                        from src.core import eye_client
+                        r = eye_client.models_ready()
+                        if r.get('ready'):
+                            logger.info(f"[ModelManager] HarvenEye 门禁就绪: {r.get('model')}")
+                        else:
+                            logger.warning(f"[ModelManager] HarvenEye 门禁未就绪: {r.get('error') or r.get('missing')}")
+                    except Exception as e:
+                        logger.debug(f"[ModelManager] HarvenEye 探测失败: {e}")
+                threading.Thread(target=_eye_check, daemon=True).start()
             return
         import threading
         def _do_warmup():
@@ -206,6 +224,10 @@ class ModelManager:
     
     def chat(self, messages, stream=False, temperature=0.7, max_tokens=4096):
         """发送对话请求 — 自动选择引擎（Ollama 或 GGUF）"""
+        # ★ #1571 件1：对话型组合路径（先于专业模型拦截——组合 id 不会撞关键词，但顺序上更稳）
+        if self._engine_type == 'chain':
+            return self._chat_chain(messages, stream, temperature)
+
         # ═══ 非语言模型拦截 ═══
         _model_lower = (self.model or '').lower()
         if any(kw in _model_lower for kw in _NONCHAT_KEYWORDS):
@@ -245,6 +267,63 @@ class ModelManager:
             logger.error(f"[ModelManager] 模型调用失败: {e}")
             raise RuntimeError(f"模型调用失败: {e}") from e
     
+    def _chain_result_text(self, result) -> str:
+        """组合产出 → 回复文本（str 直用；dict 取 step_output/常见文本字段；兜底 JSON）。"""
+        import json as _json
+        if isinstance(result, str):
+            return result
+        if isinstance(result, dict):
+            so = result.get('step_output')
+            if isinstance(so, str) and so.strip():
+                return so
+            _pool = so if isinstance(so, dict) else result
+            for k in ('text', 'description', 'result', 'content', 'answer'):
+                v = _pool.get(k) if isinstance(_pool, dict) else None
+                if isinstance(v, str) and v.strip():
+                    return v
+            try:
+                return _json.dumps(result, ensure_ascii=False)[:4000]
+            except Exception:
+                return str(result)[:4000]
+        return str(result)[:4000]
+
+    def _chat_chain(self, messages, stream, temperature):
+        """★ #1571 件1：对话型组合执行——用户消息→编排器接力→末环输出即回复。
+        组合编排是同步执行（无逐 token 流），stream 时一次性 yield，诚实不伪装打字机。
+        铁律 0：组合失败如实报错带指引，绝不偷偷换模型回退。"""
+        from src.core.chain_engine.registry import get_registry as _greg
+        from src.core.chain_engine import get_orchestrator as _gorch
+        r = _greg().get_chain(self._chain_id)
+        if r is None:
+            raise RuntimeError(f"组合 {self._chain_id} 不存在（可能已被删除），请到工坊确认")
+        # 组装接力 prompt：最近几轮文字 + 本轮用户消息（组合无会话记忆，拼进提示词是最诚实的记忆替身）
+        hist = []
+        for m in messages:
+            if not isinstance(m, dict):
+                continue
+            c = m.get('content')
+            if not isinstance(c, str) or not c.strip():
+                continue
+            if m.get('role') == 'user':
+                hist.append(f"用户：{c}")
+            elif m.get('role') == 'assistant':
+                hist.append(f"助手：{c}")
+        prompt = "\n".join(hist[-10:])
+        out = _gorch().run(self._chain_id, {"prompt": prompt})
+        if not out.get('ok'):
+            _err = str(out.get('error') or '')
+            if 'image_path' in _err:
+                raise RuntimeError(f"组合「{r.name}」要看图才能干活——发一张照片（或截图）再问它")
+            raise RuntimeError(f"组合「{r.name}」执行失败: {_err}（可到工坊看物流单定位哪一环）")
+        text = self._chain_result_text(out.get('result'))
+        if not text.strip():
+            raise RuntimeError(f"组合「{r.name}」执行完成但没有产出文字（到工坊检查末环能力是否为看图理解/文字生成）")
+        if stream:
+            def _gen():
+                yield text
+            return _gen()
+        return text
+
     def _eye_fallback_notice(self, reason: str) -> str:
         """Eye 失败回退 Ollama 时的诚实标注（回答开头一行，不冒充 Eye 在答）。"""
         fb = self._pick_ollama_fallback_model()

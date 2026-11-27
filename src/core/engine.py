@@ -6707,6 +6707,49 @@ with open(os.path.join('skills', 'my_skill.md'), 'w', encoding='utf-8') as f:
                     self.history.append({"role": "assistant", "content": ''.join(_full)})
                 return
 
+            # ★ #1571 件1（2026-11-27）：当前本地主模型=对话型组合 → 编排器接力看图。
+            #   泛化 HarvenEye 分流范式：末环是看图理解大脑的组合就是「复合本地视觉模型」。
+            #   铁律 0：组合失败如实报错带指引，不偷偷换模型。
+            try:
+                _cur_local = str(getattr(self.model, 'model', '') or '')
+            except Exception:
+                _cur_local = ''
+            if _cur_local.startswith('chain:'):
+                from src.core.chain_engine.registry import get_registry as _greg_c
+                from src.core.chain_engine import get_orchestrator as _gorch
+                _cr = _greg_c().get_chain(_cur_local[6:])
+                if _cr is None:
+                    yield ("error", f"❌ 组合 {_cur_local[6:]} 不存在（可能已被删除），请到工坊确认")
+                    return
+                if 'vision_understand' not in _cr.capabilities():
+                    yield ("error", f"❌ 组合「{_cr.name}」没有看图环节，看不了图。到工坊给它的环节选「看图理解」能力")
+                    return
+                _clabel = f"🧩 {_cr.name}（组合）看图"
+                self._reply_source = _clabel
+                yield ("model_source", {"model": _cur_local, "label": _clabel,
+                                        "is_external": False, "mode": "vision"})
+                yield ("thinking", f"🧩 组合「{_cr.name}」正在接力执行…")
+                _cpayload = {"image_path": (tmp_paths or [''])[0], "prompt": _ask}
+                _cout = _gorch().run(_cr.id, _cpayload)
+                if not _cout.get('ok'):
+                    yield ("error", f"❌ 组合「{_cr.name}」执行失败: {_cout.get('error')}")
+                    return
+                _ctext = _cout.get('result')
+                if isinstance(_ctext, dict):
+                    _so = _ctext.get('step_output')
+                    _ctext = _so if isinstance(_so, str) else str(_so or _ctext)[:4000]
+                if not isinstance(_ctext, str):
+                    _ctext = str(_ctext or '')[:4000]
+                if not _ctext.strip():
+                    yield ("error", f"❌ 组合「{_cr.name}」执行完成但没有产出文字（到工坊检查末环是否为看图理解）")
+                    return
+                if len(tmp_paths) > 1:
+                    _ctext += f"\n\n（本次组合只看了第一张图，共发来 {len(tmp_paths)} 张）"
+                yield ("text", _ctext)
+                save_message(self.conversation_id, "assistant", _ctext, metadata={"source": _clabel})
+                self.history.append({"role": "assistant", "content": _ctext})
+                return
+
             if _eyecli.is_selected():
                 _label = "🏠 本地看图 · 视觉引擎"
                 self._reply_source = _label

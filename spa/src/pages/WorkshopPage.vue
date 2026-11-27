@@ -59,6 +59,8 @@
           <div class="cc-tags">
             <span v-for="cap in c.capabilities" :key="cap" class="tag">{{ capLabel(cap) }}</span>
             <span class="tag dim">v{{ c.version }}</span>
+            <span v-for="tg in (c.meta && c.meta.tags) || []" :key="'t' + tg" class="tag tagt">🏷 {{ tg }}</span>
+            <span v-if="c.meta && c.meta.user_facing === false" class="tag dim">仅后台</span>
           </div>
           <div class="cc-steps">
             <span v-for="(s, i) in c.steps" :key="s.id" class="step-chip">
@@ -113,6 +115,17 @@
             <option value="use_backup">换备选模型</option>
             <option value="skip_optional">跳过支线环</option>
           </select>
+        </label>
+        <!-- ★ #1571 件2：露脸/场景标签自选——归类主动权在用户 -->
+        <label>出现位置 <span class="help">垂直页/模型中心展示=随时点得到；仅后台=只在拍照记账等场景自动调用，不占列表</span>
+          <select v-model="form.meta.user_facing" :disabled="editing.builtin_protected">
+            <option :value="true">垂直页 / 模型中心展示</option>
+            <option :value="false">仅后台自动调用（不露脸）</option>
+          </select>
+        </label>
+        <label>场景标签 <span class="help">给组合归堆，方便找：逗号分隔，如 厨房, 冰箱 / 车辆 / 孩子</span>
+          <input :value="(form.meta.tags || []).join(',')" :disabled="editing.builtin_protected"
+                 placeholder="如：厨房, 冰箱" @input="form.meta.tags = $event.target.value.split(/[,,，]/).map(x => x.trim()).filter(Boolean)" />
         </label>
       </div>
 
@@ -276,7 +289,7 @@ const adviceRes = ref(null)
 let isNew = false
 
 const CAPS = ['dedup', 'detect', 'face', 'embed', 'tag', 'locate', 'classify', 'vision_understand', 'text_gen']
-const CAP_LABEL = { dedup: '查重', detect: '目标检测', face: '人脸', embed: '向量/语义', tag: '打标', locate: '定位', classify: '快速分类', vision_understand: '看图理解', text_gen: '文字生成' }
+const CAP_LABEL = { dedup: '查重', detect: '目标检测', face: '人脸', embed: '向量/语义', tag: '打标', locate: '定位', classify: '快速分类', vision_understand: '看图理解', text_gen: '文字生成', music_generation: '音乐生成', image_generation: '图片生成', video_generation: '视频生成', speech_synthesis: '语音合成' }
 // ★ #1568：每个能力一句人话（能力下拉后缀 + 新手参考）
 const CAP_HINT = {
   dedup: '判断是不是同一张图（毫秒级）',
@@ -288,12 +301,17 @@ const CAP_HINT = {
   classify: '毫秒级贴粗标签（1000 类，快但糙）',
   vision_understand: '真正看懂图并说出内容（主力大脑）',
   text_gen: '把前面的结果整理成人话',
+  music_generation: '按提示词合成音乐（垂直生成件）',
+  image_generation: '按提示词画图（垂直生成件）',
+  video_generation: '按提示词生视频（垂直生成件）',
+  speech_synthesis: '文字转语音（垂直生成件）',
 }
 const guideOpen = ref(true)
 
 function emptyForm() {
   return { id: '', name: '', version: '1.0.0', target: '', on_step_fail: 'abort',
-           input_type: 'image_path', output_type: 'text', license: 'Apache-2.0', steps: [] }
+           input_type: 'image_path', output_type: 'text', license: 'Apache-2.0', steps: [],
+           meta: { user_facing: true, tags: [] } }
 }
 
 const filtered = computed(() => {
@@ -346,6 +364,8 @@ function fillExample() {
   f.name = '冰箱食品识别'
   f.target = '拍冰箱照片，识别里面所有食品，输出名称/数量/状态清单'
   f.version = '1.0.0'
+  f.license = 'Apache-2.0'
+  f.meta = { user_facing: true, tags: [] }
   f.on_step_fail = 'abort'
   const vis = models.value.find(m => m.id === 'qwen3-vl-8b-q4km' && (m.capabilities || []).includes('vision_understand'))
             || models.value.find(m => (m.capabilities || []).includes('vision_understand'))
@@ -372,6 +392,10 @@ function openEdit(c) {
   getJSON(`/api/chains/${c.id}`).then(res => {
     editing.value = c
     form.value = res.recipe
+    // ★ #1571 件2：旧配方没有 meta，补默认（露脸+无标签）
+    if (!form.value.meta || typeof form.value.meta !== 'object') form.value.meta = {}
+    if (form.value.meta.user_facing == null) form.value.meta.user_facing = true
+    if (!Array.isArray(form.value.meta.tags)) form.value.meta.tags = []
     // ★ #1568：旧配方没有 prompt 字段，补空串免 v-model undefined
     for (const s of (form.value.steps || [])) if (s.prompt == null) s.prompt = ''
     isNew = false
@@ -442,10 +466,21 @@ async function importFromHub() {
   msg.value = '正在从 Hub 下载导入…'
   try {
     const r = await postJSON('/api/chains/import', { item_id: itemId })
-    const bad = r.check && !r.check.ok
-    msg.value = bad
-      ? `已导入「${r.recipe_id}」，但三道门体检有问题（${[].concat(r.check.structure, r.check.capability).filter(Boolean).join('；')}）——先别启用，去编辑页看看。`
-      : `导入成功「${r.recipe_id}」，默认停用。试跑确认没问题后，在编辑页启用即可像正式组合一样用。`
+  const bad = r.check && !r.check.ok
+  const missing = r.missing || []
+  let extra = ''
+  if (missing.length) {
+    extra = `另外缺 ${missing.length} 个依赖模型：${missing.map(m => `${m.label || m.model_id}（${m.size_gb != null ? m.size_gb + 'GB' : '大小未知'}，给「${m.for_step}」环用）`).join('、')}。去「模型中心→装新模型」或「视觉引擎」页补装后再启用。`
+    // ★ #1571 件3：依赖门一栏列出，一键跳装新页
+    setTimeout(() => {
+      if (confirm(`这个组合还缺 ${missing.length} 个依赖模型，现在去装吗？\n\n` + missing.map(m => `• ${m.label || m.model_id}${m.size_gb != null ? '（约' + m.size_gb + 'GB）' : ''}`).join('\n'))) {
+        location.hash = '#/models/install'
+      }
+    }, 300)
+  }
+  msg.value = bad
+    ? `已导入「${r.recipe_id}」，但三道门体检有问题（${[].concat(r.check.structure, r.check.capability).filter(Boolean).join('；')}）——先别启用，去编辑页看看。${extra}`
+    : `导入成功「${r.recipe_id}」，默认停用。试跑确认没问题后，在编辑页启用即可像正式组合一样用。${extra}`
   } catch (e) { err.value = '导入失败：' + e.message; return }
   loadAll()
 }
@@ -590,6 +625,7 @@ loadAll()
 .mini { border: 1px solid var(--line, #ddd); background: transparent; color: inherit; border-radius: 8px; padding: 4px 9px; cursor: pointer; font-size: 12px; }
 .mini:disabled { opacity: .4; cursor: not-allowed; }
 .mini.danger { color: #d54941; border-color: rgba(213, 73, 65, .4); }
+.tagt { background: rgba(255, 184, 0, .14); color: #b47c0e; }
 .empty-tip { grid-column: 1 / -1; text-align: center; padding: 40px 0; opacity: .6; font-size: 13px; }
 .pill { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: rgba(128, 128, 128, .14); }
 .pill.ok { background: rgba(46, 158, 91, .15); color: #2e9e5b; }

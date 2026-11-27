@@ -68,6 +68,8 @@ def list_chains():
             "id": r.id, "name": r.name, "version": r.version, "target": r.target,
             "origin": r.origin, "forked_from": r.forked_from, "license": r.license,
             "identity": r.identity(), "capabilities": caps, "enabled": r.enabled,
+            "meta": {"user_facing": r.meta.get("user_facing", True),
+                     "tags": list(r.meta.get("tags") or [])},   # ★ #1571 件2：露脸/标签透出
             "steps": [{"id": s.id, "name": s.name, "model": s.model, "engine": s.engine,
                        "binding": s.binding, "damage": s.damage} for s in r.steps],
             "last_run": last,
@@ -380,6 +382,24 @@ def share_recipe(recipe_id: str):
 
     d = src.to_dict()
     d.pop("enabled", None)  # 接收方自己决定启用
+    # ★ #1571 件3：依赖清单进包——从各环钉选模型自动盘点（id/名称/通道/大小/显存/服役环）
+    #   导入方拿这份清单做依赖门：缺什么列什么，一键去装，装齐再过三道门
+    try:
+        _deps, _seen = [], set()
+        for _s in src.steps:
+            if _s.binding == "fixed" and _s.model and _s.model not in _seen:
+                _seen.add(_s.model)
+                _m = get_registry().find_model(_s.model, force=True) or {}
+                _deps.append({"model_id": _s.model,
+                              "label": _m.get("label") or _s.model,
+                              "channel": _m.get("channel") or _s.engine,
+                              "size_gb": _m.get("size_gb"),
+                              "vram_gb": _m.get("vram_gb"),
+                              "for_step": _s.name})
+        if _deps:
+            d["deps"] = _deps
+    except Exception:
+        pass
     license_id = (data.get("license") or src.license or "MIT").strip()[:50]
     desc = (data.get("description") or f"哈文组合包：{src.name}（{len(src.steps)} 环）").strip()
 
@@ -473,6 +493,16 @@ def import_recipe():
     if not res.get("ok"):
         return _err("；".join(res.get("errors") or ["导入校验失败"]))
     _sync_binding()
+    # ★ #1571 件3 依赖门：导入方按包内 deps 清单对账——缺什么列什么（名称/大小/去哪装），
+    #   不阻塞导入（组合先落为停用），装齐后三道门自然放行
+    missing = []
+    try:
+        for _dep in (raw.get("deps") or []):
+            _mid = str(_dep.get("model_id") or "")
+            if _mid and not reg.find_model(_mid, force=True):
+                missing.append(_dep)
+    except Exception:
+        pass
     # 结构门+能力门立即体检一遍，把结果一并告诉前端
     check = {"ok": True}
     try:
@@ -483,5 +513,5 @@ def import_recipe():
                  "structure": s.get("problems"), "capability": c2.get("problems")}
     except Exception:
         pass
-    return _ok(recipe_id=new_id, check=check,
-               hint="已导入并停用，请在工坊里试跑确认后再启用")
+    return _ok(recipe_id=new_id, check=check, missing=missing,
+               hint="已导入并停用，请在工坊里试跑确认后再启用；依赖缺失按清单补装")

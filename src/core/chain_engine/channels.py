@@ -233,12 +233,95 @@ class _CloudSlot:
         return self.model_id
 
 
+# ══ vertical：万能模板通道（★ #1571 件4）══════════════════════════
+# 用户自装的一切垂直模型（动态适配器插座上的统一身份证）都能进组合——
+# 本适配器零特判：不认识任何具体模型，只按 model.engine 分支调垂直层
+# 现成的统一执行函数（tool_executor=MusicGen/SD/Bark 类生产件；ollama=对话类）。
+# 装了什么类别（canvas_type）就登记什么能力位，能力位原词进配方无白名单。
+class VerticalAdapter(BaseAdapter):
+    channel = "vertical"
+
+    def load(self, model_id: str):
+        import sys
+        if r"H:\HarvenAI" not in sys.path:
+            sys.path.insert(0, r"H:\HarvenAI")
+        from src.core import vertical_api as va
+        vert_id = model_id.split(":", 1)[1] if ":" in model_id else model_id
+        m = next((x for x in (getattr(va, "_BUILTIN_MODELS", []) or [])
+                  if x.get("id") == vert_id), None) \
+            or va._dynamic_models.get(vert_id)
+        if not m:
+            raise ChannelError(f"垂直模型未登记: {vert_id}（去垂直大脑页确认它已装好）")
+        return _VerticalSlot(m)
+
+    def infer(self, handle, payload: dict) -> dict:
+        return handle.infer(payload)
+
+
+class _VerticalSlot:
+    """垂直模型统一执行槽：params 从 payload 组装（prompt=上游接力文本/配方提示词）。"""
+    _SUPPORTED = ("tool_executor", "ollama")
+
+    def __init__(self, model: dict):
+        self._m = model
+
+    def infer(self, payload: dict) -> dict:
+        t0 = time.perf_counter()
+        engine = self._m.get("engine", "tool_executor")
+        params = {"prompt": str(payload.get("prompt", "") or "")}
+        # 上游环若给了文本，也放进 text 键（表单型垂直模型常用 text 字段）
+        up = payload.get("step_output")
+        if up and not params["prompt"]:
+            params["prompt"] = _stringify_upstream(up)
+        if params["prompt"]:
+            params.setdefault("text", params["prompt"])
+        try:
+            if engine == "tool_executor":
+                from src.core.vertical_api import _execute_via_tool_executor
+                r = _execute_via_tool_executor(self._m, params)
+            elif engine == "ollama":
+                from src.core.vertical_api import _execute_via_ollama
+                r = _execute_via_ollama(self._m, params)
+            else:
+                return {"ok": False, "elapsed_ms": 0.0,
+                        "result": f"垂直模型 {self._m.get('id')} 引擎类型 {engine} 暂不支持入组合"
+                                  "（目前支持 tool_executor 生成件与 ollama 对话件）"}
+            ok = bool(r.get("success", True)) and not r.get("error")
+            return {"ok": ok, "result": r.get("data", r),
+                    "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1),
+                    "error": r.get("error") if not ok else ""}
+        except Exception as e:
+            return {"ok": False, "result": f"垂直模型执行失败: {e}",
+                    "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1)}
+
+    def raw(self):
+        return self._m.get("id")
+
+
+def _stringify_upstream(up) -> str:
+    """上游环输出 → 本环可吃的文本（str 直用；dict 取常见文本字段；兜底 JSON 截断）。"""
+    if isinstance(up, str):
+        return up
+    if isinstance(up, dict):
+        for k in ("text", "description", "result", "content", "answer"):
+            v = up.get(k)
+            if isinstance(v, str) and v.strip():
+                return v
+        try:
+            import json as _j
+            return _j.dumps(up, ensure_ascii=False)[:4000]
+        except Exception:
+            return str(up)[:4000]
+    return str(up)[:4000]
+
+
 # ══ 适配器注册表 ═══════════════════════════════════════════════
 ADAPTERS: dict[str, BaseAdapter] = {
     "internal": InternalAdapter(),
     "llama_cpp": LlamaCppAdapter(),
     "ollama": OllamaAdapter(),
     "cloud": CloudAdapter(),
+    "vertical": VerticalAdapter(),   # ★ #1571 件4 万能模板通道
 }
 
 

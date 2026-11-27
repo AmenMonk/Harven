@@ -609,9 +609,12 @@ def get_mm():
                 # （current_model 优先于 ollama.default_model——选 Eye 时不污染 Ollama 镜像）
                 if (config.get('current_model') or '').strip() == 'harveneye':
                     model_name = 'harveneye'
+                # ★ #1571 件1：对话型组合（chain:<id>）当本地大脑 → 原样传给 ModelManager 分流
+                elif (config.get('current_model') or '').strip().startswith('chain:'):
+                    model_name = (config.get('current_model') or '').strip()
                 # empty → 用户未选模型，不强制回退（让调用方自行判断可用引擎）
                 # 启动时验证模型是否适配本机显存（有模型名时才做）
-                if model_name != 'harveneye':
+                if model_name != 'harveneye' and not model_name.startswith('chain:'):
                     model_name = _validate_model_vram(model_name)
                 _mm = ModelManager(base_url, model_name)
     return _mm
@@ -4465,6 +4468,16 @@ def models_local_all():
     #    模型出现在本地列表（用户易误会「要多装一套组合」）。内部通道全保留：
     #    current_model=harveneye 仍可走 Eye 引擎，存量用户零破坏。
     #    （原 #1238 门禁注入段整段撤除）
+    # ★ #1571 件1：对话型组合进本地列表（组合即本地大脑，带 🧩 徽标可设为当前）
+    try:
+        from src.core.chain_engine.registry import get_registry as _get_reg
+        for _cc in _get_reg().chat_chains():
+            models.append({'name': _cc['label'], 'source': '组合', 'size_gb': None,
+                           'type': 'llm', 'icon': '🧩', 'id': _cc['id'],
+                           'vision': _cc.get('vision'),
+                           'desc': _cc.get('target') or '多环节接力流水线 · 组合即本地大脑'})
+    except Exception as _e:
+        logger.debug(f'[WebApp] 对话型组合列举跳过: {_e}')
     # 1. Ollama
     # ★ D1 #1564：Ollama 模型识图能力探测——POST /api/show 读 capabilities（含 'vision'）。
     #   进程内永久缓存（能力不随运行变化），避免每次拉列表都逐个打 Ollama
@@ -4605,7 +4618,8 @@ def _apply_local_model(model_id):
             _mm = None
         # ★ R4 2026-09-23 显存换班后台化：预热放后台线程，接口立即返回
         # ★ #1238: HarvenEye 不走 Ollama 预热（Eye 服务自己管模型加载，探门禁即可）
-        if model_id != 'harveneye':
+        # ★ #1571 件1：对话型组合同样不走 Ollama 预热（编排器自管加载）
+        if model_id != 'harveneye' and not model_id.startswith('chain:'):
             actual_name = _actual
             import threading as _th
             def _warmup(name):
@@ -4637,6 +4651,11 @@ def models_set_current():
     model_id = data.get('model_id', '').strip()
     if not model_id:
         return jsonify({'success': False, 'error': '缺少 model_id'}), 400
+
+    # ★ #1571 件1：对话型组合放行——组合即本地大脑（编排器接力，能力门已拦管道型）
+    if model_id.startswith('chain:'):
+        _apply_local_model(model_id)
+        return jsonify({'success': True, 'current': model_id})
 
     # ★ 2026-07-12: 禁止把垂直模型设为当前通用模型
     _VERTICAL_KW = ['musicgen', 'bark', 'riffusion', 'audiocraft', 'whisper',
@@ -11234,6 +11253,8 @@ AI自动生成的Skill。
                     _target = str((_gcfg() or {}).get('default_model', '') or '').strip()
                 elif _cur == 'harveneye':
                     _target = 'harveneye'
+                elif _cur.startswith('chain:'):
+                    _target = ''        # ★ #1571 件1：对话型组合无需预载（编排器自管加载）
                 else:
                     _target = ''        # 用户选的外脑，走 API 无需预载
                 if _target:
