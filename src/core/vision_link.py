@@ -361,6 +361,7 @@ def list_local_vision_models() -> list[dict]:
         baseline = {str(k).lower() for k in _BASE}
     except Exception:
         baseline = {"yolox", "chinese-clip"}
+    baseline.add("face")   # ★ B #1567（2026-11-27）：人脸底座目录（YuNet/SFace，#1470）不是理解大脑，别混进清单误导
     for d in sorted(_VISION_MODELS_DIR.iterdir()):
         if not d.is_dir() or d.name.lower() in baseline:
             continue

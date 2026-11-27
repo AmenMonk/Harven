@@ -94,6 +94,44 @@
       </div>
     </div>
 
+    <!-- ═══ 分区二·补：视觉大脑（★ B #1567：看图模型一等公民——qwen3-vl 三档从隐藏 hv-pin 升格到台面，与聊天大脑分选） ═══ -->
+    <h2 class="sec"><span class="dot local" /> 👁️ 视觉大脑（看图专用）<small>发照片、拍照记账、图片理解组合时真正「看懂图」的模型——和聊天大脑分开，各选各的</small></h2>
+    <div v-if="visionBrains.error" class="empty">视觉大脑清单加载失败：{{ visionBrains.error }}</div>
+    <template v-else>
+      <div class="m-grid">
+        <div v-for="m in visionBrains.local" :key="m.id" class="lcard">
+          <span class="l-icon">👁️</span>
+          <div class="l-info">
+            <b>{{ m.label || m.name }}</b>
+            <span class="l-meta">本地 · {{ m.size_gb != null ? m.size_gb + 'GB' : '' }}{{ m.ready ? '' : ' · 文件不全' }}</span>
+            <span v-if="visionBrains.pinned === m.id" class="l-vis vis">✅ 当前看图大脑</span>
+          </div>
+          <button v-if="m.ready" class="mini" :class="{ cur: visionBrains.pinned === m.id }" :disabled="visionBrains.pinned === m.id || busyId === m.id + ':pin'" @click="pinVision(m)">
+            {{ visionBrains.pinned === m.id ? '使用中' : '设为看图大脑' }}
+          </button>
+          <button v-else class="mini" disabled title="目录里主模型或 mmproj 不齐，去视觉引擎页重装">文件不全</button>
+        </div>
+        <div v-for="c in visionBrains.cloud" :key="c.id" class="lcard">
+          <span class="l-icon">☁️</span>
+          <div class="l-info">
+            <b>{{ c.name || c.id }}</b>
+            <span class="l-meta">外脑 · 按量花钱（钥匙在上方外脑区配）</span>
+            <span v-if="visionBrains.pinned === c.id" class="l-vis vis">✅ 当前看图大脑</span>
+          </div>
+          <button class="mini" :class="{ cur: visionBrains.pinned === c.id }" :disabled="visionBrains.pinned === c.id || busyId === c.id + ':pin'" @click="pinVision(c)">
+            {{ visionBrains.pinned === c.id ? '使用中' : '设为看图大脑' }}
+          </button>
+        </div>
+      </div>
+      <div class="voice-row">
+        <div class="row-main">
+          <b>没钉选时用谁看图？</b>
+          <span>当前聊天外脑如果支持识图（带 👁️ 徽标）就自动顶上；再不行走出厂默认通道。<template v-if="visionBrains.pinned">已钉选「{{ visionPinnedLabel }}」，看图固定用它。</template></span>
+          <button v-if="visionBrains.pinned" class="mini" style="margin-top:5px; width:fit-content" @click="pinVision(null)">清除钉选（回到自动顶上逻辑）</button>
+        </div>
+      </div>
+    </template>
+
     <!-- ═══ 分区三：本地垂直 ═══ -->
     <h2 class="sec"><span class="dot vert" /> 本地 · 专项大脑（垂直模型）<small>点卡片下方按钮跳去对应专项面板使用（垂直模型在面板里选，不走聊天框）</small></h2>
     <div v-if="!verticals.length" class="empty">还没装专项大脑 —— 音乐工坊、图片生成等模型会出现在这里</div>
@@ -103,6 +141,8 @@
         <span class="v-type">{{ VTYPE_TEXT[v.canvas_type] || v.canvas_type || '专项' }}</span>
         <span class="v-desc">{{ v.capability?.can_do?.[0] || v.description || '' }}</span>
         <span class="v-where">💡 在「{{ VTYPE_PANEL[v.canvas_type] || '更多 → 专项大脑面板' }}」里选用这个模型</span>
+        <!-- ★ C #1567：垂直模型加「去用」路径——直答页所有专项模型都能当场试 -->
+        <div class="voice-btns"><a href="#/vertical"><button class="mini">🚀 去直答页用</button></a></div>
       </div>
     </div>
     <!-- ═══ 分区三·补：底座部件（#1561 模型中心合流：registry 户口在这也看得见） ═══ -->
@@ -112,7 +152,12 @@
         <b class="v-name">{{ b.label || b.id }}</b>
         <span class="v-type">{{ (b.capabilities || []).join('/') }} · {{ b.vram_gb }}GB</span>
         <span class="v-desc">{{ b.package ? '📦 接入包导入的模型' : b.builtin ? '✅ 哈文预置部件' : '🔌 已登记部件' }}</span>
-        <span class="v-where">💡 在「工坊」建组合链时，从环节的模型下拉里选它</span>
+        <!-- ★ A #1567：底座部件说清「在哪服役、怎么触发」——不再只给看不给用 -->
+        <span class="v-where">💡 拍照记账、照片自动归位、查重时<b>毫秒级自动服役</b>，不用手动选；在「工坊」建流水线时也可从环节下拉里选它</span>
+        <div class="voice-btns">
+          <a href="#/photos"><button class="mini">📍 去图片库看效果</button></a>
+          <a href="#/workshop"><button class="mini">🧩 去工坊组合</button></a>
+        </div>
       </div>
     </div>
 
@@ -365,6 +410,36 @@ async function setCurrent(m) {
     else flash('切换失败：' + (j.error || '未知错误'), false)
   } catch (e) { flash('切换失败：' + e.message, false) }
 }
+
+/* ── ★ B #1567 视觉大脑区：qwen3-vl 三档+外脑候选一等公民（接 /api/vision/models 现成链路，零后端改动）── */
+const visionBrains = ref({ local: [], cloud: [], pinned: '', error: '' })
+const visionPinnedLabel = computed(() => {
+  const p = visionBrains.value.pinned
+  if (!p) return ''
+  const hit = [...visionBrains.value.local, ...visionBrains.value.cloud].find(x => x.id === p)
+  return (hit && (hit.label || hit.name)) || p
+})
+async function loadVision() {
+  try {
+    const j = await getJSON('/api/vision/models')
+    if (j.success) visionBrains.value = { local: j.local || [], cloud: j.cloud || [], pinned: j.pinned || '', error: '' }
+    else visionBrains.value = { local: [], cloud: [], pinned: '', error: j.error || '未知错误' }
+  } catch (_) { /* 旧后端无此路由时静默隐藏（v-else 空清单不挡页面） */ }
+}
+async function pinVision(m) {
+  const id = m ? m.id : ''
+  if (!m && !confirm('清除看图大脑钉选？之后看图走「当前外脑支持识图就自动用」的自动逻辑')) return
+  busyId.value = (m ? m.id : 'clear') + ':pin'
+  try {
+    const j = await postJSON('/api/vision/models/pin', { model_id: id })
+    if (j.success) {
+      flash(m ? `看图大脑已换成「${m.label || m.name}」，发照片/拍照记账即刻生效` : '已清除钉选，看图回到自动逻辑')
+      await loadVision()
+    } else flash(j.error || '钉选失败', false)
+  } catch (e) { flash('钉选失败：' + e.message, false) }
+  finally { busyId.value = '' }
+}
+loadVision()
 
 /* #1557 模型体检 */
 const checkupBusy = ref(false)
