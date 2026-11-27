@@ -551,6 +551,8 @@ async function pinVisionModel(m) {
 loadVision()
 
 /* ── ★ #1578 组合卡：组成模型链 + 调用规则（人话渲染）── */
+/* ★ #1580a 修复：CAP_LABEL 上一版漏定义 → 渲染组合卡时 ReferenceError 整页白屏（与 WorkshopPage 同一套映射） */
+const CAP_LABEL = { dedup: '查重', detect: '目标检测', face: '人脸', embed: '向量/语义', tag: '打标', locate: '定位', classify: '快速分类', vision_understand: '看图理解', text_gen: '文字生成', music_generation: '音乐生成', image_generation: '图片生成', video_generation: '视频生成', speech_synthesis: '语音合成' }
 function chainLine(m) {
   return (m.steps || []).map(s => {
     const label = s.model_label
