@@ -34,7 +34,7 @@
     <!-- ═══ 分区一：外脑 ═══ -->
     <h2 class="sec"><span class="dot cloud" /> 外脑 · 云端大脑 <small>聪明但按量花钱，得配钥匙（API Key）</small></h2>
     <div class="foreign-note">
-      当前外脑：<b>{{ currentForeign ? FOREIGN_NAME[currentForeign] || currentForeign : '未选外脑（聊天用本地模型）' }}</b>
+      当前外脑：<b>{{ currentForeign ? provName(currentForeign) : '未选外脑（聊天用本地模型）' }}</b>
       <template v-if="currentForeign && currentModelName"> · 型号：<b>{{ currentModelName }}</b></template>
       <!-- ★ #1326：当前对话走本地时明说，免得误以为外脑选错 -->
       <span v-if="activeLocal" class="fn-note">💬 当前对话走的是本地模型（这里报的是外脑槽位，切回外脑用对话区 🤖按钮）</span>
@@ -47,8 +47,9 @@
     <div class="m-grid">
       <div v-for="p in foreignList" :key="p.id" class="fcard" :class="{ on: currentForeign === p.id, open: openId === p.id }" @click="toggleOpen(p.id)">
         <div class="f-head">
-          <b>{{ FOREIGN_NAME[p.id] || p.id }}</b>
+          <b>{{ provName(p) }}</b>
           <span class="f-head-badges">
+            <span v-if="p.is_custom" class="f-badge cus">自定义</span>
             <!-- ★ D1 #1564 识图能力徽标（模型中立，未标注不显示） -->
             <span v-if="p.vision === true" class="f-badge vis">👁️ 支持识图</span>
             <span v-else-if="p.vision === false" class="f-badge novis">📄 仅文字对话</span>
@@ -58,12 +59,16 @@
         <div class="f-masked">{{ p.masked || 'sk-…' }}</div>
         <div v-if="p.model_name" class="f-model">型号：{{ p.model_name }}</div>
         <div v-if="openId === p.id" class="f-detail" @click.stop>
-          <input class="key-input" v-model.trim="keyInput" :placeholder="'粘贴 ' + (FOREIGN_NAME[p.id] || p.id) + ' 的 API Key'" spellcheck="false" />
+          <input class="key-input" v-model.trim="keyInput" :placeholder="'粘贴 ' + provName(p) + ' 的 API Key'" spellcheck="false" />
           <div class="f-btns">
             <BigButton :px="13" :loading="busyId === p.id + ':save'" @click="saveKey(p)">保存钥匙</BigButton>
             <BigButton variant="ghost" :px="13" :loading="busyId === p.id + ':use'" @click="useForeign(p)">设为当前外脑</BigButton>
             <BigButton v-if="p.configured" variant="ghost" :px="13" :loading="busyId === p.id + ':del'" @click="deleteKey(p)">删除钥匙</BigButton>
+            <!-- ★ #1573 自定义外脑可整家删除（内置外脑只能删钥匙） -->
+            <BigButton v-if="p.is_custom" variant="ghost" :px="13" :loading="busyId === p.id + ':delc'" @click="deleteCustom(p)">删除这家外脑</BigButton>
           </div>
+          <!-- ★ #1573 claude 官方协议不兼容，提前说清避免白折腾 -->
+          <div v-if="p.id === 'claude'" class="f-hint warn">⚠️ Claude 官方接口不是通用格式，直接填官方地址会报错——需填 OpenAI 兼容格式的中转地址才能用</div>
           <!-- ★ 2026-09-13 用户反馈#9：外脑型号设置 -->
           <div class="model-name-row">
             <label class="mn-label">型号</label>
@@ -72,6 +77,26 @@
           </div>
           <div class="f-hint">型号 = 这家外脑的具体大脑版本（{{ MODEL_HINT[p.id] || '留空则用官方默认' }}）。填错型号聊天会报错，填对才能发挥实力</div>
         </div>
+      </div>
+    </div>
+
+    <!-- ★ #1573 外脑全家福：自定义外脑添加表单（任意 OpenAI 兼容服务商一步接入） -->
+    <div class="add-cp">
+      <div class="add-cp-head">
+        <b>➕ 添加自定义外脑</b>
+        <span>任何兼容 OpenAI 格式的服务商都能接：中转站、聚合平台（OpenRouter/硅基流动）、公司自建服务等。Claude 官方地址不兼容，需填 OpenAI 格式中转地址。</span>
+        <button class="mini" @click="showAddForm = !showAddForm">{{ showAddForm ? '收起表单' : '展开表单' }}</button>
+      </div>
+      <div v-if="showAddForm" class="add-cp-form">
+        <div class="cp-row"><label>显示名称</label><input class="key-input" v-model.trim="cpForm.name" placeholder="例如：我的中转站" /></div>
+        <div class="cp-row"><label>接口地址</label><input class="key-input" v-model.trim="cpForm.base_url" placeholder="例如：https://api.xxx.com/v1（一般以 /v1 结尾）" spellcheck="false" /></div>
+        <div class="cp-row"><label>API Key</label><input class="key-input" v-model.trim="cpForm.api_key" placeholder="服务商给的密钥，sk- 开头居多" spellcheck="false" /></div>
+        <div class="cp-row"><label>型号</label><input class="key-input" v-model.trim="cpForm.model_name" placeholder="服务商的具体型号名，例如 gpt-4o-mini" spellcheck="false" /></div>
+        <div class="f-btns">
+          <BigButton :px="13" :loading="busyId === 'cp:test'" @click="testCustom">先测连通</BigButton>
+          <BigButton :px="13" :loading="busyId === 'cp:add'" @click="addCustom">保存并启用</BigButton>
+        </div>
+        <div class="f-hint">「先测连通」用上面填的地址和钥匙现场试一发，不用先保存；测试通过再点「保存并启用」，保存后会自动出现在上方外脑列表</div>
       </div>
     </div>
 
@@ -204,16 +229,23 @@ import PageShell from '../components/PageShell.vue'
 import { t } from '../i18n'
 import HIcon from '../components/HIcon.vue'
 import BigButton from '../components/BigButton.vue'
-import { getJSON, postJSON } from '../api.js'
+import { getJSON, postJSON, delJSON } from '../api.js'
 
+// ★ #1573 外脑全家福：25 家内置全量中文映射（后端 get_api_keys 已放全家福，前端名字跟上）
 const FOREIGN_NAME = {
   deepseek: 'DeepSeek', doubao: '豆包', qwen: '通义千问', kimi: 'Kimi',
   zhipu: '智谱 GLM', yi: '零一万物', baichuan: '百川', stepfun: '阶跃星辰',
+  openai: 'OpenAI（GPT）', claude: 'Claude', gemini: 'Gemini', groq: 'Groq',
+  mistral: 'Mistral', cohere: 'Cohere', moonshot: 'Kimi 国际版', siliconflow: '硅基流动',
+  openrouter: 'OpenRouter', hunyuan: '腾讯混元', minimax: 'MiniMax', ernie: '文心一言',
+  spark: '讯飞星火', huggingface: 'HuggingFace', xai: 'xAI（Grok）', perplexity: 'Perplexity',
+  together: 'Together AI',
 }
 const VTYPE_TEXT = { image_generation: '🎨 图片', music_generation: '🎵 音乐', speech: '🗣 语音', code: '💻 代码', translation: '🌐 翻译', medical: '🏥 医疗', data_analysis: '📊 数据' }
 // ★ 2026-09-13 用户反馈#10：垂直模型"去哪儿用"指引
 const VTYPE_PANEL = { medical: '华佗医疗面板', music_generation: '音乐工坊面板', image_generation: '图片生成面板', speech: '语音面板', code: '代码面板', translation: '翻译面板', data_analysis: '数据分析面板' }
 // ★ 2026-09-13 用户反馈#9：外脑型号提示（各家常型号示例）
+// ★ #1573 型号提示补全 25 家
 const MODEL_HINT = {
   deepseek: 'deepseek-chat 或 deepseek-reasoner',
   zhipu: 'glm-4-flash / glm-4-plus',
@@ -223,6 +255,23 @@ const MODEL_HINT = {
   yi: 'yi-large 等',
   baichuan: 'baichuan2 系列',
   stepfun: 'step-1 系列',
+  openai: 'gpt-4o / gpt-4o-mini',
+  claude: 'claude-sonnet-4 等（官方接口需中转，见卡片内提示）',
+  gemini: 'gemini-2.0-flash / gemini-1.5-pro',
+  groq: 'llama-3.3-70b-versatile',
+  mistral: 'mistral-large-latest',
+  cohere: 'command-r-plus',
+  moonshot: 'moonshot-v1-8k / kimi-k2 等',
+  siliconflow: 'deepseek-ai/DeepSeek-V3 等',
+  openrouter: 'openai/gpt-4o-mini 等（带厂商前缀）',
+  hunyuan: 'hunyuan-turbo / hunyuan-lite',
+  minimax: 'abab6.5s-chat',
+  ernie: 'ernie-4.0 / ernie-speed',
+  spark: 'generalv3.5 / lite',
+  huggingface: 'HuggingFace 路由型号',
+  xai: 'grok-2 / grok-beta',
+  perplexity: 'sonar / sonar-pro',
+  together: 'meta-llama/Llama-3 系列',
 }
 
 const keys = ref({})
@@ -306,6 +355,66 @@ async function toggleAudioDirect() {
 loadVoiceModels()
 
 const foreignList = computed(() => Object.entries(keys.value).map(([id, v]) => ({ id, ...v })))
+
+/* ── ★ #1573 外脑全家福：名字统一走 provName（自定义外脑显示保存的名称，内置走中文映射） ── */
+function provName(x) {
+  if (typeof x === 'string') {
+    const hit = foreignList.value.find(p => p.id === x)
+    return (hit && hit.name) || FOREIGN_NAME[x] || x
+  }
+  return (x && x.name) || FOREIGN_NAME[x && x.id] || (x && x.id) || ''
+}
+
+/* ── ★ #1573 自定义外脑：添加表单 + 连通测试 + 整家删除 ── */
+const showAddForm = ref(false)
+const cpForm = ref({ name: '', base_url: '', api_key: '', model_name: '' })
+
+async function testCustom() {
+  if (!cpForm.value.base_url) { flash('先填接口地址再测', false); return }
+  busyId.value = 'cp:test'
+  try {
+    const j = await postJSON('/api/models/test-connection', {
+      provider_id: 'custom-preview',
+      base_url: cpForm.value.base_url,
+      api_key: cpForm.value.api_key,
+      model_name: cpForm.value.model_name,
+    })
+    if (j.success) flash('✅ 连通成功！这个地址和钥匙能用，点「保存并启用」收进外脑列表')
+    else flash('连通失败：' + (j.error || '未知错误'), false)
+  } catch (e) { flash('测试失败：' + e.message, false) }
+  finally { busyId.value = '' }
+}
+
+async function addCustom() {
+  const f = cpForm.value
+  if (!f.name || !f.base_url) { flash('显示名称和接口地址都得填', false); return }
+  busyId.value = 'cp:add'
+  try {
+    const pid = 'custom_' + Date.now().toString(36)
+    const j = await postJSON('/api/models/custom-provider', { provider_id: pid, name: f.name, base_url: f.base_url, api_key: f.api_key, model_name: f.model_name })
+    if (j.success) {
+      flash(`外脑「${f.name}」已添加，点它的卡片可改钥匙/型号或设为当前外脑`)
+      cpForm.value = { name: '', base_url: '', api_key: '', model_name: '' }
+      showAddForm.value = false
+      await loadAll()
+    } else flash('添加失败：' + (j.error || '未知错误'), false)
+  } catch (e) { flash('添加失败：' + e.message, false) }
+  finally { busyId.value = '' }
+}
+
+async function deleteCustom(p) {
+  if (!confirm(`彻底删除自定义外脑「${provName(p)}」？钥匙和型号一起清掉，以后要用得重新添加`)) return
+  busyId.value = p.id + ':delc'
+  try {
+    const j = await delJSON(`/api/models/custom-provider/${p.id}`)
+    if (j.success) {
+      flash(`已删除「${provName(p)}」`)
+      if (currentForeign.value === p.id) flash(`已删除。当前外脑已置空，请到列表里另选一家设为当前`, false)
+      await loadAll()
+    } else flash(j.error || '删除失败', false)
+  } catch (e) { flash('删除失败：' + e.message, false) }
+  finally { busyId.value = '' }
+}
 const currentModelName = computed(() => foreignList.value.find(p => p.id === currentForeign.value)?.model_name || '')
 const localLLM = computed(() => localAll.value.filter(m => m.type === 'llm'))
 
@@ -360,7 +469,7 @@ async function saveKey(p) {
   busyId.value = p.id + ':save'
   try {
     await postJSON('/api/models/api-keys', { keys: { [p.id]: keyInput.value } })
-    flash(`${FOREIGN_NAME[p.id] || p.id} 的钥匙已保存`)
+    flash(`${provName(p)} 的钥匙已保存`)
     keyInput.value = ''
     await loadAll()
   } catch (e) { flash('保存失败：' + e.message, false) }
@@ -368,23 +477,23 @@ async function saveKey(p) {
 }
 
 async function useForeign(p) {
-  if (!p.configured) { flash(`${FOREIGN_NAME[p.id] || p.id} 还没配钥匙，先保存钥匙再切换（否则聊天会报 401 无效）`, false); return }
+  if (!p.configured) { flash(`${provName(p)} 还没配钥匙，先保存钥匙再切换（否则聊天会报 401 无效）`, false); return }
   busyId.value = p.id + ':use'
   try {
     await postJSON('/api/models/switch-foreign', { model: p.id })
-    flash(`已切换外脑到 ${FOREIGN_NAME[p.id] || p.id}`)
+    flash(`已切换外脑到 ${provName(p)}`)
     await loadAll()
   } catch (e) { flash('切换失败：' + e.message, false) }
   finally { busyId.value = '' }
 }
 
 async function deleteKey(p) {
-  if (!confirm(`删除 ${FOREIGN_NAME[p.id] || p.id} 已保存的钥匙？删除后需重新粘贴才能用这家外脑`)) return
+  if (!confirm(`删除 ${provName(p)} 已保存的钥匙？删除后需重新粘贴才能用这家外脑`)) return
   busyId.value = p.id + ':del'
   try {
     await postJSON('/api/models/api-keys', { delete: [p.id], keys: {} })
-    flash(`${FOREIGN_NAME[p.id] || p.id} 的钥匙已删除`)
-    if (currentForeign.value === p.id) flash(`钥匙已删除。注意当前外脑还是 ${FOREIGN_NAME[p.id] || p.id}，建议另选一家设为当前`, false)
+    flash(`${provName(p)} 的钥匙已删除`)
+    if (currentForeign.value === p.id) flash(`钥匙已删除。注意当前外脑还是 ${provName(p)}，建议另选一家设为当前`, false)
     await loadAll()
   } catch (e) { flash('删除失败：' + e.message, false) }
   finally { busyId.value = '' }
@@ -396,7 +505,7 @@ async function saveModelName(p) {
   try {
     if (!name) { flash('型号留空 = 用官方默认。要填就填全名，比如 deepseek-chat', false); busyId.value = ''; return }
     await postJSON('/api/models/foreign-model-name', { provider: p.id, model_name: name })
-    flash(`${FOREIGN_NAME[p.id] || p.id} 型号已设为 ${name}`)
+    flash(`${provName(p)} 型号已设为 ${name}`)
     await loadAll()
   } catch (e) { flash('保存型号失败：' + e.message, false) }
   finally { busyId.value = '' }
@@ -523,6 +632,18 @@ loadAll(true)
 .key-input:focus { border-color: var(--blue); }
 .f-btns { display: flex; gap: 8px; }
 .f-hint { font-size: 11px; color: var(--sub); }
+
+/* ★ #1573 自定义外脑徽标 + 添加表单 */
+.f-badge.cus { background: #EDE7F6; color: #6A4FB6; font-weight: 700; }
+.f-hint.warn { color: #9A6B00; background: #FFF9E6; border-radius: 8px; padding: 6px 9px; }
+.add-cp { border: 1px dashed var(--line); border-radius: 12px; padding: 11px 14px; margin-top: 11px; background: var(--c-bg-soft); }
+.add-cp-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.add-cp-head b { font-size: 13.5px; color: var(--ink); }
+.add-cp-head span { flex: 1; min-width: 200px; font-size: 12px; color: var(--sub); line-height: 1.5; }
+.add-cp-form { margin-top: 9px; display: flex; flex-direction: column; gap: 8px; }
+.cp-row { display: flex; align-items: center; gap: 8px; }
+.cp-row label { font-size: 12px; font-weight: 700; color: var(--ink); flex-shrink: 0; width: 58px; }
+.cp-row .key-input { flex: 1; min-width: 0; }
 
 .lcard { border: 1px solid var(--line); border-radius: 12px; background: #fff; padding: 12px 14px; display: flex; align-items: center; gap: 11px; }
 .l-icon { font-size: 22px; }

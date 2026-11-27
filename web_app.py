@@ -7738,14 +7738,43 @@ def get_api_keys():
             except Exception as _e:
                 logger.debug(f"[WebApp] 忽略错误: {_e}")
         
+        # ★ #1575 方案C（2026-11-27）：硬编码 8 家 → PROVIDERS 全家福（25 家全放出来）。
+        #   此前 openai/claude/gemini/硅基流动/OpenRouter/混元/MiniMax/文心/星火/xAI 等 17 家
+        #   在注册表里躺着但页面永远看不到，用户想配都没入口。
         result = {}
-        for k in ['deepseek', 'doubao', 'qwen', 'kimi', 'zhipu', 'yi', 'baichuan', 'stepfun']:
+        try:
+            from src.core.multi_model_manager import PROVIDERS as _ALL_PROV
+            _builtin_ids = [pid for pid in _ALL_PROV if pid not in ('ollama', 'harveneye')]
+        except Exception:
+            _builtin_ids = ['deepseek', 'doubao', 'qwen', 'kimi', 'zhipu', 'yi', 'baichuan', 'stepfun']
+        for k in _builtin_ids:
             v = mkeys.get(k, '')
             result[k] = {
                 'configured': bool(v),
                 'masked': (v[:4] + '****' + v[-4:]) if len(v) > 8 else (v or '')
             }
-        # ★ 也包含自定义provider
+        # ★ #1575 方案C：custom_providers 全列出（此前只有配了钥匙的才漏出来，没配的直接消失）
+        try:
+            _mm_custom = {}
+            if mm_path.exists():
+                try:
+                    _mm_custom = json.loads(mm_path.read_text(encoding='utf-8')).get('custom_providers', {}) or {}
+                except Exception:
+                    _mm_custom = {}
+            for cid, cinfo in _mm_custom.items():
+                if cid in result:
+                    result[cid]['is_custom'] = True
+                    continue
+                _cv = mkeys.get(cid, '') or (cinfo.get('api_key', '') if isinstance(cinfo, dict) else '')
+                result[cid] = {
+                    'configured': bool(_cv),
+                    'masked': (_cv[:4] + '****' + _cv[-4:]) if len(_cv) > 8 else (_cv or ''),
+                    'name': (cinfo.get('name', cid) if isinstance(cinfo, dict) else cid),
+                    'is_custom': True,
+                }
+        except Exception as _e:
+            logger.debug(f"[WebApp] custom_providers 列出跳过: {_e}")
+        # 兜底：model_keys 里有但上面两轮都没认领的（历史残留 key）
         for k in mkeys:
             if k not in result and k != 'ollama':
                 v = mkeys.get(k, '')
@@ -8318,6 +8347,76 @@ def add_custom_provider():
         if result.get('success'):
             mm.enable_model(data['provider_id'], api_key=data.get('api_key',''), skip_test=True)
         return jsonify(result)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/models/custom-provider/<provider_id>', methods=['DELETE'])
+def del_custom_provider(provider_id):
+    """★ #1572 删除自定义外脑（内置模型拒绝，由 mm 层把关）"""
+    try:
+        from src.core.multi_model_manager import get_multi_model_manager
+        mm = get_multi_model_manager()
+        result = mm.delete_custom_provider(provider_id)
+        # 顺手清 config.yaml model_keys 里的残留钥匙（回退层），避免幽灵卡片
+        if result.get('success'):
+            try:
+                import yaml as _yaml
+                _cp = PROJECT_ROOT / 'config.yaml'
+                if _cp.exists():
+                    cfg = _yaml.safe_load(_cp.read_text(encoding='utf-8')) or {}
+                    mk = cfg.get('model_keys') or {}
+                    if provider_id in mk:
+                        mk.pop(provider_id, None)
+                        cfg['model_keys'] = mk
+                        with open(_cp, 'w', encoding='utf-8') as f:
+                            _yaml.dump(dict(cfg), f, allow_unicode=True, sort_keys=False)
+                        logger.info(f"[custom-provider] 已清 {provider_id} 在 config.yaml 的残留钥匙")
+            except Exception as _e:
+                logger.debug(f"[custom-provider] 清理 model_keys 忽略: {_e}")
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/models/test-connection', methods=['POST'])
+def test_model_connection():
+    """★ #1572 外脑连通测试（支持未保存的 key/url 即测，添加表单用）"""
+    try:
+        from src.core.multi_model_manager import get_multi_model_manager
+        data = request.get_json(force=True, silent=True) or {}
+        provider_id = (data.get('provider_id') or '').strip()
+        api_key = (data.get('api_key') or '').strip() or None
+        base_url = (data.get('base_url') or '').strip() or None
+        if not provider_id:
+            return jsonify({'success': False, 'error': '缺少 provider_id'})
+        mm = get_multi_model_manager()
+        # 已知外脑（内置 25 家 + 已保存自定义）→ 走完整测试链
+        if provider_id in mm._get_all_providers():
+            return jsonify(mm.test_connection(provider_id, api_key=api_key, base_url=base_url))
+        # 未保存的新外脑 → base_url 必须现场给，内联直测 OpenAI 协议
+        if not base_url:
+            return jsonify({'success': False, 'error': f'未知外脑 {provider_id}，且未提供接口地址'})
+        import requests as _requests
+        from src.core.independence import bypass_independence
+        url = base_url.rstrip('/') + '/chat/completions'
+        headers = {'Content-Type': 'application/json'}
+        if api_key:
+            headers['Authorization'] = f'Bearer {api_key}'
+        payload = {
+            'model': (data.get('model_name') or '').strip() or 'test',
+            'messages': [{'role': 'user', 'content': 'test'}],
+            'max_tokens': 10,
+        }
+        with bypass_independence():
+            resp = _requests.post(url, headers=headers, json=payload, timeout=(10, 15))
+        if resp.status_code in [200, 201]:
+            return jsonify({'success': True})
+        if resp.status_code == 401:
+            return jsonify({'success': False, 'error': 'API 密钥无效（401 Unauthorized）'})
+        if resp.status_code == 403:
+            return jsonify({'success': False, 'error': 'API 密钥无权访问（403 Forbidden）'})
+        if resp.status_code == 404:
+            return jsonify({'success': False, 'error': f'接口地址不正确(404)：{base_url} 可能不支持 /chat/completions，请检查地址'})
+        return jsonify({'success': False, 'error': f'HTTP {resp.status_code}: {resp.text[:200]}'})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
