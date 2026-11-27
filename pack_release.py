@@ -3,8 +3,8 @@
 
 用法：python pack_release.py <版本号如0.3.1> <r序号如r24> [上架] [--tier lite|standard|full] [--update-base <上一版完整包zip>]
      --tier：★ 三档安装包（2026-11-03 立项，定版拍板）：
-       lite     = 只 yolox（识图走外脑，约 50MB）
-       standard = yolox + chinese-clip（相册自动分类，约 0.5~0.7GB）← 默认（向后兼容 r44）
+       lite     = yolox + 人脸底座（识图走外脑，约 90MB）
+       standard = yolox + chinese-clip + 人脸底座（相册自动分类，约 0.5~0.7GB）← 默认（向后兼容 r44）
        full     = standard + Qwen3-VL-4B 视觉大脑（开箱即满血，约 4GB）
      铁律：三档共用同一棵代码树，档位差异=只带哪些权重文件，权重当插件；
            version.json 注入 tier 字段供更新器按档推送（#1360 扩展）。
@@ -63,6 +63,14 @@ CLIP_DIR_SRC = 'H:/HarvenAI/data/models/vision/chinese-clip'
 CLIP_BIN_SIZE = 753_177_983   # 与 src/vision/installer.py 清单一字不差
 CLIP_IN_ZIP_DIR = 'data/models/vision/chinese-clip'
 CLIP_FILES = ('pytorch_model.bin', 'config.json', 'preprocessor_config.json', 'vocab.txt')
+#   ★ 2026-11-27 拍板：人脸底座（YuNet 227KB + SFace 37MB）三档全随包——
+#     原来是首次用人脸功能才从 GitHub 临时下载，国内网络常卡死用户；37MB 入包换掉一个卡死点
+FACE_DIR_SRC = 'H:/HarvenAI/data/models/vision/face'
+FACE_IN_ZIP_DIR = 'data/models/vision/face'
+FACE_FILES = {  # 与 src/vision/installer.py #1470 清单一字不差
+    'face_detection_yunet_2023mar.onnx': 232_589,
+    'face_recognition_sface_2021dec.onnx': 38_696_353,
+}
 #   ★ 三档 full 档注入配置（2026-11-03 立项）：Qwen3-VL-4B 视觉大脑（Q4_K_M 主模型 + F16 视觉层）
 #     来源魔搭官方 GGUF（Qwen/Qwen3-VL-4B-Instruct-GGUF），size 门与下载清单一字不差
 QWEN_DIR_SRC = 'H:/HarvenAI/data/models/vision/qwen3-vl-4b'
@@ -220,6 +228,25 @@ def main():
         else:
             print(f'⛔ CLIP 权重缺失：{clip_bin} 不存在，r44 修宪要求必带，拒绝出包！')
             sys.exit(1)
+        # ★ 2026-11-27 拍板：人脸底座三档全随包（YuNet+SFace 共 37MB）——
+        #   首用人脸功能不再临时从 GitHub 下载（国内常卡死），开箱即用
+        _face_ok = True
+        for _ff, _fsize in FACE_FILES.items():
+            _fsrc = os.path.join(FACE_DIR_SRC, _ff)
+            if not os.path.exists(_fsrc):
+                print(f'⛔ 人脸底座权重缺失：{_fsrc}，拒绝出包！'); _face_ok = False; break
+            if os.path.getsize(_fsrc) != _fsize:
+                print(f'⛔ 人脸底座 size 不符：{_ff} 本地 {os.path.getsize(_fsrc)} ≠ installer 清单 {_fsize}，拒绝出包！')
+                _face_ok = False; break
+            zf.write(_fsrc, f'{FACE_IN_ZIP_DIR}/{_ff}')
+        if _face_ok:
+            zf.writestr('data/models/vision/face/WEIGHTS-NOTE.txt',
+                        'YuNet 人脸检测 + SFace 人脸识别 来源：OpenCV Zoo 官方（opencv_zoo）\n'
+                        '许可：Apache-2.0（https://github.com/opencv/opencv_zoo）\n'
+                        '说明：哈文人脸底座（检测+识别，共 37MB），已随安装包内置，无需联网下载。\n')
+            print(f'✅ 人脸底座注入：YuNet+SFace {len(FACE_FILES)} 文件（37MB，人脸功能开箱即用）')
+        else:
+            sys.exit(1)
         # ★ 三档 full：Qwen3-VL-4B 视觉大脑随包（主模型 + 视觉层，装完即满血）
         if tier == 'full':
             _qwen_ok = True
@@ -242,9 +269,9 @@ def main():
         # ★ 档位说明文件进包（防呆：拿到包的人一眼知道这是哪档）
         zf.writestr('TIER-NOTE.txt',
                     f'档位：{tier}\n'
-                    + ('完全体：yolox + Chinese-CLIP + Qwen3-VL-4B 视觉大脑全内置，开箱即满血（需 8GB+ 显存）\n' if tier == 'full' else
-                       '标准版：yolox + Chinese-CLIP 内置（相册自动分类开箱即用）；视觉大脑按需一键装/导入\n' if tier == 'standard' else
-                       '轻装版：仅 yolox（识图理解走外脑，功能不残废）；换高配机可原地升级满血，无需重装\n'))
+                    + ('完全体：yolox + Chinese-CLIP + Qwen3-VL-4B 视觉大脑 + 人脸底座全内置，开箱即满血（需 8GB+ 显存）\n' if tier == 'full' else
+                       '标准版：yolox + Chinese-CLIP + 人脸底座内置（相册自动分类/人脸识别开箱即用）；视觉大脑按需一键装/导入\n' if tier == 'standard' else
+                       '轻装版：yolox + 人脸底座内置（识图理解走外脑，人脸识别可用）；换高配机可原地升级满血，无需重装\n'))
         print(f'✅ 档位说明注入：TIER-NOTE.txt（{tier}）')
         # ★ #1425：机器可读档位标记（silent_install.bat 用它决定要不要离线装 llama-cpp wheel）
         zf.writestr('TIER', tier)
