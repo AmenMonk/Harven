@@ -225,7 +225,15 @@ class Registry:
                         "vram_gb": self.peak_vram_gb(r),
                         "builtin": False, "installed": True,
                         "vision": "vision_understand" in caps,
-                        "chain_id": r.id, "target": r.target or ""})
+                        "chain_id": r.id, "target": r.target or "",
+                        # ★ #1578（2026-11-27 老谭拍板）：组合卡要写清组成与调用规则——
+                        #   结构化 steps 摘要（前端 capLabel 渲染中文）+ 输入输出 + 失败策略
+                        "steps": [{"name": s.name, "capability": s.capability,
+                                   "binding": s.binding, "optional": s.optional,
+                                   "model_label": (self.find_model(s.model) or {}).get("label") or s.model}
+                                  for s in r.steps],
+                        "input_type": r.input_type, "output_type": r.output_type,
+                        "on_step_fail": r.on_step_fail})
         return out
 
     def peak_vram_gb(self, r) -> float:

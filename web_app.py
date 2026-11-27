@@ -4475,9 +4475,27 @@ def models_local_all():
             models.append({'name': _cc['label'], 'source': '组合', 'size_gb': None,
                            'type': 'llm', 'icon': '🧩', 'id': _cc['id'],
                            'vision': _cc.get('vision'),
-                           'desc': _cc.get('target') or '多环节接力流水线 · 组合即本地大脑'})
+                           'desc': _cc.get('target') or '多环节接力流水线 · 组合即本地大脑',
+                           # ★ #1578：组合卡写清组成与调用规则（结构化 steps 摘要前端渲染中文）
+                           'steps': _cc.get('steps') or [],
+                           'input_type': _cc.get('input_type'),
+                           'output_type': _cc.get('output_type'),
+                           'on_step_fail': _cc.get('on_step_fail')})
     except Exception as _e:
         logger.debug(f'[WebApp] 对话型组合列举跳过: {_e}')
+    # ★ #1577（2026-11-27）：视觉大脑专用分区撤除（老谭拍板「很多余」）——本地视觉模型
+    #   归位通用区，带 👁️ 看图专用标注；按钮走「设为看图大脑」钉选，不走通用切换
+    try:
+        from src.core import vision_link as _vl
+        for _vm in _vl.list_local_vision_models():
+            if not _vm.get('ready'):
+                continue   # 文件不全的不占卡片（补装入口：页顶「视觉引擎」）
+            models.append({'name': _vm['name'], 'label': _vl.catalog_label_for(_vm['name']),
+                           'source': '本地视觉', 'size_gb': _vm.get('size_gb'),
+                           'type': 'llm', 'icon': '👁️', 'id': _vm['id'],
+                           'vision': True, 'vision_only': True})
+    except Exception as _e:
+        logger.debug(f'[WebApp] 本地视觉模型列举跳过: {_e}')
     # 1. Ollama
     # ★ D1 #1564：Ollama 模型识图能力探测——POST /api/show 读 capabilities（含 'vision'）。
     #   进程内永久缓存（能力不随运行变化），避免每次拉列表都逐个打 Ollama
