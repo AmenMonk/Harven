@@ -148,14 +148,27 @@ class Orchestrator:
         # ② A3 显存体检（聚段取最大）
         vram = self.reg.model_vram_gb
         vram = lambda mid: self.reg.model_vram_gb(mid)  # noqa: E731
-        pf = self.pool.preflight(r, vram)
+        pf = self.pool.preflight(r, vram, self._ollama_resident)
         if not pf["ok"]:
             reuse_note = ""
             if pf.get("reused"):
                 reuse_note = f"（已驻留复用抵扣：{'、'.join(pf['reused'])}）"
-            problems.append(f"这台机器跑不动组合「{r.name}」：缺 {pf['short_gb']} GB 显存"
-                            f"（需新增峰值 {pf['peak_gb']}GB / 可用 {pf['budget_gb'] - pf['used_gb']:.2f}GB）{reuse_note}。"
-                            f"建议换小模型或调整聚段（A2 铁规：不降级不偷换）")
+            if pf.get("checked") and pf.get("free_short") and pf.get("short_gb", 0) <= 0:
+                # ★ #1589 预算账够、真实空闲不够：说人话，列出能腾出来的项
+                items = "、".join(pf.get("retirable") or []) or "（没有可自动腾出的本地模型）"
+                problems.append(
+                    f"这台机器现在跑不动组合「{r.name}」：显卡真实空闲不够，还差 {pf['free_short']} GB"
+                    f"（需新增峰值 {pf['peak_gb']}GB / 实时空闲 {pf.get('free_gb')}GB / "
+                    f"可让位 {pf.get('retirable_gb', 0)}GB）。运行时会自动让位：{items}；"
+                    f"其余是桌面应用占的，关掉几个吃显存的再试（A2 铁规：不降级不偷换）")
+            else:
+                real_note = ""
+                if pf.get("checked") and pf.get("free_short"):
+                    real_note = f"；另显卡真实空闲还差 {pf['free_short']} GB（桌面应用占着，关几个再试）"
+                avail = pf.get("used_fixed_gb", pf["used_gb"])
+                problems.append(f"这台机器跑不动组合「{r.name}」：缺 {pf['short_gb']} GB 显存"
+                                f"（需新增峰值 {pf['peak_gb']}GB / 可用 {pf['budget_gb'] - avail:.2f}GB）{reuse_note}。"
+                                f"建议换小模型或调整聚段（A2 铁规：不降级不偷换）{real_note}")
         # ③ B4 权限挂接：safe 模式动作环预提示（运行时跳过并如实记录）
         skipped_actions = []
         try:
@@ -167,6 +180,32 @@ class Orchestrator:
         return {"ok": not problems, "problems": problems, "vram": pf,
                 "safe_skipped_actions": skipped_actions}
 
+    def _ollama_resident(self, model_id: str) -> bool:
+        """★ #1589 池外驻留判定：该模型此刻是否已在 Ollama 里驻留（/api/ps）。
+        `ollama:<名字>` 直接比对；视觉目录条目按同目录 .ollama_registered.json 的注册名比对。
+        驻留=复用单例，体检不重复收钱（#1586 口径延伸到池外）。"""
+        try:
+            import json as _json
+            import urllib.request
+            from pathlib import Path as _P
+            with urllib.request.urlopen("http://127.0.0.1:11434/api/ps", timeout=1.5) as r:
+                loaded = [m.get("name", "") for m in (_json.load(r) or {}).get("models", [])]
+            names = {n for x in loaded for n in (x, x.split(":")[0])}
+            if model_id.startswith("ollama:"):
+                name = model_id.split(":", 1)[1]
+                return name in names or name.split(":")[0] in names
+            try:
+                from .channels import resolve_vision_gguf
+                gguf = resolve_vision_gguf(model_id)["gguf"]
+            except Exception:
+                return False
+            cache = _P(gguf).parent / ".ollama_registered.json"
+            omodel = ((_json.loads(cache.read_text(encoding="utf-8")) or {}).get("model") or "") \
+                if cache.is_file() else ""
+            return bool(omodel) and omodel in names
+        except Exception:
+            return False
+
     # ── 主入口：一次激活 ──
     def run(self, recipe_id: str, payload: dict,
             current_models: dict | None = None) -> dict:
@@ -176,6 +215,18 @@ class Orchestrator:
         if not r.enabled:
             return {"ok": False, "error": f"组合已停用: {r.name}"}
         run_id = f"run-{uuid.uuid4().hex[:10]}"
+
+        # ★ #1589 单载裁决第二层：组合开跑前对齐用户钉选的理解通道（与 vision_link.get_pipeline
+        #   同口径），防 config 自导线抢跑造成双载；失败不动配置（幂等便宜）
+        try:
+            import sys as _sys
+            root = r"H:\HarvenAI"
+            if root not in _sys.path:
+                _sys.path.insert(0, root)
+            from src.core import vision_link as _vl
+            _vl.apply_understand_channel()
+        except Exception:
+            pass
 
         pre = self.preflight(r, current_models)
         if not pre["ok"]:
@@ -264,9 +315,16 @@ class Orchestrator:
                 adapter = ch.get_adapter(channel)
                 out = adapter.infer(handle, {**payload, "image_path": data.get("image_path"),
                                              "prompt": (getattr(s, "prompt", "") or data.get("prompt", "") or _relay)})
+                # ★ #1589 B1：物流单如实记「实际跑在哪个运行时」（如链选 8B 同款已注册 Ollama
+                #   → 实跑 ollama 通道；未注册 → llama_cpp 独立子进程），成稿方可查
+                try:
+                    _rt = handle.runtime() if hasattr(handle, "runtime") else channel
+                except Exception:
+                    _rt = channel
                 step_collect({"step_id": s.id, "step_name": s.name,
                               "model_id": model_id, "channel": channel,
-                              "elapsed_ms": out.get("elapsed_ms", 0), "ok": True})
+                              "elapsed_ms": out.get("elapsed_ms", 0), "ok": True,
+                              "meta": {"runtime": _rt}})
                 data = {**data, "step_output": out.get("result")}
             except Exception as e:
                 ok = self._on_fail(r, s, e, step_collect)

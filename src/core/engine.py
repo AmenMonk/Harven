@@ -14,6 +14,9 @@ from src.core.identity import SYSTEM_PROMPT, IDENTITY_PROMPT, VOICE_DISCIPLINE
 from src.models.database import save_message, get_messages, get_preference
 from src.core.event_bus import get_event_bus, Events
 import logging
+# ★ #1589（2026-11-27）：模块级 BASE_DIR——「下载了什么/目录有什么」自动检测分支用到它，
+#   此前只有 4478 行 midway 的 `import os`、BASE_DIR 从未定义 → 命中即 NameError
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 logger = logging.getLogger(__name__)
 
 # ★ 2026-10-10 #1052 生成停止门（定版方案A·真停止）
@@ -2681,10 +2684,51 @@ SUGGEST:吉他适合多种风格。\\n我建议：民谣 + 吉他 + 90BPM + 平�
         if not local_name:
             logger.warning("[Pipeline] 本地站: 当前无本地模型")
             return ""
-        if local_name == 'harveneye':
-            # ★ 2026-11-15：真身解析逻辑抽到 _pipeline_call_harveneye（与独立 HarvenEye 站共用）
+        # ★ #1590（2026-11-27）：本地站按「当前选中的本地大脑真身」分流——事实源与模型中心/
+        #   协作弹窗同一份（collab_routes.local_current_selection）：harveneye→视觉引擎、
+        #   chain:→组合、ollama:/裸名→本机模型、local:→本地目录；解析不出走原路零变化
+        sel, kind = self._pipeline_local_selection()
+        if kind == 'vision':
+            # ★ 2026-11-15：真身解析逻辑抽到 _pipeline_call_harveneye（与独立视觉引擎站共用）
             return self._pipeline_call_harveneye(system_prompt, content)
+        if kind == 'chain' and sel.startswith('chain:'):
+            return self._pipeline_call_chat(sel, system_prompt, content)
+        if kind == 'ollama' and sel.startswith('ollama:'):
+            return self._pipeline_call_ollama(sel[7:], system_prompt, content)
         return self._pipeline_call_ollama(local_name, system_prompt, content)
+
+    def _pipeline_local_selection(self) -> tuple:
+        """当前选中的本地大脑真身 (id, kind)；任何异常如实返回 ('', '')。"""
+        try:
+            from src.core.collab_routes import local_current_selection
+            return local_current_selection()[:2]
+        except Exception as e:
+            logger.debug(f"[Pipeline] 本地槽真身解析失败（走引擎名原路）: {e}")
+            return "", ""
+
+    def _pipeline_call_chain(self, chain_id: str, system_prompt: str, content: str) -> str:
+        """★ #1590：对话型组合站——system+content 拼成接力提示词交编排器，末环产出即回复
+        （与 ModelManager._chat_chain 同口径；铁律 0：组合失败如实报错，绝不偷换模型回退）。"""
+        from src.core.chain_engine.registry import get_registry as _greg
+        from src.core.chain_engine import get_orchestrator as _gorch
+        r = _greg().get_chain(chain_id)
+        if r is None:
+            raise RuntimeError(f"组合 {chain_id} 不存在（可能已被删除），请到模型组合工坊确认")
+        prompt = (f"【本站任务】{system_prompt}\n\n【接力内容】\n{content}" if system_prompt else content)
+        out = _gorch().run(chain_id, {"prompt": prompt})
+        if not out.get("ok"):
+            _err = str(out.get('error') or '')
+            if 'image_path' in _err:
+                raise RuntimeError(f"组合「{r.name}」要看图才能干活——发一张照片（或截图）再问它")
+            raise RuntimeError(f"组合「{r.name}」执行失败: {_err}（可到工坊看物流单定位哪一环）")
+        try:
+            from src.core.model_manager import ModelManager
+            text = ModelManager._chain_result_text(None, out.get('result'))
+        except Exception:
+            text = str(out.get('result') or '')
+        if not (text or '').strip():
+            raise RuntimeError(f"组合「{r.name}」执行完成但没有产出文字（到工坊检查末环能力）")
+        return text
 
     def _pipeline_call_harveneye(self, system_prompt: str, content: str) -> str:
         """HarvenEye 视觉大脑纯文本调用（流水线 HarvenEye 站 / 本地站选中 Eye 时共用）
@@ -2825,34 +2869,54 @@ SUGGEST:吉他适合多种风格。\\n我建议：民谣 + 吉他 + 90BPM + 平�
             return self._pipeline_call_ollama(participant[7:], system_prompt, content)
         if participant.startswith('gguf:'):
             return self._pipeline_call_gguf(participant[5:], system_prompt, content)
+        if participant.startswith('chain:'):
+            # ★ #1590：对话型组合站（组合即本地大脑）。失败如实落日志并按「本站调用失败」
+            #   走调用方统一中止话术（不冒充别的模型回退，铁律 0）
+            try:
+                return self._pipeline_call_chain(participant[6:], system_prompt, content)
+            except Exception as e:
+                logger.error(f"[Pipeline] 组合站 {participant} 调用失败: {e}")
+                return ""
         return self._pipeline_call_external(participant, system_prompt, content)
 
     def _pipeline_participant_name(self, participant: str) -> str:
-        if participant == 'local':
-            _lm = getattr(self.model, 'model', '') or '模型'
-        # ★ #1517：引擎名显示真身（协作站名不再出现「🏠 本地 harveneye」这种引擎牌）
-        #   ★ D2 #1565：对外统一叫「本地视觉引擎」，不再露 HarvenEye 产品名
-        if _lm == 'harveneye':
-            return "🏠 本地视觉引擎"
-        return f"🏠 本地 {_lm}"
-        if participant == 'harveneye':
-            # ★ 2026-11-15：独立视觉引擎站（原 HarvenEye 站，D2 #1565 改对外名）
-            return "🏠 本地视觉引擎"
-            return f"🏠 本地 {participant[7:]}"
-        if participant.startswith('gguf:'):
-            try:
-                from src.core.vertical_api import _get_all_models
-                m = next((x for x in _get_all_models() if x.get('id') == participant[5:]), None)
-                return f"🏠 本地 {m.get('name', participant[5:]) if m else participant[5:]}"
-            except Exception:
-                return f"🏠 本地 {participant[5:]}"
+        """站的对外名字（B1 身份标注：谁答的就写谁）。
+        ★ #1590 修真 bug：旧版 `if participant == 'local'` 块没缩进 return——非 local 站
+          引用未赋值的 _lm 直接 UnboundLocalError；ollama:/视觉引擎站还会落到外脑分支
+          显示成「☁️ ollama:xxx」（冒充外脑）。"""
         try:
+            if participant == 'local':
+                _sel, _kind, _label, _ready, _note = self._pipeline_local_selection_full()
+                return f"🏠 本地（当前选中的：{_label}）"
+            if participant == 'harveneye':
+                # ★ 2026-11-15：独立视觉引擎站（D2 #1565 对外统一叫「本地视觉引擎」）
+                return "🏠 本地视觉引擎"
+            if participant.startswith('chain:'):
+                from src.core.chain_engine.registry import get_registry as _greg
+                _r = _greg().get_chain(participant[6:])
+                return f"🧩 本地组合「{_r.name if _r else participant[6:]}」"
+            if participant.startswith('ollama:'):
+                return f"🏠 本地 {participant[7:]}"
+            if participant.startswith('gguf:'):
+                try:
+                    from src.core.vertical_api import _get_all_models
+                    m = next((x for x in _get_all_models() if x.get('id') == participant[5:]), None)
+                    return f"🏠 本地 {m.get('name', participant[5:]) if m else participant[5:]}"
+                except Exception:
+                    return f"🏠 本地 {participant[5:]}"
             from src.core.multi_model_manager import get_multi_model_manager
             mm = get_multi_model_manager()
             info = (mm._get_all_providers() or {}).get(participant, {})
             return f"☁️ {info.get('name', participant)}"
         except Exception:
             return f"☁️ {participant}"
+
+    def _pipeline_local_selection_full(self) -> tuple:
+        try:
+            from src.core.collab_routes import local_current_selection
+            return local_current_selection()
+        except Exception:
+            return ("", "", "本地模型", True, "")
 
     def _pipeline_get_tool_model(self, tool_id: str):
         """执行站：按 ID 找可执行的垂直工具模型（画图/作曲/语音类）"""

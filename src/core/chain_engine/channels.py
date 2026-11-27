@@ -71,7 +71,43 @@ class InternalAdapter(BaseAdapter):
         return handle.infer(payload)
 
 
-# ══ llama_cpp：进程内 GGUF（视觉目录条目，走 vlm 引擎工厂单例）══
+# ══ llama_cpp：视觉目录条目（★ #1589 按链选模型，不再偷换全局理解槽）═══════
+def resolve_vision_gguf(model_id: str) -> dict:
+    """组合环声明的视觉模型 → 盘上的 GGUF/mmproj（三步，查无如实报错不代选）：
+      ① 视觉目录条目 id（如 qwen3-vl-8b-q4km）→ 目录 dir_name
+      ② 直接写目录名（用户自装的 <data/models/vision/名字>）
+      ③ 都没有 → ChannelError（B10：缺模型如实报错，不偷换）
+    目录里主模型=非 mmproj 的最大 GGUF；mmproj=带 mmproj 的 GGUF。"""
+    import sys
+    if r"H:\HarvenAI" not in sys.path:
+        sys.path.insert(0, r"H:\HarvenAI")
+    if r"H:\HarvenAI\src" not in sys.path:
+        sys.path.insert(0, r"H:\HarvenAI\src")
+    mid = model_id.split(":", 1)[1] if model_id.startswith("llama_cpp:") else model_id
+    label = mid
+    dir_name = mid
+    try:
+        from src.vision import catalog as vc
+        ent = vc.get(mid)
+        if ent:
+            dir_name, label = ent["dir_name"], ent.get("label", mid)
+    except Exception:
+        pass
+    from pathlib import Path
+    from src.vision import config as vcfg
+    d = Path(vcfg.MODELS_DIR) / dir_name
+    ggufs = sorted(d.glob("*.gguf")) if d.is_dir() else []
+    mains = [g for g in ggufs if "mmproj" not in g.name.lower()]
+    mms = [g for g in ggufs if "mmproj" in g.name.lower()]
+    if not mains or not mms:
+        raise ChannelError(
+            f"视觉模型「{label}」未安装或不完整（缺主模型或视觉投影文件：{d}），"
+            f"请到 设置→视觉引擎 下载（B10：缺模型如实报错，不偷换）")
+    return {"gguf": str(max(mains, key=lambda p: p.stat().st_size)),
+            "mmproj": str(max(mms, key=lambda p: p.stat().st_size)),
+            "dir_name": dir_name, "label": label}
+
+
 class LlamaCppAdapter(BaseAdapter):
     channel = "llama_cpp"
 
@@ -81,10 +117,15 @@ class LlamaCppAdapter(BaseAdapter):
             sys.path.insert(0, r"H:\HarvenAI")
         if r"H:\HarvenAI\src" not in sys.path:
             sys.path.insert(0, r"H:\HarvenAI\src")
-        from src.vision.engines.vlm_engine import build_understand_engine
-        # 迁移期：理解环工厂已实现「用户选谁用谁」三通道；组合环声明 llama_cpp
-        # 时复用同一工厂单例（共享已加载权重，显存单例）。
-        return _SingletonSlot("chain.vlm", build_understand_engine)
+        from src.vision.engines.vlm_engine import build_understand_engine_for
+        # ★ #1589（2026-11-27 P0）：按链里选的模型解析盘上 GGUF——旧实现无视 model_id，
+        #   一律 build_understand_engine()→全局理解槽→被自导线/钉选偷换成另一份模型
+        #   （物流单记 8B、实跑 4B）。同款 GGUF 已注册 Ollama 时由工厂切 Ollama 通道
+        #   （#1584 单载裁决，同一份模型非代选）。
+        res = resolve_vision_gguf(model_id)
+        gguf, mmproj = res["gguf"], res["mmproj"]
+        return _SingletonSlot(f"chain.vlm:{res['dir_name']}",
+                              lambda: build_understand_engine_for(gguf, mmproj))
 
     def infer(self, handle, payload: dict) -> dict:
         return handle.infer(payload)
@@ -173,6 +214,15 @@ class _SingletonSlot:
     def raw(self):
         return self._get()
 
+    def runtime(self) -> str:
+        """★ #1589 B1：底层引擎实际运行时（如 ollama / llama_cpp / api），给物流单记账。"""
+        try:
+            obj = self._get()
+            fn = getattr(obj, "runtime", None)
+            return str(fn()) if fn else obj.__class__.__name__.lower()
+        except Exception:
+            return self._key.split(":")[0].replace("chain.", "")
+
 
 class _NoopSlot:
     """零开销程序部件（dhash 等纯函数在编排器里直调）。"""
@@ -184,6 +234,9 @@ class _NoopSlot:
 
     def raw(self):
         return None
+
+    def runtime(self) -> str:
+        return "internal"
 
 
 class _OllamaSlot:
@@ -210,6 +263,9 @@ class _OllamaSlot:
     def raw(self):
         return self.name
 
+    def runtime(self) -> str:
+        return "ollama"
+
 
 class _CloudSlot:
     def __init__(self, model_id: str):
@@ -231,6 +287,9 @@ class _CloudSlot:
 
     def raw(self):
         return self.model_id
+
+    def runtime(self) -> str:
+        return "cloud"
 
 
 # ══ vertical：万能模板通道（★ #1571 件4）══════════════════════════

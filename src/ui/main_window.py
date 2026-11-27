@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QLineEdit, QTextEdit, QLabel, QFrame, QSplitter,
     QInputDialog, QMessageBox, QSizePolicy, QToolButton,
     QFileDialog, QMenu, QComboBox, QSpinBox, QCheckBox, QDialog,
-    QTabWidget, QAbstractItemView,
+    QTabWidget, QAbstractItemView, QProgressBar,   # ★ #1589：进度条用到，此前未 import
 )
 from PySide6.QtCore import Qt, QSize, Signal, Slot, QThread, QUrl, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QFont, QColor, QIcon, QPalette, QAction, QImage, QCursor

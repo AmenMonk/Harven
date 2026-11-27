@@ -44,7 +44,7 @@ class AgentService:
 
     def __init__(self, data_dir: str = None):
         self._data_dir = data_dir or os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data', 'agent'
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'data', 'agent'   # ★ #1589 少一层 dirname → src/data/agent（应为哈文根 data/agent）
         )
         os.makedirs(self._data_dir, exist_ok=True)
         self._log_path = os.path.join(self._data_dir, 'agent_audit.log')

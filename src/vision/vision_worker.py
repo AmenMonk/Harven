@@ -34,7 +34,14 @@ from src.vision.engines.vlm_engine import (  # noqa: E402
     _cuda_free_gb, _heal_cuda_runtime, _ollama_unload_all)
 
 _INF_LOCK = threading.Lock()      # llama 推理非线程安全，全局串行
-_STATE = {"llm": None, "loaded": False, "last_request": time.time(), "err": ""}
+_STATE = {"llm": None, "loaded": False, "last_request": time.time(), "err": "",
+           "gguf": "", "notes": [], "gpu_layers": None}
+
+
+def _note(text: str) -> None:
+    """★ #1589 自愈动作不静默：记进 _STATE，主进程经 /health 读走并写 WARNING 日志。"""
+    if text not in _STATE["notes"]:
+        _STATE["notes"].append(text)
 
 
 def _load_model(gguf: str, mmproj: str, num_ctx: int) -> None:
@@ -59,10 +66,14 @@ def _load_model(gguf: str, mmproj: str, num_ctx: int) -> None:
         freed = _ollama_unload_all(base_url)
         free_gb = _cuda_free_gb()
         if freed:
+            _note(f"显存不足（当时空闲不足 {need_gb}GB），已卸载 Ollama 常驻模型 {freed} 个"
+                  f"（下次用 Ollama 会自动重载）")
             print(f"[vworker] 显存不足，已卸载 Ollama 常驻 {freed} 个，现空闲 {free_gb:.1f}GB", flush=True)
         if free_gb is not None and free_gb < need_gb:
             ratio = max(0.0, min(1.0, (free_gb - 0.5) / need_gb))
             gpu_layers = int(round(36 * ratio))
+            _note(f"显存仍不足（空闲 {free_gb:.1f}GB/需 {need_gb}GB），部分层改用 CPU 跑"
+                  f"（显卡层数 {gpu_layers}/36，速度会慢一些）")
             print(f"[vworker] 显存仍不足（{free_gb:.1f}GB/需{need_gb}GB），降层 GPU={gpu_layers}/36", flush=True)
     handler = Qwen3VLChatHandler(clip_model_path=mmproj)
     load_kwargs = dict(model_path=gguf, chat_handler=handler,
@@ -72,12 +83,16 @@ def _load_model(gguf: str, mmproj: str, num_ctx: int) -> None:
     except Exception as e:
         if gpu_layers != 0:
             # 梯队③：GPU/混合加载炸 → 纯 CPU 保底
+            _note(f"显卡加载失败（{type(e).__name__}），已改用纯 CPU 加载（速度会明显变慢）")
             print(f"[vworker] GPU 加载失败({type(e).__name__})，改纯 CPU 加载", flush=True)
             llm = Llama(n_gpu_layers=0, **load_kwargs)
+            gpu_layers = 0
         else:
             raise
     _STATE["llm"] = llm
     _STATE["loaded"] = True
+    _STATE["gguf"] = gguf
+    _STATE["gpu_layers"] = gpu_layers
     print(f"[vworker] READY 模型已加载 gguf={Path(gguf).name}", flush=True)
 
 
@@ -133,12 +148,20 @@ class _Handler(BaseHTTPRequestHandler):
         _STATE["last_request"] = time.time()
         if self.path.rstrip("/") in ("/health", "/health/"):
             self._send_json({"ok": True, "loaded": _STATE["loaded"], "pid": os.getpid(),
-                             "err": _STATE.get("err", "")})
+                             "err": _STATE.get("err", ""), "gguf": _STATE.get("gguf", ""),
+                             "notes": list(_STATE.get("notes") or []),
+                             "gpu_layers": _STATE.get("gpu_layers")})
         else:
             self._send_json({"error": "not found"}, 404)
 
     def do_POST(self):
         _STATE["last_request"] = time.time()
+        if self.path.rstrip("/") == "/shutdown":
+            # ★ #1589 单载互斥：主进程让本 worker 让位（收养的孤儿 worker 没有进程句柄，走这里）
+            self._send_json({"ok": True, "bye": True})
+            print("[vworker] 收到 /shutdown，让位退出", flush=True)
+            threading.Thread(target=lambda: (time.sleep(0.3), os._exit(0)), daemon=True).start()
+            return
         try:
             n = int(self.headers.get("Content-Length") or 0)
             payload = json.loads(self.rfile.read(n).decode("utf-8") or "{}")
@@ -189,6 +212,12 @@ def _idle_watchdog(idle_exit: float):
 
 
 def main():
+    # ★ #1589 日志统一 UTF-8（主进程拉起时也设 PYTHONIOENCODING；这里双保险）
+    for _s in (sys.stdout, sys.stderr):
+        try:
+            _s.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
     ap = argparse.ArgumentParser()
     ap.add_argument("--gguf", required=True)
     ap.add_argument("--mmproj", required=True)

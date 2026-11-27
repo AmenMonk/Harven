@@ -20,6 +20,7 @@ Harven AI - 受控进化模块
 
 import json
 import logging
+import subprocess      # ★ #1589：_git_backup 用到，此前未 import → NameError 被 except 吞成「备份失败」
 import threading
 import time
 from datetime import datetime
@@ -1079,12 +1080,21 @@ class EvolutionManager:
             return {'success': False, 'message': f'应用失败，已回滚: {e}'}
     
     def _git_backup(self) -> bool:
+        """★ #1589 非破坏式快照备份：`git stash create` + `git stash store`——
+        只生成快照存进 stash 栈，**不动工作区**（此前写的是 `git stash push
+        --include-untracked`，一旦 import 修好会清空工作区全部未提交改动+未跟踪文件）。"""
         try:
-            result = subprocess.run(
-                ['git', 'stash', 'push', '--include-untracked', '-m', f'auto-backup-{int(time.time())}'],
-                cwd=str(Path(__file__).parent.parent.parent), capture_output=True, text=True, timeout=30
-            )
-            return result.returncode == 0
+            root = str(Path(__file__).parent.parent.parent)
+            created = subprocess.run(['git', 'stash', 'create'], cwd=root,
+                                     capture_output=True, text=True, timeout=30)
+            sha = (created.stdout or '').strip()
+            if created.returncode != 0 or not sha:
+                # 没有可快照的改动（工作区干净）就是 True；其他原因如实返回 False
+                return created.returncode == 0
+            stored = subprocess.run(
+                ['git', 'stash', 'store', '-m', f'auto-backup-{int(time.time())}', sha],
+                cwd=root, capture_output=True, text=True, timeout=30)
+            return stored.returncode == 0
         except Exception:
             return False
     

@@ -133,6 +133,8 @@
         <button v-if="m.vision_only" class="mini" :class="{ cur: visionPinned === m.id }" :disabled="visionPinned === m.id || busyId === m.id + ':pin'" @click="pinVisionModel(m)">
           {{ visionPinned === m.id ? '看图使用中' : '设为看图大脑' }}
         </button>
+        <!-- ★ #1590：专项模型（如 HuatuoGPT-o1 GGUF）不能设为当前——此前显示「设为当前」却必报错（死按钮） -->
+        <button v-else-if="m.vertical_only" class="mini" disabled :title="m.vertical_hint || '专项大脑，去对应的专项面板使用'">专项专用</button>
         <button v-else class="mini" :class="{ cur: currentLocalId === m.id }" :disabled="currentLocalId === m.id" @click="setCurrent(m)">
           {{ currentLocalId === m.id ? '当前使用' : '设为当前' }}
         </button>

@@ -219,6 +219,18 @@ def _validate_pipeline(steps) -> tuple:
                         return None, f"第{idx+1}站 GGUF 模型「{pid[5:]}」不存在"
                 except Exception as e:
                     return None, f"第{idx+1}站 GGUF 模型校验失败: {e}"
+            elif pid.startswith('chain:'):
+                # ★ #1590：对话型组合可当站（组合即本地大脑，与模型中心「设为当前」同一清单）
+                try:
+                    from src.core.chain_engine.registry import get_registry as _greg
+                    _cid = pid[6:]
+                    _r = _greg().get_chain(_cid)
+                    if _r is None:
+                        return None, f"第{idx+1}站组合「{_cid}」不存在（可能已被删除）"
+                    if not any(c['id'] == pid for c in _greg().chat_chains()):
+                        return None, f"第{idx+1}站组合「{_r.name}」是专项管道型组合，不能当对话站"
+                except Exception as e:
+                    return None, f"第{idx+1}站组合校验失败: {e}"
             else:
                 try:
                     from src.core.multi_model_manager import get_multi_model_manager
@@ -278,20 +290,112 @@ def collab_pipeline():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+def _pinned_vision_label() -> str:
+    """钉选的视觉大脑标准名（catalog 标准名，如「Qwen3-VL 8B Q6_K（求准）」）；没钉返回空。"""
+    try:
+        from src.core import vision_link as _vl
+        ch = _vl.resolve_pinned_channel() or {}
+        if ch.get("provider") == "api":
+            return str(ch.get("api_model") or "")
+        return _vl.catalog_label_for(ch.get("label") or "") if ch.get("label") else ""
+    except Exception:
+        return ""
+
+
+def local_current_selection() -> tuple:
+    """★ #1590：当前选中的本地大脑「真身」——协作弹窗「本地（当前选中的）」站的名字、
+    门禁与模型中心同一事实源，不再各说各话。返回 (id, kind, label, ready, note)：
+      kind  = ''（没选）/ vision（本地视觉引擎）/ ollama / gguf_dir / chain
+      ready = 这台机器此刻能不能跑（没装/没配钥匙如实 False，不骗人）"""
+    cid = ""
+    try:
+        import yaml as _yaml
+        _cfg = _yaml.safe_load(open(os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            "config.yaml"), encoding="utf-8")) or {}
+        cid = str((_cfg.get('current_model_by_mode') or {}).get('local') or _cfg.get('current_model') or "").strip()
+    except Exception:
+        cid = ""
+    try:
+        from src.core import vision_link as _vl
+        mm = _vl._load_mm()
+        if not cid and mm.get('current_model'):
+            cid = str(mm.get('current_model') or "").strip()
+    except Exception:
+        pass
+    if cid == 'harveneye':
+        ready, label = False, "本地视觉引擎"
+        try:
+            from src.core import eye_client as _ec
+            ready = bool(_ec.models_ready().get('ready'))
+            pin = _pinned_vision_label()
+            if pin:
+                label = f"本地视觉引擎（看图大脑：{pin}）"
+        except Exception:
+            pass
+        return cid, 'vision', label, ready, "" if ready else "视觉引擎大脑未就绪（先去模型中心装/钉选视觉大脑）"
+    if cid.startswith('chain:'):
+        try:
+            from src.core.chain_engine.registry import get_registry as _greg
+            hit = next((c for c in _greg().chat_chains() if c['id'] == cid), None)
+            if hit:
+                return cid, 'chain', hit['label'], True, ""
+            return cid, 'chain', cid, False, "该组合已不存在（可能被删除），请到模型中心重选"
+        except Exception:
+            return cid, 'chain', cid, False, ""
+    if cid.startswith('ollama:') or cid.startswith('local:'):
+        name = cid.split(':', 1)[1]
+        if cid.startswith('ollama:'):
+            ok = name in _ollama_installed_models()
+            return cid, 'ollama', name, ok, "" if ok else "该本地模型未安装或本机模型服务未启动"
+        root = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                            'data', 'models', name)
+        ok = os.path.isdir(root)
+        return cid, 'gguf_dir', name, ok, "" if ok else "本地模型目录不存在"
+    if cid and cid in _ollama_installed_models():
+        return cid, 'ollama', cid, True, ""
+    if cid:
+        # 外脑 id 落在本地槽（历史脏数据）：如实标未就绪
+        return cid, '', cid, False, f"本地槽记的是「{cid}」（不是本地模型），请到模型中心重选本地大脑"
+    return "", '', "未选择本地大脑", False, "先到模型中心选一个本地模型"
+
+
 @BP.route('/participants', methods=['GET'])
 def collab_participants():
-    """流水线可选参与者：chat=对话站（外脑+本地模型列表），tool=生成站（画图/作曲/语音）"""
-    # ★ 2026-09-16 已定案：本地 ≠ Ollama 一种 —— 本地站可选全部本地模型（Ollama 已装 + GGUF 垂直模型）
-    chat = [{"id": "local", "name": "🏠 本地（当前选中的）", "kind": "local", "has_key": True}]
-    # ★ 2026-11-15（老谭定版）：含通用大脑的 HarvenEye = 本地通用模型能力升级版，进本地站下拉，
-    # 名字就叫 HarvenEye；没配大脑的（models_ready=False）不进——与模型中心同款门禁
+    """流水线可选参与者：chat=对话站（本地+外脑），tool=生成站（画图/作曲/语音）
+    ★ #1590（2026-11-27）：与模型中心同一门禁与口径——
+      · 「本地（当前选中的）」名字带真身与就绪状态（local_current_selection）
+      · 对话型组合进站（chain:<id>，与模型中心「组合即本地大脑」同一清单）
+      · 外脑按 #1576 折叠：group=core（常用 8 家+已配钥匙+自定义）/ more（其余），
+        has_key 与模型中心 configured 同口径（provider_info.api_key），带 is_custom
+      · 本地视觉引擎站名字带钉选标准名；当前选中的就是它时不重复列"""
+    sel_id, sel_kind, sel_label, sel_ready, sel_note = local_current_selection()
+    chat = [{"id": "local", "name": f"🏠 本地（当前选中的：{sel_label}）", "kind": "local",
+             "has_key": True, "ready": sel_ready, "note": sel_note, "current_local": sel_id,
+             "group": "local"}]
+    # ★ 2026-11-15（老谭定版）：含通用大脑的视觉引擎 = 本地通用模型能力升级版，进本地站下拉；
+    # 没配大脑的（models_ready=False）不进——与模型中心同款门禁。D2 #1565：对外不露 HarvenEye
+    if sel_kind != 'vision':
+        try:
+            from src.core import eye_client as _eye_cli
+            if _eye_cli.models_ready().get('ready'):
+                _pin = ""
+                _pin = _pinned_vision_label()
+                chat.append({"id": "harveneye", "kind": "local", "has_key": True, "ready": True,
+                             "group": "local",
+                             "name": f"🏠 本地视觉引擎（看图大脑：{_pin}）" if _pin else "🏠 本地视觉引擎"})
+        except Exception as e:
+            logger.debug(f"[Collab] 视觉引擎门禁探测跳过: {e}")
+    # ★ #1590：对话型组合站（与 /api/models/local-all 的「组合」卡同一清单 registry.chat_chains）
     try:
-        from src.core import eye_client as _eye_cli
-        _eye_ready = _eye_cli.models_ready()
-        if _eye_ready.get('ready'):
-            chat.append({"id": "harveneye", "name": "🏠 本地视觉引擎", "kind": "local", "has_key": True})
+        from src.core.chain_engine.registry import get_registry as _greg
+        for _cc in _greg().chat_chains():
+            chat.append({"id": _cc['id'], "name": _cc['label'], "kind": "chain", "has_key": True,
+                         "ready": True, "group": "local", "vision": _cc.get('vision'),
+                         "current_local": _cc['id'] == sel_id})
     except Exception as e:
-        logger.debug(f"[Collab] HarvenEye 门禁探测跳过: {e}")
+        logger.warning(f"[Collab] 对话型组合站加载失败: {e}")
+    # 外脑：与模型中心同一口径（provider_info.api_key = configured；带 is_custom；#1576 折叠分组）
     try:
         from src.core.multi_model_manager import get_multi_model_manager
         mm = get_multi_model_manager()
@@ -301,17 +405,21 @@ def collab_participants():
                 # ★ 2026-09-16 已定案：UI 不出现 Ollama 字样、本地≠Ollama——
                 #   这个笼统的 "Ollama (本地)" 外脑条目由下方逐模型本地清单（ollama:xxx）取代
                 continue
-            model_cfg = mm.config.get('models', {}).get(pid, {})
-            has_key = bool(model_cfg.get('api_key')) or not info.get('needs_key', False)
-            chat.append({"id": pid, "name": info.get('name', pid), "kind": "external", "has_key": has_key})
-        chat.sort(key=lambda x: (x['kind'] != 'external' or not x['has_key'], x['name']))
+            has_key = bool(info.get('api_key')) or not info.get('needs_key', False)
+            is_custom = bool(info.get('is_custom', False))
+            # ★ #1576 常用 8 家（与前端 ModelsPage CORE_FOREIGN 同名单）
+            core = pid in ('deepseek', 'doubao', 'qwen', 'kimi', 'zhipu', 'yi', 'baichuan', 'stepfun')
+            chat.append({"id": pid, "name": info.get('name', pid), "kind": "external",
+                         "has_key": has_key, "is_custom": is_custom,
+                         "group": "core" if (core or has_key or is_custom) else "more"})
     except Exception as e:
         logger.warning(f"[Collab] 外脑参与者加载失败: {e}")
 
-    # 本地模型清单：Ollama 已装模型（全名，如 qwen2.5:14b / huatuo:latest）
+    # 本地模型清单：Ollama 已装模型（全名，如 qwen3:8b / huatuo:latest；hv-pin 内部件已过滤）
     try:
         for name in _ollama_installed_models():
-            chat.append({"id": f"ollama:{name}", "name": f"🏠 本地 {name}", "kind": "local", "has_key": True})
+            chat.append({"id": f"ollama:{name}", "name": f"🏠 本地 {name}", "kind": "local",
+                         "has_key": True, "ready": True, "group": "local"})
     except Exception as e:
         logger.warning(f"[Collab] 本地 Ollama 模型清单加载失败: {e}")
 
@@ -321,9 +429,16 @@ def collab_participants():
         for m in _get_all_models():
             if m.get('engine') == 'llama_cpp' and m.get('model_path'):
                 chat.append({"id": f"gguf:{m.get('id')}", "name": f"🏠 本地 {m.get('name', m.get('id'))}",
-                             "kind": "gguf", "has_key": True})
+                             "kind": "gguf", "has_key": True, "ready": True, "group": "local"})
     except Exception as e:
         logger.warning(f"[Collab] GGUF 模型清单加载失败: {e}")
+
+    # 排序：本地站 → 本地视觉引擎/组合/本地模型 → 常用外脑（已配钥匙优先）→ 其余外脑
+    _order = {"local": 0, "vision": 1, "chain": 2, "gguf": 3, "external": 4}
+    chat.sort(key=lambda x: (_order.get(x['kind'], 9),
+                             x.get('group') == 'more',
+                             x['kind'] == 'external' and not x['has_key'],
+                             x['name']))
 
     tool = []
     est_map = {
@@ -344,7 +459,9 @@ def collab_participants():
     except Exception as e:
         logger.warning(f"[Collab] 垂直工具参与者加载失败: {e}")
 
-    return jsonify({"success": True, "data": {"chat": chat, "tool": tool}})
+    return jsonify({"success": True, "data": {"chat": chat, "tool": tool,
+                                              "current_local": {"id": sel_id, "kind": sel_kind,
+                                                                "label": sel_label, "ready": sel_ready}}})
 
 
 def _ollama_installed_models() -> list:

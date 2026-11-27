@@ -46,6 +46,15 @@ class BaseEngine:
         """释放资源（13.2 显存调度器用）。"""
         self.loaded = False
 
+    # ── ★ #1589 运行时标注（B1：成稿模型是谁、跑在哪，物流单如实记）──
+    def runtime(self) -> str:
+        """本引擎实际运行时（ollama / llama_cpp / api / internal…），缺省类名小写。"""
+        return self.__class__.__name__.lower()
+
+    def retirable_gb(self) -> float:
+        """可让位显存（GB）：本引擎占着、但别的模型要用时能腾出来的量。缺省 0。"""
+        return 0.0
+
     # ── 计时助手 ────────────────────────────────────────────────
     @staticmethod
     def _now_ms() -> float:

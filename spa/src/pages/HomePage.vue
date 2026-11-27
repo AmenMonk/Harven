@@ -250,9 +250,22 @@
                 <option value="tool">🎬 生成</option>
               </select>
               <select v-if="st.type === 'chat'" v-model="st.participant" class="cb-select">
-                <option v-for="p in collabParts.chat" :key="p.id" :value="p.id">
-                  {{ p.name }}{{ p.kind === 'external' && !p.has_key ? '（⚠️没钥匙）' : '' }}
-                </option>
+                <!-- ★ #1590：下拉与模型中心同口径折叠——本地 / 常用外脑 / 其他外脑；未就绪的本地站灰掉 -->
+                <optgroup label="🏠 本地">
+                  <option v-for="p in localChatParts" :key="p.id" :value="p.id" :disabled="p.ready === false" :title="p.note || ''">
+                    {{ p.name }}{{ p.ready === false ? '（未就绪）' : '' }}
+                  </option>
+                </optgroup>
+                <optgroup label="☁️ 常用外脑">
+                  <option v-for="p in coreChatParts" :key="p.id" :value="p.id">
+                    {{ p.name }}{{ !p.has_key ? '（⚠️没钥匙）' : '' }}{{ p.is_custom ? '（自定义）' : '' }}
+                  </option>
+                </optgroup>
+                <optgroup v-if="moreChatParts.length" label="☁️ 其他外脑">
+                  <option v-for="p in moreChatParts" :key="p.id" :value="p.id">
+                    {{ p.name }}{{ !p.has_key ? '（⚠️没钥匙）' : '' }}{{ p.is_custom ? '（自定义）' : '' }}
+                  </option>
+                </optgroup>
               </select>
               <select v-else v-model="st.model" class="cb-select">
                 <option v-for="p in collabParts.tool" :key="p.id" :value="p.id">{{ p.icon }} {{ p.name }}（{{ p.estimate }}）</option>
@@ -369,6 +382,10 @@ const collabForeign = ref([])   // [{id,name,has_key,enabled}]
 // ★ V1 协作流水线编排
 const collabPipeline = ref([])  // [{type:'chat',participant} | {type:'tool',model}]
 const collabParts = ref({ chat: [], tool: [] })  // GET /api/collab/participants
+// ★ #1590：协作站下拉三组（后端 group 字段：local / core / more），与模型中心同口径
+const localChatParts = computed(() => (collabParts.value.chat || []).filter(p => p.group !== 'core' && p.group !== 'more'))
+const coreChatParts = computed(() => (collabParts.value.chat || []).filter(p => p.group === 'core'))
+const moreChatParts = computed(() => (collabParts.value.chat || []).filter(p => p.group === 'more'))
 const PIPELINE_PRESETS = [
   { name: '⚡ 经典两步', steps: ['C1', 'L'] },
   { name: '🤝 双外脑会诊', steps: ['C1', 'C2', 'L'] },

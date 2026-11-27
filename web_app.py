@@ -4460,6 +4460,14 @@ def models_check():
     return jsonify({'exists': False})
 
 
+# ★ #1590（2026-11-27）：垂直/专项模型关键字——local-all 标「专项专用」与 set-current 拒设共用
+#   同一份名单（此前两处各写各的；HuatuoGPT-o1 GGUF 卡显示「设为当前」却必 400 = 死按钮）
+_VERTICAL_KW = ['musicgen', 'bark', 'riffusion', 'audiocraft', 'whisper',
+                'stable-diffusion', 'sdxl', 'sd3', 'flux', 'kolors',
+                'cogvideo', 'animatediff', 'embed', 'bge-', 'e5-', 'nomic',
+                'huatuo', 'self-play']
+
+
 @app.route('/api/models/local-all', methods=['GET'])
 def models_local_all():
     """统一本地模型列表：Ollama + data/models/ + HuggingFace缓存"""
@@ -4516,8 +4524,12 @@ def models_local_all():
                         _vshow_cache[_mname] = 'vision' in [str(c).lower() for c in _caps]
                     except Exception:
                         _vshow_cache[_mname] = None
+                _vo = any(k in ('ollama:' + _mname).lower() for k in _VERTICAL_KW)
                 models.append({'name': _mname, 'source': 'Ollama', 'size_gb': round(m['size']/1e9,1), 'type': 'llm', 'icon': '🦙', 'id': 'ollama:'+_mname,
-                               'vision': _vshow_cache.get(_mname)})
+                               'vision': _vshow_cache.get(_mname),
+                               # ★ #1590：专项模型（如 huatuo 医疗）如实标「不能设为当前」
+                               'settable': not _vo, 'vertical_only': _vo,
+                               **({'vertical_hint': '专项大脑：去医疗专项面板使用'} if _vo else {})})
     except Exception as _e: logger.debug(f'[WebApp] 忽略: {_e}')
     # 2. data/models/
     mdir = os.path.join(os.path.dirname(__file__), 'data', 'models')
@@ -4534,7 +4546,12 @@ def models_local_all():
             icon = '📦' if gguf else ('🎵' if mtype=='music' else '📁')
             src = '魔搭/GGUF' if gguf else '魔搭/HF'
             size = sum(os.path.getsize(os.path.join(r,f)) for r,_,fs in os.walk(full) for f in fs if os.path.isfile(os.path.join(r,f)))
-            models.append({'name': d, 'source': src, 'size_gb': round(size/1e9,1), 'type': mtype, 'icon': icon, 'id': 'local:'+d, 'vision': _vis})
+            _vid = 'local:' + d
+            _vert_only = any(k in _vid.lower() for k in _VERTICAL_KW)
+            models.append({'name': d, 'source': src, 'size_gb': round(size/1e9,1), 'type': mtype, 'icon': icon, 'id': _vid, 'vision': _vis,
+                           # ★ #1590：专项模型卡如实标「不能设为当前」（set-current 必 400 的死按钮）
+                           'settable': not _vert_only, 'vertical_only': _vert_only,
+                           **({'vertical_hint': '专项大脑：去对应的专项面板使用'} if _vert_only else {})})
     # 3. ★ 2026-07-12: 也扫描HuggingFace缓存
     try:
         from src.core.system_knowledge import scan_huggingface_cache
@@ -4563,6 +4580,9 @@ def models_local_all():
                     'icon': '📦' if has_gguf else '📁',
                     'id': 'local:'+mname.split(' ')[0].replace('/','_'),
                     'vision': _hf_vis,
+                    # ★ #1590：HF 缓存 GGUF 卡同样标专项专用
+                    'settable': not any(k in ('local:'+mname.split(' ')[0]).lower() for k in _VERTICAL_KW),
+                    'vertical_only': any(k in ('local:'+mname.split(' ')[0]).lower() for k in _VERTICAL_KW),
                 })
     except Exception as e:
         logger.warning(f"[Models] HuggingFace缓存扫描失败: {e}")
@@ -4675,11 +4695,7 @@ def models_set_current():
         _apply_local_model(model_id)
         return jsonify({'success': True, 'current': model_id})
 
-    # ★ 2026-07-12: 禁止把垂直模型设为当前通用模型
-    _VERTICAL_KW = ['musicgen', 'bark', 'riffusion', 'audiocraft', 'whisper',
-                     'stable-diffusion', 'sdxl', 'sd3', 'flux', 'kolors',
-                     'cogvideo', 'animatediff', 'embed', 'bge-', 'e5-', 'nomic',
-                     'huatuo', 'self-play']
+    # ★ 2026-07-12: 禁止把垂直模型设为当前通用模型（★ #1590 名单上移到模块级 _VERTICAL_KW，与 local-all 共用）
     _id_lower = model_id.lower()
     for kw in _VERTICAL_KW:
         if kw in _id_lower:
