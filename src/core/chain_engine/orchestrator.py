@@ -150,8 +150,11 @@ class Orchestrator:
         vram = lambda mid: self.reg.model_vram_gb(mid)  # noqa: E731
         pf = self.pool.preflight(r, vram)
         if not pf["ok"]:
+            reuse_note = ""
+            if pf.get("reused"):
+                reuse_note = f"（已驻留复用抵扣：{'、'.join(pf['reused'])}）"
             problems.append(f"这台机器跑不动组合「{r.name}」：缺 {pf['short_gb']} GB 显存"
-                            f"（需峰值 {pf['peak_gb']}GB / 可用 {pf['budget_gb'] - pf['used_gb']:.2f}GB）。"
+                            f"（需新增峰值 {pf['peak_gb']}GB / 可用 {pf['budget_gb'] - pf['used_gb']:.2f}GB）{reuse_note}。"
                             f"建议换小模型或调整聚段（A2 铁规：不降级不偷换）")
         # ③ B4 权限挂接：safe 模式动作环预提示（运行时跳过并如实记录）
         skipped_actions = []

@@ -4,6 +4,7 @@
 - 模型单例共享：同一模型全系统只装一份，多组合共用（共存定版）；
 - 常驻形态：pin 常驻 + keep_alive TTL 过期释放（低频模型让位）；
 - A3 显存体检：单组合门槛=聚段取各段峰值最大；多组合同时激活才叠加；
+- 驻留抵扣（#1586）：峰值只算「不在池内」模型的增量，已驻留同款复用单例不重复收钱；
 - A2 铁规：体检不够 → 如实报错「缺 X GB」，绝不降级、绝不偷换、绝不偷偷改协作跑。
 """
 from __future__ import annotations
@@ -49,14 +50,41 @@ class ResidencyPool:
         with self._lock:
             return sum(e["vram_gb"] for e in self._entries.values())
 
-    # ══ A3 体检：单组合门槛（聚段取最大）vs 预算-已用 ═════════════
+    # ══ A3 体检：单组合门槛（聚段取最大，驻留抵扣 #1586）═════════
+    def _is_resident(self, model_id: str) -> bool:
+        with self._lock:
+            return model_id in self._entries
+
+    def segment_vram_peak_incremental_gb(self, recipe, vram_of) -> tuple:
+        """同 recipe 峰值口径，但已驻留模型按 0 增量计（单例复用）。
+        返回 (增量峰值, 已驻留复用的模型 id 列表)。"""
+        peak, cur, cur_model = 0.0, 0.0, None
+        reused: list[str] = []
+        for s in recipe.steps:
+            if s.engine == "program":
+                continue
+            m = s.model or "dynamic"
+            if self._is_resident(m):
+                if m not in reused:
+                    reused.append(m)
+                inc = 0.0
+            else:
+                inc = float(vram_of(m) or 0)
+            if m == cur_model:
+                cur += inc
+            else:
+                peak = max(peak, cur)
+                cur, cur_model = inc, m
+        return max(peak, cur), reused
+
     def preflight(self, recipe, vram_of) -> dict:
-        peak = recipe.segment_vram_peak_gb(vram_of)
+        peak, reused = self.segment_vram_peak_incremental_gb(recipe, vram_of)
         avail = self.budget() - self.used_gb()
         ok = (peak <= avail + 1e-6) or (self.budget() <= 0)   # 无 GPU（预算 0）不拦，纯 CPU 链放行
         return {"ok": ok, "peak_gb": round(peak, 2),
                 "budget_gb": round(self.budget(), 2), "used_gb": round(self.used_gb(), 2),
-                "short_gb": round(max(0.0, peak - avail), 2)}
+                "short_gb": round(max(0.0, peak - avail), 2),
+                "reused": reused}
 
     # ══ 取用（单例 + keep_alive + LRU 换出）══════════════════════
     def acquire(self, model_id: str, channel: str, vram_gb: float = 0.0,
