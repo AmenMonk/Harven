@@ -124,8 +124,9 @@
           </select>
         </label>
         <label>场景标签 <span class="help">给组合归堆，方便找：逗号分隔，如 厨房, 冰箱 / 车辆 / 孩子</span>
+          <!-- ★ #1582 修复：@input 实时切分回填导致逗号一打就消失（像打不了字）；改 @change 失焦才解析，打字过程原样保留 -->
           <input :value="(form.meta.tags || []).join(',')" :disabled="editing.builtin_protected"
-                 placeholder="如：厨房, 冰箱" @input="form.meta.tags = $event.target.value.split(/[,,，]/).map(x => x.trim()).filter(Boolean)" />
+                 placeholder="如：厨房, 冰箱" @change="form.meta.tags = $event.target.value.split(/[,,，]/).map(x => x.trim()).filter(Boolean)" />
         </label>
       </div>
 
@@ -162,8 +163,9 @@
             </select>
           </label>
           <label v-else>能力过滤（逗号分隔） <span class="help">只允许带这些本领的模型顶上；一般默认就好</span>
+            <!-- ★ #1582 同款修复：@input→@change，逗号不再边打边消失 -->
             <input :value="(s.dynamic_cap_filter || []).join(',')" :disabled="editing.builtin_protected"
-                   placeholder="如：vision_understand,text_gen" @input="s.dynamic_cap_filter = $event.target.value.split(',').map(x => x.trim()).filter(Boolean)" />
+                   placeholder="如：vision_understand,text_gen" @change="s.dynamic_cap_filter = $event.target.value.split(',').map(x => x.trim()).filter(Boolean)" />
           </label>
           <label>破坏力等级 <span class="help">这环会不会动你的数据：只读=只看不改；落库=会写进台账；动作=会执行操作（安全模式自动跳过）</span>
             <select v-model="s.damage" :disabled="editing.builtin_protected">
