@@ -245,9 +245,9 @@ class Orchestrator:
                                            keep_alive_s=s.keep_alive_s,
                                            pin=(s.keep_alive_s == -1))
                 adapter = ch.get_adapter(channel)
-                out = adapter.infer(handle, {"image_path": data.get("image_path"),
-                                             "prompt": data.get("prompt", ""),
-                                             **payload})
+                out = adapter.infer(handle, {**payload, "image_path": data.get("image_path"),
+                                             # ★ #1568 配方环提示词优先（用户在编辑器写的），运行时 payload 兜底
+                                             "prompt": (getattr(s, "prompt", "") or data.get("prompt", ""))})
                 step_collect({"step_id": s.id, "step_name": s.name,
                               "model_id": model_id, "channel": channel,
                               "elapsed_ms": out.get("elapsed_ms", 0), "ok": True})

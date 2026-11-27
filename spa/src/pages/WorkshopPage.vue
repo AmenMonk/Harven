@@ -88,11 +88,26 @@
       <div v-if="editing.builtin_protected" class="lock-tip">
         🔒 <b>{{ editing.name }}</b> 是官方内置组合（原件保护，只能看不能改）。想改造它请用列表里的「🍴 Fork 另存」。
       </div>
+      <!-- ★ #1568 讲解卡：先把「这是干啥的」说明白，再动手填 -->
+      <div class="guide-card">
+        <div class="g-head" @click="guideOpen = !guideOpen">
+          <b>📖 先看懂这页：组合是什么？</b>
+          <button class="mini">{{ guideOpen ? '收起 ▲' : '展开 ▼' }}</button>
+        </div>
+        <div v-show="guideOpen" class="g-body">
+          <p><b>一句话：</b>组合就是把几个模型手拉手串成一条流水线，让它们接力完成一件单个模型干不了的事。</p>
+          <p><b>举个栗子：</b>内置的「图片理解组合」= YOLOX 找出图里有什么 → CLIP 查相似 → 大模型看懂并描述。你做的组合同理：每个<b>环节</b>请一个模型干一摊活，从上到下接力。</p>
+          <p><b>做好后怎么用：</b>保存后它会像正式模型一样出现在垂直页/面板里（组合即模型）——上传照片点执行就出结果。</p>
+          <p><b>三步走：</b>① 填名字和目标 → ② 从上到下串环节（每环选能力+选模型）→ ③ 点「硬件体检+三道门」→ 试跑 → 保存。</p>
+          <p class="g-tip">💡 不想从零填？点下面「📚 填个现成示例」先看看长什么样再改；或者回列表页最上面「说一句话，帮你装一个组合」，AI 出草稿你改改就行。</p>
+          <div class="g-actions"><button class="mini" :disabled="editing.builtin_protected" @click="fillExample">📚 填个现成示例（冰箱食品识别）</button></div>
+        </div>
+      </div>
       <div class="form-grid">
-        <label>组合名称 <input v-model="form.name" :disabled="editing.builtin_protected" placeholder="给组合起个名（唯一，如：冰箱管家眼）" /></label>
-        <label class="full">目标描述 <textarea v-model="form.target" :disabled="editing.builtin_protected" rows="2" placeholder="这个组合是干什么的？一句话说清 —— AI 参谋和 Hub 上的用户都靠它判断"></textarea></label>
-        <label>版本 <input v-model="form.version" :disabled="editing.builtin_protected" placeholder="1.0.0" /></label>
-        <label>失败回退
+        <label>组合名称 <span class="help">这条流水线的名字，保存后到处都叫它（必填）</span><input v-model="form.name" :disabled="editing.builtin_protected" placeholder="如：冰箱食品识别" /></label>
+        <label class="full">目标描述 <span class="help">它解决什么问题？一句话说清——AI 参谋和市场页都靠这段介绍它</span><textarea v-model="form.target" :disabled="editing.builtin_protected" rows="2" placeholder="如：拍冰箱照片，识别里面所有食品，输出名称/数量/状态清单"></textarea></label>
+        <label>版本 <span class="help">改一版加一位（1.0.0 起步，一般不用动）</span><input v-model="form.version" :disabled="editing.builtin_protected" placeholder="1.0.0" /></label>
+        <label>失败回退 <span class="help">某一环出错怎么办：中止=最稳；换备选=用预选备用顶上；跳过支线=忽略可跳环节继续跑</span>
           <select v-model="form.on_step_fail" :disabled="editing.builtin_protected">
             <option value="abort">中止整链（最稳）</option>
             <option value="use_backup">换备选模型</option>
@@ -115,36 +130,42 @@
           </div>
         </div>
         <div class="form-grid">
-          <label>环节名 <input v-model="s.name" :disabled="editing.builtin_protected" placeholder="如：目标检测" /></label>
-          <label>能力
+          <label>环节名 <span class="help">这一步干什么活，起个自己看得懂的名</span><input v-model="s.name" :disabled="editing.builtin_protected" placeholder="如：食品识别" /></label>
+          <label>能力 <span class="help">这一步要模型会什么本领（下拉里每项都说了人话）</span>
             <select v-model="s.capability" :disabled="editing.builtin_protected" @change="onCapChange(s)">
-              <option v-for="cap in CAPS" :key="cap" :value="cap">{{ capLabel(cap) }}</option>
+              <option v-for="cap in CAPS" :key="cap" :value="cap">{{ capLabel(cap) }} — {{ CAP_HINT[cap] || '' }}</option>
             </select>
           </label>
-          <label>模型绑定
+          <label>模型绑定 <span class="help">钉死=永远用你选的那个，结果稳定；跟用户所选=每次跑用当下选的模型，灵活但结果可能变</span>
             <select v-model="s.binding" :disabled="editing.builtin_protected">
               <option value="fixed">钉死模型（我指定）</option>
               <option value="dynamic_follow">跟用户所选（能力过滤）</option>
             </select>
           </label>
-          <label v-if="s.binding === 'fixed'">用哪个模型
+          <label v-if="s.binding === 'fixed'">用哪个模型 <span class="help">下拉只列本机真装好、且有这一环本领的模型；是空的？先去模型中心装</span>
             <select v-model="s.model" :disabled="editing.builtin_protected" @change="onModelChange(s)">
               <option value="">— 选模型（只列本机真实可用的）—</option>
               <option v-for="m in modelsFor(s)" :key="m.id" :value="m.id">{{ m.label }}（{{ engineLabel(m.channel) }}）</option>
             </select>
           </label>
-          <label v-else>能力过滤（逗号分隔）
+          <label v-else>能力过滤（逗号分隔） <span class="help">只允许带这些本领的模型顶上；一般默认就好</span>
             <input :value="(s.dynamic_cap_filter || []).join(',')" :disabled="editing.builtin_protected"
                    placeholder="如：vision_understand,text_gen" @input="s.dynamic_cap_filter = $event.target.value.split(',').map(x => x.trim()).filter(Boolean)" />
           </label>
-          <label>破坏力等级
+          <label>破坏力等级 <span class="help">这环会不会动你的数据：只读=只看不改；落库=会写进台账；动作=会执行操作（安全模式自动跳过）</span>
             <select v-model="s.damage" :disabled="editing.builtin_protected">
               <option value="readonly">只读（安全）</option>
               <option value="db">落库（会记数据）</option>
               <option value="action">动作（安全模式自动跳过）</option>
             </select>
           </label>
-          <label class="chk"><input v-model="s.optional" type="checkbox" :disabled="editing.builtin_protected" /> 支线环（缺失不瘫主链）</label>
+          <label class="chk"><input v-model="s.optional" type="checkbox" :disabled="editing.builtin_protected" /> 支线环 <span class="help">勾上=这一环失败也不影响主流程继续</span></label>
+          <!-- ★ #1568 提示词：看图/文字环才有，配方里写死给这一环用 -->
+          <label v-if="s.capability === 'vision_understand' || s.capability === 'text_gen'" class="full">提示词（这一环怎么问模型） <span class="help">模型收到的「问题」。留空 = 运行时由调用方决定</span>
+            <textarea v-model="s.prompt" rows="3" :disabled="editing.builtin_protected" :placeholder="s.capability === 'vision_understand'
+              ? '如：这是我家冰箱的照片。列出里面所有食品，一行一个，格式：名称 | 大约数量 | 状态(未开封/已开封/快过期)。不要编造看不到的东西。'
+              : '如：把上面的识别结果整理成一段通顺的清单。'"></textarea>
+          </label>
         </div>
         <p v-if="capWarn(s)" class="warn-line">⚠️ {{ capWarn(s) }}</p>
       </div>
@@ -256,6 +277,19 @@ let isNew = false
 
 const CAPS = ['dedup', 'detect', 'face', 'embed', 'tag', 'locate', 'classify', 'vision_understand', 'text_gen']
 const CAP_LABEL = { dedup: '查重', detect: '目标检测', face: '人脸', embed: '向量/语义', tag: '打标', locate: '定位', classify: '快速分类', vision_understand: '看图理解', text_gen: '文字生成' }
+// ★ #1568：每个能力一句人话（能力下拉后缀 + 新手参考）
+const CAP_HINT = {
+  dedup: '判断是不是同一张图（毫秒级）',
+  detect: '找出图里有什么东西、在哪个位置',
+  face: '找出照片里的脸并认出是谁',
+  embed: '把图变成可比对对的「指纹」',
+  tag: '给图贴关键词标签',
+  locate: '用方框标出目标在图里的位置',
+  classify: '毫秒级贴粗标签（1000 类，快但糙）',
+  vision_understand: '真正看懂图并说出内容（主力大脑）',
+  text_gen: '把前面的结果整理成人话',
+}
+const guideOpen = ref(true)
 
 function emptyForm() {
   return { id: '', name: '', version: '1.0.0', target: '', on_step_fail: 'abort',
@@ -300,14 +334,46 @@ function newChain() {
 }
 function blankStep() {
   return { id: 's' + Math.random().toString(36).slice(2, 7), name: '', capability: 'vision_understand',
-           binding: 'fixed', model: '', backup_models: [], dynamic_cap_filter: [],
+           binding: 'fixed', model: '', backup_models: [], dynamic_cap_filter: [], prompt: '',
            engine: 'internal', input_type: 'any', output_type: 'any', damage: 'readonly',
            packed: '', keep_alive_s: 0, optional: false, note: '' }
+}
+/* ★ #1568 新手模板：一键填一条完整能跑的示例（冰箱食品识别），填完可改可试跑 */
+function fillExample() {
+  if (editing.value.builtin_protected) return
+  const f = emptyForm()
+  f.id = form.value.id || ''
+  f.name = '冰箱食品识别'
+  f.target = '拍冰箱照片，识别里面所有食品，输出名称/数量/状态清单'
+  f.version = '1.0.0'
+  f.on_step_fail = 'abort'
+  const vis = models.value.find(m => m.id === 'qwen3-vl-8b-q4km' && (m.capabilities || []).includes('vision_understand'))
+            || models.value.find(m => (m.capabilities || []).includes('vision_understand'))
+  const step1 = blankStep()
+  step1.name = '食品识别'
+  step1.capability = 'vision_understand'
+  step1.binding = 'fixed'
+  step1.model = vis ? vis.id : ''
+  if (vis) step1.engine = vis.channel
+  step1.prompt = '这是我家冰箱的照片。列出里面所有食品，一行一个，格式：名称 | 大约数量 | 状态(未开封/已开封/快过期)。不要编造看不到的东西。'
+  const step2 = blankStep()
+  step2.name = '快速粗分类'
+  step2.capability = 'classify'
+  step2.binding = 'fixed'
+  step2.model = 'harven.base.mnv4'
+  step2.engine = 'internal'
+  step2.optional = true
+  f.steps = [step1, step2]
+  form.value = f
+  checkResult.value = null
+  msg.value = '已填入示例：环节 1 是主力（看图理解+提示词），环节 2 是可选支线（毫秒级粗标签）。试跑看看，不合口味就在卡片里改'
 }
 function openEdit(c) {
   getJSON(`/api/chains/${c.id}`).then(res => {
     editing.value = c
     form.value = res.recipe
+    // ★ #1568：旧配方没有 prompt 字段，补空串免 v-model undefined
+    for (const s of (form.value.steps || [])) if (s.prompt == null) s.prompt = ''
     isNew = false
     checkResult.value = null
     mode.value = 'edit'
@@ -339,11 +405,13 @@ function backToList() { mode.value = 'list'; loadAll() }
 
 async function saveChain() {
   err.value = ''; msg.value = ''
+  // ★ #1568：新建时前端自动生成户口 id（后端校验 slug 硬性，用户只管起名字）
+  if (!form.value.id) form.value.id = 'u' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
   try {
     const payload = { recipe: form.value }
     if (isNew) {
       const r = await postJSON('/api/chains', payload)
-      msg.value = `✅ 组合「${r.recipe_id}」已保存并选用（组合即模型，已进能力登记表）`
+      msg.value = `✅ 组合「${form.value.name || r.recipe_id}」已保存并选用（组合即模型，已进能力登记表）`
     } else {
       await putJSON(`/api/chains/${form.value.id}`, payload)
       msg.value = '✅ 已保存'
@@ -529,6 +597,15 @@ loadAll()
 .pill.danger { background: rgba(213, 73, 65, .14); color: #d54941; }
 .pill.soft { opacity: .8; }
 
+.guide-card { border: 1px solid var(--line, #e3e3e3); border-radius: 12px; padding: 11px 14px; background: rgba(90, 130, 255, .05); }
+.g-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; }
+.g-head b { font-size: 13.5px; }
+.g-body { margin-top: 9px; display: flex; flex-direction: column; gap: 7px; font-size: 12.5px; line-height: 1.7; }
+.g-body p { margin: 0; }
+.g-body b { opacity: .95; }
+.g-tip { background: rgba(46, 158, 91, .08); border-radius: 8px; padding: 7px 10px; }
+.g-actions { display: flex; gap: 8px; }
+.form-grid label .help { font-size: 11px; opacity: .55; line-height: 1.5; }
 .edit-wrap, .run-wrap, .logs-wrap { display: flex; flex-direction: column; gap: 12px; }
 .lock-tip { border: 1px dashed rgba(230, 162, 60, .6); border-radius: 10px; padding: 10px 14px; font-size: 13px; background: rgba(230, 162, 60, .07); }
 .sec-title { margin: 6px 0 0; font-size: 14px; }

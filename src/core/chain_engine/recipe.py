@@ -57,6 +57,8 @@ class Step:
     packed: str = ""                   # 打包执行器名（迁移期「搬家不装修」用）
     keep_alive_s: int = 0              # 驻留保活秒数（0=随池策略）
     optional: bool = False             # 支线缺失不瘫主链（三轮定版第 4 条）
+    prompt: str = ""                   # ★ #1568 环节提示词：vision_understand/text_gen 环生效；
+                                       #   配方环优先于运行时 payload；空=维持原状（运行时给/引擎默认）
     note: str = ""
 
     def to_dict(self) -> dict:

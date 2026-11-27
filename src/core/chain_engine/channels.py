@@ -131,12 +131,24 @@ class _SingletonSlot:
         self._key, self._factory = key, factory
         self._lock = threading.Lock()
         self._obj = None
+        self._prompt_ok = None    # ★ #1568 引擎 infer 是否接受 prompt 参数（惰性探测，缓存）
 
     def _get(self):
         with self._lock:
             if self._obj is None:
                 self._obj = self._factory()
             return self._obj
+
+    def _accepts_prompt(self, obj) -> bool:
+        """★ #1568：探测引擎 infer 签名是否带 prompt（VLM 理解引擎有；YOLOX/CLIP 无）。
+        探测失败按 False 处理（维持原行为，绝不因新特性弄坏底座环）。"""
+        if self._prompt_ok is None:
+            try:
+                import inspect
+                self._prompt_ok = "prompt" in inspect.signature(obj.infer).parameters
+            except Exception:
+                self._prompt_ok = False
+        return self._prompt_ok
 
     def infer(self, payload: dict) -> dict:
         obj = self._get()
@@ -146,7 +158,14 @@ class _SingletonSlot:
                 # 定位等需要 prompt/target 的引擎：传完整 payload
                 r = obj.infer(payload)
             else:
-                r = obj.infer(payload.get("image_path", ""))
+                img = payload.get("image_path", "")
+                prompt = str(payload.get("prompt", "") or "")
+                # ★ #1568：prompt 非空且引擎吃得下 → 透传（组合环提示词进 VLM 理解引擎）；
+                #   底座检测/索引引擎照旧只吃图（prompt 对它们本来就没意义）
+                if prompt and self._accepts_prompt(obj):
+                    r = obj.infer(img, prompt=prompt)
+                else:
+                    r = obj.infer(img)
         else:                                   # callable factory 分支
             r = obj().infer(payload.get("image_path", ""))
         return {"ok": True, "result": r, "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1)}
