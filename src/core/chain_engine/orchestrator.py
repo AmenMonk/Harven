@@ -248,6 +248,12 @@ class Orchestrator:
                 if _up is not None and not (getattr(s, "prompt", "") or data.get("prompt", "")):
                     from .channels import _stringify_upstream
                     _relay = _stringify_upstream(_up)
+                # ★ #1583 人话报错：图像环缺图别让 PIL 报 NoneType.read 看不懂
+                if (getattr(s, "capability", "") or "") in recipe_mod.IMAGE_CAPS \
+                        and not data.get("image_path"):
+                    raise RuntimeError(
+                        f"环节「{s.name or s.id}」需要图片输入，但链里没有图"
+                        "（调用方没传 image_path 且试跑样例未取到）")
                 handle = self.pool.acquire(model_id, channel,
                                            self.reg.model_vram_gb(model_id),
                                            keep_alive_s=s.keep_alive_s,

@@ -25,7 +25,7 @@ import json
 
 from flask import Blueprint, jsonify, request
 
-from .recipe import Recipe, load
+from .recipe import Recipe, load, IMAGE_CAPS
 from .registry import get_registry
 from .logistics import get_logistics
 from .orchestrator import get_orchestrator
@@ -213,7 +213,7 @@ def test_recipe(recipe_id: str):
     payload = data.get("payload") or {}
     sample_note = None
     if not payload.get("image_path"):
-        first_type = r.steps[0].input_type if r.steps else "image_path"
+        first_type = _effective_input_type(r)
         if first_type == "any":
             # ★ #1537b 实锤修复：免样例链（如账单链 collect 环自取数据）直接空 payload 跑，
             #   此前「未知输入类型 any」把试跑门错杀
@@ -255,11 +255,31 @@ def test_recipe(recipe_id: str):
 _SAMPLES_DIR = r"H:\HarvenAI\data\chains\samples"
 
 
+def _effective_input_type(r) -> str:
+    """★ #1583：UI blankStep 历史默认 input_type='any'，试跑端点把 any 当免样例
+    → 图片环拿到 image_path=None → PIL 炸 'NoneType' object has no attribute 'read'。
+    now：首环是模型环且能力属图像类时，any 按图片输入补样例；程序环维持免样例（#1537b 不回退）。"""
+    if not r.steps:
+        return "image_path"
+    s0 = r.steps[0]
+    it = (getattr(s0, "input_type", "") or "any").lower()
+    if it != "any":
+        return it
+    if getattr(s0, "engine", "") == "program":
+        return "any"                       # 程序环自取数据，免样例（#1537b 原语义）
+    cap = getattr(s0, "capability", "") or ""
+    if cap in IMAGE_CAPS:
+        return "image_path"
+    if cap == "text_gen":
+        return "text"
+    return "any"
+
+
 def _sample_for(r) -> tuple[object, str | None]:
     """按首环输入类型选试跑样例。返回 (样例, 说明)。
     图片类 → str 路径；文本类 → dict 注入 payload；没有 → (None, 缺样例说明)。"""
     from pathlib import Path
-    it = r.steps[0].input_type if r.steps else "image_path"
+    it = _effective_input_type(r)
     sdir = Path(_SAMPLES_DIR)
     if it in ("image", "image_path", "frames", "video"):
         # 视频链优先视频样例；图片链只取图（视频当图开 PIL 会炸）

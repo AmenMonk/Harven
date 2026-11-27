@@ -36,6 +36,9 @@ VALID_BIND = {BIND_FIXED, BIND_DYNAMIC}
 # 数据类型（结构门用，gates.py 引用）
 TYPES = {"image", "image_path", "text", "boxes", "vector", "table_row", "audio", "video", "any"}
 
+# ★ #1583 图像类能力集合：试跑端点按能力补样例 + 编排器缺图人话报错共用
+IMAGE_CAPS = {"dedup", "detect", "face", "embed", "tag", "locate", "classify", "vision_understand"}
+
 _RE_SLUG = re.compile(r"^[a-z0-9][a-z0-9_\-]{1,63}$")
 _RE_SEMVER = re.compile(r"^\d+\.\d+\.\d+$")
 

@@ -357,7 +357,7 @@ function newChain() {
 function blankStep() {
   return { id: 's' + Math.random().toString(36).slice(2, 7), name: '', capability: 'vision_understand',
            binding: 'fixed', model: '', backup_models: [], dynamic_cap_filter: [], prompt: '',
-           engine: 'internal', input_type: 'any', output_type: 'any', damage: 'readonly',
+           engine: 'internal', input_type: 'image_path', output_type: 'any', damage: 'readonly',
            packed: '', keep_alive_s: 0, optional: false, note: '' }
 }
 /* ★ #1568 新手模板：一键填一条完整能跑的示例（冰箱食品识别），填完可改可试跑 */
@@ -414,7 +414,12 @@ function moveStep(i, d) {
   if (j < 0 || j >= arr.length) return
   ;[arr[i], arr[j]] = [arr[j], arr[i]]
 }
-function onCapChange(s) { s.model = '' }
+function onCapChange(s) {
+  s.model = ''
+  // ★ #1583：能力换到文字生成环输入才该是文本，其余（图像类）都该吃图——
+  //   以前默认 any，试跑端点把 any 当免样例不取图 → 图片环拿到 None 炸 NoneType.read
+  s.input_type = (s.capability === 'text_gen') ? 'text' : 'image_path'
+}
 function onModelChange(s) {
   const m = models.value.find(x => x.id === s.model)
   if (m) s.engine = m.channel
