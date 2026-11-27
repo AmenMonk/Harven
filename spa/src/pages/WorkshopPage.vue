@@ -144,9 +144,9 @@
         </div>
         <div class="form-grid">
           <label>环节名 <span class="help">这一步干什么活，起个自己看得懂的名</span><input v-model="s.name" :disabled="editing.builtin_protected" placeholder="如：食品识别" /></label>
-          <label>能力 <span class="help">这一步要模型会什么本领（下拉里每项都说了人话）</span>
+          <label>能力 <span class="help">这一步要模型会什么本领（每项都标了本机有几个模型会——0 个就先去模型中心装）</span>
             <select v-model="s.capability" :disabled="editing.builtin_protected" @change="onCapChange(s)">
-              <option v-for="cap in CAPS" :key="cap" :value="cap">{{ capLabel(cap) }} — {{ CAP_HINT[cap] || '' }}</option>
+              <option v-for="cap in CAPS" :key="cap" :value="cap">{{ capLabel(cap) }} — {{ CAP_HINT[cap] || '' }}（{{ capCount(cap) ? capCount(cap) + ' 个模型可用' : '暂无模型，先去装' }}）</option>
             </select>
           </label>
           <label>模型绑定 <span class="help">钉死=永远用你选的那个，结果稳定；跟用户所选=每次跑用当下选的模型，灵活但结果可能变</span>
@@ -332,6 +332,8 @@ async function loadAll() {
 // ── 列表辅助 ──
 function originLabel(o) { return o === 'builtin' ? '内置' : (o === 'forked' ? '副本' : '我的') }
 function capLabel(c) { return CAP_LABEL[c] || c }
+// ★ #1580 能力下拉标可用模型数：选能力前就知道下拉里会有谁，零跑空（口径与 modelsFor 同源=本机盘点）
+function capCount(cap) { return models.value.filter(m => (m.capabilities || []).includes(cap)).length }
 function engineLabel(e) { return { internal: '内置底座', llama_cpp: '本地引擎', ollama: 'Ollama', cloud: '外脑', program: '程序环', chain: '组合' }[e] || e }
 function damageLabel(d) { return { readonly: '只读', db: '落库', action: '动作' }[d] || d }
 function shortModel(m) { return (m || '').replace('harven.base.', '').replace('ollama:', '').replace('cloud:', '') }
