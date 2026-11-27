@@ -4467,6 +4467,12 @@ _VERTICAL_KW = ['musicgen', 'bark', 'riffusion', 'audiocraft', 'whisper',
                 'cogvideo', 'animatediff', 'embed', 'bge-', 'e5-', 'nomic',
                 'huatuo', 'self-play']
 
+# ★ #1591（2026-11-27 老谭拍板「垃圾卡」）：data/models 下的哈文内部工作目录不当模型卡列出
+#   .cache=魔搭下载缓存 / logs=运行日志 / vision=视觉引擎容器（其中真模型已由
+#   上方「本地视觉」区按 👁️ 卡列出）/ embedding=内置 bge 嵌入引擎（三级抽取内部用）
+#   点开头的目录一律跳过
+_INTERNAL_MODEL_DIRS = {'.cache', 'logs', 'vision', 'embedding'}
+
 
 @app.route('/api/models/local-all', methods=['GET'])
 def models_local_all():
@@ -4537,6 +4543,8 @@ def models_local_all():
         for d in os.listdir(mdir):
             full = os.path.join(mdir, d)
             if not os.path.isdir(full): continue
+            # ★ #1591：内部工作目录不进模型卡（见 _INTERNAL_MODEL_DIRS 注释）
+            if d.startswith('.') or d.lower() in _INTERNAL_MODEL_DIRS: continue
             flist = os.listdir(full)[:50]
             gguf = any(f.endswith('.gguf') for f in flist)
             # ★ D1 #1564：本地 GGUF 识图判定 = 主模型 GGUF + mmproj 投影都在（vision_link 同款标准）
@@ -5797,8 +5805,11 @@ def version_restart():
     try:
         # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
         flags = 0x00000008 | 0x00000200 | 0x08000000
+        # ★ #1591（2026-11-27）：timeout /t 3 /nobreak 在无窗口提权环境下永挂
+        #   （僵尸 cmd 25840 从 21:48 卡死实锤）——ping 不需要控制台 stdin，
+        #   -n 4 ≈ 3 秒，语义等价。同时启动脚本已加「等端口释放」循环防旧实例未死透
         subprocess.Popen(
-            ['cmd', '/c', 'timeout', '/t', '3', '/nobreak', '>nul', '&', 'start', '""', str(bat)],
+            ['cmd', '/c', 'ping', '-n', '4', '127.0.0.1', '>nul', '&', 'start', '""', str(bat)],
             cwd=str(PROJECT_ROOT), creationflags=flags, close_fds=True)
     except Exception as e:
         return jsonify({'error': f'重启派生失败: {e}'}), 500

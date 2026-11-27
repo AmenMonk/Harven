@@ -124,7 +124,9 @@ listed = va._get_all_models()
 listed_ids = {m['id'] for m in listed}
 check("A2 垂直列表无伪模型", not (set(pseudo) & listed_ids))
 # ★ 2026-09-17 断言修正：9/14 定案「只显示实际可用模型」，SD/Bark 占位假模型被 _model_available 过滤属正确行为
-check("A2 可用真模型在列(MusicGen/华佗)", {'musicgen-small', 'huatuo-medical'} <= listed_ids)
+# ★ 2026-11-27 断言修正：MusicGen 已于 11-14 卸载（被 ACE-Step 替代，_model_available 如实返回 False）
+#   现可用真模型 = ace-step / z-image-turbo / huatuo-medical
+check("A2 可用真模型在列(ACE-Step/华佗)", {'ace-step', 'huatuo-medical'} <= listed_ids)
 check("A2 占位假模型已被过滤(SD/Bark)", not ({'stable-diffusion', 'bark-tts'} & listed_ids))
 # 伪模型仍可被旧引用执行（execute入口按id查找）
 m = next((m for m in va._BUILTIN_MODELS if m['id'] == 'translation'), None)

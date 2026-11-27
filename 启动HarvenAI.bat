@@ -26,13 +26,21 @@ if not exist ".venv\Scripts\python.exe" (
 )
 
 rem Check port to avoid double start
+rem #1591: port busy may be a dying old instance (one-click restart) - wait up to 10s for release
 netstat -ano 2>nul | findstr ":7000.*LISTENING" >nul
-if not errorlevel 1 (
-    echo  Harven AI is already running. Opening browser... window closes in 3s.
-    start http://localhost:7000/spa
-    timeout /t 3 /nobreak >nul
-    exit /b 0
-)
+if errorlevel 1 goto port_free
+set /a HVEN_BUSY=0
+:wait_free
+timeout /t 2 /nobreak >nul
+netstat -ano 2>nul | findstr ":7000.*LISTENING" >nul
+if errorlevel 1 goto port_free
+set /a HVEN_BUSY+=2
+if %HVEN_BUSY% lss 10 goto wait_free
+echo  Harven AI is already running. Opening browser... window closes in 3s.
+start http://localhost:7000/spa
+timeout /t 3 /nobreak >nul
+exit /b 0
+:port_free
 
 echo  ==========================================
 echo   Harven AI is starting...
