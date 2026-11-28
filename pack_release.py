@@ -42,7 +42,17 @@ EXCLUDE_FILES = {'_writetest.txt', '_build_exit.txt', '_build_log.txt', '_build_
 #   脚本，曾 1 条 check_harven.py 混进 staging（质检实锤）。fnmatch 对文件名匹配，任何目录
 #   命中都不进包。注意：故意不加 '_*.py'（会误杀全部 __init__.py）；README/requirements.txt 不命中。
 EXCLUDE_PATTERNS = ('check*', 'test_*', 'selfcheck*', '_tmp*', '_fix*', '_diag*',
-                    '_fridge*', 'flask*', 'dns*', 'curltest*', 'flush*')
+                    '_fridge*', 'flask*', 'dns*', 'curltest*', 'flush*',
+                    '_verify_*', '_rescue_*', 'full_health_check*', 'vite.config.js.timestamp*')
+# ★ r51 小白包瘦身（2026-11-28 老谭令「一键安装+清废料」）：仅顶层整剪（static/spa、
+#   data/skills 等同名子目录不受影响）。spa=前端源码（运行时只用 static/spa 成品）、
+#   tests=开发自检、tools=AR诊断/文档工具（开发者机自留）
+EXCLUDE_TOP_DIRS = {'spa', 'tests', 'tools'}
+#   开发者专用出包/部署件：小白装完用不上，clean_before_pack 尤其不能给（误跑删数据）
+EXCLUDE_FILES = EXCLUDE_FILES | {'pack_release.py', 'pack_installer.py', 'pack_update.py',
+                                 'clean_before_pack.py', 'install.sh', 'start.sh',
+                                 'Dockerfile', 'docker-compose.yml', 'DOCKER.md',
+                                 '.dockerignore', 'INSTALL_GUIDE_v2.0.md'}
 # ★ zip 中文文件名说明：本打包器只出 Windows 用户安装包，Python zipfile 对非 ASCII 名
 #   自动打 UTF-8 标志位，Win10/11 资源管理器解压正常（r25 实测用户可装）。
 #   「中文文件名必须 ASCII」仅适用于 Linux 服务器部署包场景，勿在此误加（10-07 自检门当场抓到会砍掉启动HarvenAI.bat 等 28 个必需文件）。
@@ -144,6 +154,8 @@ def main():
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
         for root, dirs, files in os.walk(STAGING):
             rel_root = os.path.relpath(root, STAGING).replace('\\', '/')
+            if rel_root.split('/')[0] in EXCLUDE_TOP_DIRS:
+                continue
             in_data = (rel_root == 'data' or rel_root.startswith('data/'))
             dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS_ANY
                        and not (in_data and d in EXCLUDE_DIRS_IN_DATA)]
