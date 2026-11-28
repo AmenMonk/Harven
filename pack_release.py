@@ -316,6 +316,9 @@ def main():
         'python/python313.dll',
         'python/Lib/os.py',            # 标准库抽检（venv/ensurepip 依赖 stdlib 完整）
         'data/models/vision/yolox/yolox_s.onnx',
+        # ★ 2026-11-27 拍板：人脸底座三档全随包（YuNet+SFace），缺一拒出包
+        'data/models/vision/face/face_detection_yunet_2023mar.onnx',
+        'data/models/vision/face/face_recognition_sface_2021dec.onnx',
         'TIER-NOTE.txt',               # ★ 三档：档位说明必随包
     ]
     # ★ 三档：CLIP 哨兵仅 standard/full；Qwen3-VL 哨兵仅 full
@@ -354,8 +357,9 @@ def main():
         print('   请检查 staging 源头后重跑打包器。')
         sys.exit(1)
     # 反向抽查：data/models（模型库）绝不该进包——修宪豁免按档：
-    #   standard/full：yolox + chinese-clip；full 另豁免 qwen3-vl-4b（均带 WEIGHTS-NOTE.txt）
-    _allow_models = ['data/models/vision/yolox/']
+    #   standard/full：yolox + chinese-clip + face（2026-11-27 拍板三档全随包）；
+    #   full 另豁免 qwen3-vl-4b（均带 WEIGHTS-NOTE.txt）
+    _allow_models = ['data/models/vision/yolox/', 'data/models/vision/face/']
     if tier != 'lite':
         _allow_models.append('data/models/vision/chinese-clip/')
     if tier == 'full':
@@ -365,6 +369,9 @@ def main():
     if leaked:
         os.remove(zip_path)
         print(f'⛔ 自检门拦截：data/models 模型库泄漏进包（{len(leaked)} 个文件），已删除坏包！')
+        for p in leaked:
+            print(f'   - {p}')
+        print('   请检查 staging 源头后重跑打包器。')
         sys.exit(1)
     # ★ 反向多余文件检查（10-10 全面检测沉淀）：脏副本混入 staging 会被打进包。
     #   r28/r29/r30 三包全带 src/core/web_app.py（09-27 误拷残留，396KB 旧版主程序副本，
