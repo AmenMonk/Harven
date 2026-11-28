@@ -13,6 +13,8 @@ for /f "tokens=5" %%a in (%temp%\harven_port.txt) do (
     taskkill /PID %%a /F >nul 2>&1
 )
 del "%temp%\harven_port.txt" 2>nul
+rem #1591b: flag file tells 启动HarvenAI.bat a restart is in progress (wait for port release)
+echo restarting> "%~dp0data\.restarting" 2>nul
 
 echo [2/3] 等待进程退出并确认端口释放...
 rem #1591: 固定 3 秒不够（旧实例可能死得慢）→ 轮询最多约 40 秒
@@ -28,6 +30,7 @@ if %HVEN_WAIT% lss 15 (
 )
 echo [!] 警告: 端口 7000 仍被占用，请手动检查
 netstat -ano | findstr :7000
+del "%~dp0data\.restarting" >nul 2>&1
 pause
 exit /b 1
 

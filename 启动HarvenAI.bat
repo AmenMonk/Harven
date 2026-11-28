@@ -26,21 +26,26 @@ if not exist ".venv\Scripts\python.exe" (
 )
 
 rem Check port to avoid double start
-rem #1591: port busy may be a dying old instance (one-click restart) - wait up to 10s for release
+rem #1591b: wait-for-release ONLY when a restart is in progress (flag data\.restarting);
+rem          normal double-click keeps the instant "already running -> open browser" behavior
 netstat -ano 2>nul | findstr ":7000.*LISTENING" >nul
 if errorlevel 1 goto port_free
+if not exist "data\.restarting" goto already_running
 set /a HVEN_BUSY=0
 :wait_free
 timeout /t 2 /nobreak >nul
 netstat -ano 2>nul | findstr ":7000.*LISTENING" >nul
 if errorlevel 1 goto port_free
 set /a HVEN_BUSY+=2
-if %HVEN_BUSY% lss 10 goto wait_free
+if %HVEN_BUSY% lss 40 goto wait_free
+:already_running
+if exist "data\.restarting" del "data\.restarting" >nul 2>&1
 echo  Harven AI is already running. Opening browser... window closes in 3s.
 start http://localhost:7000/spa
 timeout /t 3 /nobreak >nul
 exit /b 0
 :port_free
+if exist "data\.restarting" del "data\.restarting" >nul 2>&1
 
 echo  ==========================================
 echo   Harven AI is starting...

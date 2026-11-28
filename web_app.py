@@ -5805,6 +5805,13 @@ def version_restart():
     try:
         # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
         flags = 0x00000008 | 0x00000200 | 0x08000000
+        # ★ #1591b：先写「正在重启」标志——启动脚本见标志才等端口释放，普通双击不受影响
+        try:
+            _flag = Path(PROJECT_ROOT) / 'data' / '.restarting'
+            _flag.parent.mkdir(exist_ok=True)
+            _flag.write_text('restarting', encoding='utf-8')
+        except Exception:
+            pass
         # ★ #1591（2026-11-27）：timeout /t 3 /nobreak 在无窗口提权环境下永挂
         #   （僵尸 cmd 25840 从 21:48 卡死实锤）——ping 不需要控制台 stdin，
         #   -n 4 ≈ 3 秒，语义等价。同时启动脚本已加「等端口释放」循环防旧实例未死透
